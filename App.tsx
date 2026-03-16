@@ -75,7 +75,7 @@ export default function App(): React.JSX.Element {
         })}
       >
         <Tab.Screen name="Home" component={HomeScreen} options={{ title: '홈', tabBarLabel: '홈' }} />
-        <Tab.Screen name="SharedRoute" component={SharedRouteScreen} options={{ title: '공유 루트', tabBarLabel: '공유 루트' }} />
+        <Tab.Screen name="SharedRoute" component={SharedRouteScreen} options={{ headerShown: false, title: '공유 루트', tabBarLabel: '공유 루트' }} />
         <Tab.Screen name="MyRoute" component={MyRouteScreen} options={{ title: '내 루트', tabBarLabel: '내 루트' }} />
         <Tab.Screen name="Chat" component={ChatScreen} options={{ title: '채팅', tabBarLabel: '채팅' }} />
         <Tab.Screen name="All" component={AllScreen} options={{ title: '전체', tabBarLabel: '전체' }} />
