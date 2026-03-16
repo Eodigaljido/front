@@ -11,11 +11,21 @@ declare module 'react-native' {
   interface ImageProps {
     className?: string;
   }
+  interface TextInputProps {
+    className?: string;
+  }
+  interface PressableProps {
+    className?: string;
+  }
   interface TouchableOpacityProps {
     className?: string;
   }
   interface SafeAreaViewProps {
     className?: string;
+  }
+  interface FlatListProps<ItemT> {
+    className?: string;
+    contentContainerStyle?: object;
   }
 }
 
