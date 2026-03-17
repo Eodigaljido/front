@@ -1,5 +1,5 @@
 // @ts-nocheck - NativeWind(className) 타입이 @types/react-native와 병합되지 않아 일시 비활성화
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,10 +12,19 @@ import {
   ImageBackground,
   StyleSheet,
   Animated,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { MOCK_COURSES, type CourseItem } from '../data/mockData';
+import { useMockData } from '../context/MockDataContext';
 
+type SharedRouteParams = {
+  openFilter?: boolean;
+  openAsPopular?: boolean;
+  viewCourseId?: string;
+};
 
 type TabId = 'all' | 'popular' | 'date' | 'friends';
 
@@ -27,43 +36,8 @@ const TABS: { id: TabId; label: string }[] = [
 ];
 
 const CATEGORIES = ['데이트', '친구모임', '맛집', '카페', '자연', '액티비티'];
+const REGIONS = ['서울', '경기', '인천', '부산', '대구', '대전', '광주', '울산', '세종', '제주'];
 const SORT_OPTIONS = ['최신순', '인기순', '거리순', '추천순', '조회순', '저장순'];
-
-type CourseItem = {
-  id: string;
-  title: string;
-  meta: string;
-  departure: string;
-  arrival: string;
-  thumbnail: string | null;
-};
-
-const MOCK_COURSES: CourseItem[] = [
-  {
-    id: '1',
-    title: '솔로들은 보지마라 왜냐하면 이게...',
-    meta: '데이트코스 1위 업체 / 03-13',
-    departure: '스페이클럽 폴링장',
-    arrival: '오티티프라이빗 동성로점',
-    thumbnail: null,
-  },
-  {
-    id: '2',
-    title: '집에서도 게임하면서 게임장 왜 가...',
-    meta: '데이트코스 1위 업체 / 03-13',
-    departure: '경소고-키즈카페-밥집',
-    arrival: '경소고-키즈카페-밥집',
-    thumbnail: null,
-  },
-  {
-    id: '3',
-    title: '동성로 피규어 공략',
-    meta: '데이트코스 1위 업체 / 03-13',
-    departure: '경소고-키즈카페-밥집',
-    arrival: '경소고-키즈카페-밥집',
-    thumbnail: null,
-  },
-];
 
 const CARD_STYLE = {
   shadowColor: '#000',
@@ -181,8 +155,10 @@ function FilterBottomSheet({
   visible,
   onClose,
   selectedCategory,
+  selectedRegion,
   selectedSort,
   onCategoryToggle,
+  onRegionToggle,
   onSortToggle,
   onReset,
   onApply,
@@ -190,8 +166,10 @@ function FilterBottomSheet({
   visible: boolean;
   onClose: () => void;
   selectedCategory: string | null;
+  selectedRegion: string | null;
   selectedSort: string | null;
   onCategoryToggle: (v: string) => void;
+  onRegionToggle: (v: string) => void;
   onSortToggle: (v: string) => void;
   onReset: () => void;
   onApply: () => void;
@@ -211,17 +189,24 @@ function FilterBottomSheet({
   }, [visible, backdropOpacity]);
 
   return (
-    <Modal visible={visible} transparent animationType="slide">
-      <View className="flex-1">
-        <Pressable style={{ flex: 1 }} onPress={onClose}>
-          <Animated.View
-            style={{
-              flex: 1,
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      statusBarTranslucent
+    >
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        <Animated.View
+          style={[
+            StyleSheet.absoluteFillObject,
+            {
               backgroundColor: 'rgba(0,0,0,0.45)',
               opacity: backdropOpacity,
-            }}
-          />
-        </Pressable>
+            },
+          ]}
+        >
+          <Pressable style={{ flex: 1 }} onPress={onClose} />
+        </Animated.View>
         <View className="rounded-t-3xl bg-gray-100 pb-8 pt-5" style={{ paddingHorizontal: 20 }}>
         <Text className="mb-4 text-xl font-bold text-black">필터</Text>
 
@@ -235,6 +220,21 @@ function FilterBottomSheet({
             >
               <Text className={`text-sm ${selectedCategory === cat ? 'font-semibold text-white' : 'text-gray-600'}`}>
                 {cat}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <Text className="mb-2 text-sm font-medium text-gray-600">지역</Text>
+        <View className="mb-5 flex-row flex-wrap gap-2">
+          {REGIONS.map((region) => (
+            <Pressable
+              key={region}
+              onPress={() => onRegionToggle(region)}
+              className={`rounded-full px-4 py-2.5 ${selectedRegion === region ? 'bg-green-600' : 'bg-gray-200'}`}
+            >
+              <Text className={`text-sm ${selectedRegion === region ? 'font-semibold text-white' : 'text-gray-600'}`}>
+                {region}
               </Text>
             </Pressable>
           ))}
@@ -279,15 +279,61 @@ function FilterBottomSheet({
 }
 
 export default function SharedRouteScreen(): React.JSX.Element {
+  const route = useRoute();
+  const params = (route.params || {}) as SharedRouteParams;
+  const { addSavedCourse } = useMockData();
+
   const [activeTab, setActiveTab] = useState<TabId>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterVisible, setFilterVisible] = useState(false);
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
   const [selectedSort, setSelectedSort] = useState<string | null>(null);
+  const [viewingCourseId, setViewingCourseId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (params?.openFilter) setFilterVisible(true);
+    if (params?.openAsPopular) setSelectedSort('인기순');
+    if (params?.viewCourseId) setViewingCourseId(params.viewCourseId);
+  }, [params?.openFilter, params?.openAsPopular, params?.viewCourseId]);
+
+  const filteredCourses = useMemo(() => {
+    let list = [...MOCK_COURSES];
+
+    if (activeTab === 'date') list = list.filter((c) => c.category === '데이트');
+    else if (activeTab === 'friends') list = list.filter((c) => c.category === '친구모임');
+    else if (activeTab === 'popular') list = [...list].sort((a, b) => b.views - a.views);
+
+    if (selectedCategory) list = list.filter((c) => c.category === selectedCategory);
+    if (selectedRegion) list = list.filter((c) => c.region === selectedRegion);
+
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      list = list.filter(
+        (c) =>
+          c.title.toLowerCase().includes(q) ||
+          c.meta.toLowerCase().includes(q) ||
+          c.departure.toLowerCase().includes(q) ||
+          c.arrival.toLowerCase().includes(q)
+      );
+    }
+
+    if (selectedSort === '인기순') list = [...list].sort((a, b) => b.views - a.views);
+    else if (selectedSort === '최신순') list = [...list].sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
+    else if (selectedSort === '조회순') list = [...list].sort((a, b) => b.views - a.views);
+    else if (selectedSort === '거리순' || selectedSort === '추천순' || selectedSort === '저장순') {
+      list = [...list].sort((a, b) => b.views - a.views);
+    }
+
+    return list;
+  }, [activeTab, searchQuery, selectedCategory, selectedRegion, selectedSort]);
 
   const handleCategoryToggle = (cat: string) => {
     setSelectedCategory((prev) => (prev === cat ? null : cat));
+  };
+  const handleRegionToggle = (region: string) => {
+    setSelectedRegion((prev) => (prev === region ? null : region));
   };
   const handleSortToggle = (opt: string) => {
     setSelectedSort((prev) => (prev === opt ? null : opt));
@@ -296,7 +342,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
       {/* 헤더 배너 - 이미지 배경 + 내부 흐림(오버레이) */}
-      <View className="overflow-hidden rounded-b-2xl">
+      <View className="overflow-hidden">
         <ImageBackground
           source={require('../assets/banner.jpg')}
           resizeMode="cover"
@@ -391,7 +437,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
 
       {/* 코스 리스트 */}
       <FlatList<CourseItem>
-        data={MOCK_COURSES}
+        data={filteredCourses}
         keyExtractor={(item: CourseItem) => item.id}
         renderItem={({ item }: { item: CourseItem }) => (
           <CourseCard
@@ -401,12 +447,13 @@ export default function SharedRouteScreen(): React.JSX.Element {
               setExpandedCardId((prev) => (prev === item.id ? null : item.id))
             }
             onAddToMyRoute={() => {
+              addSavedCourse(item.id);
               setExpandedCardId(null);
-              // TODO: 내 루트에 추가 API/네비게이션
+              Alert.alert('추가됨', '내 루트에 추가되었습니다.');
             }}
             onView={() => {
               setExpandedCardId(null);
-              // TODO: 코스 상세 보기 화면 이동
+              setViewingCourseId(item.id);
             }}
           />
         )}
@@ -418,17 +465,150 @@ export default function SharedRouteScreen(): React.JSX.Element {
         visible={filterVisible}
         onClose={() => setFilterVisible(false)}
         selectedCategory={selectedCategory}
+        selectedRegion={selectedRegion}
         selectedSort={selectedSort}
         onCategoryToggle={handleCategoryToggle}
+        onRegionToggle={handleRegionToggle}
         onSortToggle={handleSortToggle}
         onReset={() => {
           setSelectedCategory(null);
+          setSelectedRegion(null);
           setSelectedSort(null);
         }}
         onApply={() => {
           // 실제 적용 시 필터 상태로 API 호출 등
         }}
       />
+
+      {/* 코스 상세 보기 모달 */}
+      <Modal
+        visible={!!viewingCourseId}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setViewingCourseId(null)}
+      >
+        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+          <Pressable
+            style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' }}
+            onPress={() => setViewingCourseId(null)}
+          />
+          <View
+            className="rounded-t-3xl bg-white"
+            style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 24, maxHeight: '75%' }}
+          >
+            {viewingCourseId && (() => {
+              const course = MOCK_COURSES.find((c) => c.id === viewingCourseId);
+              if (!course) return null;
+
+              const hours = (course.overallDurationMinutes / 60).toFixed(1);
+
+              return (
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  <View className="mb-4 flex-row items-center justify-between">
+                    <Text className="text-xl font-bold text-gray-900">코스 상세</Text>
+                    <Pressable onPress={() => setViewingCourseId(null)} hitSlop={12}>
+                      <Ionicons name="close" size={28} color="#374151" />
+                    </Pressable>
+                  </View>
+
+                  <Text className="mb-1 text-base font-semibold text-gray-900">{course.title}</Text>
+                  <Text className="mb-2 text-sm text-gray-500">{course.meta}</Text>
+
+                  <View className="mb-3 flex-row flex-wrap items-center gap-2">
+                    <View className="rounded-full bg-gray-100 px-3 py-1">
+                      <Text className="text-xs text-gray-700">{course.category}</Text>
+                    </View>
+                    <View className="rounded-full bg-gray-100 px-3 py-1">
+                      <Text className="text-xs text-gray-700">{course.region}</Text>
+                    </View>
+                    <View className="rounded-full bg-blue-50 px-3 py-1">
+                      <Text className="text-xs text-blue-700">예상 소요 약 {hours}시간</Text>
+                    </View>
+                    <View className="rounded-full bg-yellow-50 px-3 py-1">
+                      <Text className="text-xs text-yellow-700">
+                        ★ {course.rating.toFixed(1)} ({course.reviewCount}명)
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text className="mb-4 text-xs text-gray-400">
+                    이용자들이 실제로 코스를 다녀온 기록을 기반으로 한 대략적인 체류 시간입니다.
+                  </Text>
+
+                  {/* 출발/도착 요약 */}
+                  <View className="mb-6 rounded-xl bg-gray-50 p-3">
+                    <View className="flex-row items-center">
+                      <View className="rounded bg-green-100 px-2 py-1">
+                        <Text className="text-xs font-medium text-green-700">출발</Text>
+                      </View>
+                      <Text className="ml-2 flex-1 text-sm text-gray-900">{course.departure}</Text>
+                    </View>
+                    <View className="mt-2 flex-row items-center">
+                      <View className="rounded bg-red-100 px-2 py-1">
+                        <Text className="text-xs font-medium text-red-700">도착</Text>
+                      </View>
+                      <Text className="ml-2 flex-1 text-sm text-gray-900">{course.arrival}</Text>
+                    </View>
+                  </View>
+
+                  {/* 경로 단계별 체류 시간 */}
+                  <Text className="mb-2 text-sm font-semibold text-gray-900">코스 경로</Text>
+                  <View className="mb-6 rounded-xl bg-gray-50 p-3">
+                    {course.routeSteps.map((step, index) => (
+                      <View
+                        key={step.id}
+                        className="flex-row items-start py-1.5"
+                        style={index > 0 ? { borderTopWidth: 1, borderTopColor: '#e5e7eb' } : null}
+                      >
+                        <Text className="mt-0.5 w-5 text-xs font-semibold text-gray-500">
+                          {index + 1}.
+                        </Text>
+                        <View className="flex-1">
+                          <Text className="text-sm font-medium text-gray-900">{step.name}</Text>
+                          <Text className="mt-0.5 text-xs text-gray-500">
+                            평균 머문 시간 약 {step.stayMinutes}분
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+
+                  {/* 이용자 후기 */}
+                  <Text className="mb-2 text-sm font-semibold text-gray-900">이용자 후기</Text>
+                  {course.reviews.length === 0 ? (
+                    <View className="mb-2 rounded-xl bg-gray-50 p-3">
+                      <Text className="text-xs text-gray-500">
+                        아직 등록된 후기가 없습니다. 코스를 다녀온 후 첫 후기를 남겨 보세요.
+                      </Text>
+                    </View>
+                  ) : (
+                    <View className="mb-2 rounded-xl bg-gray-50 p-3">
+                      {course.reviews.map((review) => (
+                        <View key={review.id} className="mb-3 last:mb-0">
+                          <View className="flex-row items-center justify-between">
+                            <Text className="text-sm font-semibold text-gray-900">
+                              {review.userName}
+                            </Text>
+                            <Text className="text-xs text-yellow-600">
+                              ★ {review.rating.toFixed(1)}
+                            </Text>
+                          </View>
+                          <Text className="mt-1 text-xs text-gray-700">{review.text}</Text>
+                          <Text className="mt-0.5 text-[11px] text-gray-400">{review.date}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
+                  <Text className="mt-1 text-[11px] text-gray-400">
+                    추후에는 실제 이용자가 직접 후기를 남기고, 댓글로 소통할 수 있도록 확장될 예정입니다.
+                  </Text>
+                </ScrollView>
+              );
+            })()}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
