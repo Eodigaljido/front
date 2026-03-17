@@ -4,6 +4,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 
+import { MockDataProvider } from './context/MockDataContext';
 import HomeScreen from './screens/HomeScreen';
 import SharedRouteScreen from './screens/SharedRouteScreen';
 import MyRouteScreen from './screens/MyRouteScreen';
@@ -12,7 +13,7 @@ import AllScreen from './screens/AllScreen';
 
 export type RootTabParamList = {
   Home: undefined;
-  SharedRoute: undefined;
+  SharedRoute: { openFilter?: boolean; openAsPopular?: boolean; viewCourseId?: string } | undefined;
   MyRoute: undefined;
   Chat: undefined;
   All: undefined;
@@ -22,8 +23,9 @@ const Tab = createBottomTabNavigator<RootTabParamList>();
 
 export default function App(): React.JSX.Element {
   return (
-    <NavigationContainer>
-      <StatusBar style="auto" />
+    <MockDataProvider>
+      <NavigationContainer>
+        <StatusBar style="auto" />
       <Tab.Navigator
         screenOptions={({ route }) => ({
           tabBarIcon: ({ focused }) => {
@@ -74,12 +76,13 @@ export default function App(): React.JSX.Element {
           },
         })}
       >
-        <Tab.Screen name="Home" component={HomeScreen} options={{ title: '홈', tabBarLabel: '홈' }} />
+        <Tab.Screen name="Home" component={HomeScreen} options={{ headerShown: false, title: '홈', tabBarLabel: '홈' }} />
         <Tab.Screen name="SharedRoute" component={SharedRouteScreen} options={{ headerShown: false, title: '공유 루트', tabBarLabel: '공유 루트' }} />
         <Tab.Screen name="MyRoute" component={MyRouteScreen} options={{ title: '내 루트', tabBarLabel: '내 루트' }} />
         <Tab.Screen name="Chat" component={ChatScreen} options={{ title: '채팅', tabBarLabel: '채팅' }} />
         <Tab.Screen name="All" component={AllScreen} options={{ title: '전체', tabBarLabel: '전체' }} />
       </Tab.Navigator>
-    </NavigationContainer>
+      </NavigationContainer>
+    </MockDataProvider>
   );
 }
