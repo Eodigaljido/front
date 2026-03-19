@@ -5,8 +5,8 @@ import {
   Text,
   ScrollView,
   Pressable,
-  StyleSheet,
   Dimensions,
+  ImageBackground,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -34,6 +34,40 @@ const CARD_STYLE = {
   elevation: 3,
 };
 
+const SOFT_CARD_STYLE = {
+  backgroundColor: '#f3f4f6',
+  borderRadius: 18,
+  padding: 16,
+  borderWidth: 1,
+  borderColor: 'rgba(0,0,0,0.04)',
+};
+
+function SectionHeader({
+  title,
+  actionLabel,
+  onPressAction,
+}: {
+  title: string;
+  actionLabel?: string;
+  onPressAction?: () => void;
+}) {
+  return (
+    <View className="flex-row items-center justify-between">
+      <Text className="text-lg font-extrabold text-gray-900">{title}</Text>
+      {actionLabel ? (
+        <Pressable hitSlop={12} onPress={onPressAction}>
+          <View className="flex-row items-center">
+            <Text className="text-sm font-semibold text-blue-600">{actionLabel}</Text>
+            <Ionicons name="chevron-forward" size={16} color="#2563eb" />
+          </View>
+        </Pressable>
+      ) : (
+        <View />
+      )}
+    </View>
+  );
+}
+
 export default function HomeScreen(): React.JSX.Element {
   const navigation = useNavigation<HomeNavProp>();
   const { savedCourseIds, publicCourseIds } = useMockData();
@@ -49,91 +83,69 @@ export default function HomeScreen(): React.JSX.Element {
           paddingHorizontal: HORIZONTAL_MARGIN,
         }}
       >
-        {/* 현재 위치 카드 */}
-        <Pressable style={[CARD_STYLE, { marginTop: 16 }]}>
-          <View className="flex-row items-center">
-            <View
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 22,
-                backgroundColor: "#e5e7eb",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Ionicons name="location" size={22} color="#ef4444" />
+        {/* 히어로 배너 */}
+        <View className="mt-4 overflow-hidden rounded-3xl">
+          <ImageBackground
+            source={require('../assets/banner.jpg')}
+            resizeMode="cover"
+            style={{ width: '100%', minHeight: 132 }}
+            imageStyle={{ opacity: 0.95 }}
+          >
+            <View className="px-5 pb-5 pt-5" style={{ minHeight: 132 }}>
+              <View className="flex-row items-center justify-between">
+                <View className="flex-row items-center">
+                  <View className="h-9 w-9 items-center justify-center rounded-xl bg-white/15">
+                    <Ionicons name="navigate" size={18} color="#fff" />
+                  </View>
+                  <View className="ml-3">
+                    <Text className="text-xs text-white/80">현재 위치</Text>
+                    <Text className="mt-0.5 text-lg font-extrabold text-white">마포구 홍대입구</Text>
+                  </View>
+                </View>
+                <Pressable
+                  onPress={() => {}}
+                  className="rounded-full bg-white/15 px-3 py-2"
+                  style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
+                >
+                  <Text className="text-xs font-semibold text-white">변경</Text>
+                </Pressable>
+              </View>
             </View>
-            <View className="ml-3 flex-1">
-              <Text className="text-xs text-gray-500">현재 위치</Text>
-              <Text className="mt-0.5 text-base font-bold text-gray-900">
-                마포구 홍대입구
-              </Text>
-              <Text className="mt-1 text-xs text-gray-500">
-                오늘 주변 인기 코스 3개 · 이벤트 5개
-              </Text>
-            </View>
-            <Pressable hitSlop={12}>
-              <Text className="text-sm font-medium text-blue-500">변경</Text>
-            </Pressable>
-          </View>
-        </Pressable>
+          </ImageBackground>
+        </View>
 
-        {/* 저장한 코스 카드 */}
-        <Pressable
-          style={[CARD_STYLE, { marginTop: 12 }]}
-          onPress={() => navigation.navigate("MyRoute")}
-        >
-          <View className="flex-row items-center">
-            <View
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 22,
-                backgroundColor: "#dbeafe",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Ionicons name="layers-outline" size={22} color="#2563eb" />
+        {/* 코스 통계 카드 */}
+        <View style={{ flexDirection: 'row', gap: 12, marginTop: 12 }}>
+          <Pressable
+            style={[CARD_STYLE, { flex: 1, padding: 14 }]}
+            onPress={() => navigation.navigate("MyRoute")}
+          >
+            <View className="flex-row items-center justify-between">
+              <View className="rounded-2xl bg-blue-50 p-2.5">
+                <Ionicons name="layers-outline" size={20} color="#2563eb" />
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#cbd5e1" />
             </View>
-            <View className="ml-3 flex-1">
-              <Text className="text-sm text-gray-600">저장한 코스</Text>
-              <Text className="text-lg font-bold text-blue-600">
-                {savedCourseIds.length}개
-              </Text>
-            </View>
-            <Text className="text-sm font-medium text-gray-900">전체 보기</Text>
-          </View>
-        </Pressable>
+            <Text className="mt-3 text-xs font-semibold text-gray-500">저장한 코스</Text>
+            <Text className="mt-1 text-2xl font-extrabold text-gray-900">{savedCourseIds.length}</Text>
+            <Text className="mt-0.5 text-xs text-gray-500">전체 보기</Text>
+          </Pressable>
 
-        {/* 공개한 코스 카드 */}
-        <Pressable
-          style={[CARD_STYLE, { marginTop: 12 }]}
-          onPress={() => navigation.navigate("SharedRoute")}
-        >
-          <View className="flex-row items-center">
-            <View
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 22,
-                backgroundColor: "#dbeafe",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Ionicons name="layers-outline" size={22} color="#2563eb" />
+          <Pressable
+            style={[CARD_STYLE, { flex: 1, padding: 14 }]}
+            onPress={() => navigation.navigate('SharedRoute')}
+          >
+            <View className="flex-row items-center justify-between">
+              <View className="rounded-2xl bg-emerald-50 p-2.5">
+                <Ionicons name="paper-plane" size={20} color="#059669" />
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#cbd5e1" />
             </View>
-            <View className="ml-3 flex-1">
-              <Text className="text-sm text-gray-600">공개한 코스</Text>
-              <Text className="text-lg font-bold text-blue-600">
-                {publicCourseIds.length}개
-              </Text>
-            </View>
-            <Text className="text-sm font-medium text-gray-900">전체 보기</Text>
-          </View>
-        </Pressable>
+            <Text className="mt-3 text-xs font-semibold text-gray-500">공개한 코스</Text>
+            <Text className="mt-1 text-2xl font-extrabold text-gray-900">{publicCourseIds.length}</Text>
+            <Text className="mt-0.5 text-xs text-gray-500">전체 보기</Text>
+          </Pressable>
+        </View>
 
         {/* 최근 채팅 */}
         <View style={{ marginTop: 28 }}>
@@ -146,7 +158,7 @@ export default function HomeScreen(): React.JSX.Element {
           {MOCK_CHAT_ROOMS.length === 0 ? (
             <View
               style={[
-                CARD_STYLE,
+                SOFT_CARD_STYLE,
                 {
                   marginTop: 12,
                   minHeight: 160,
@@ -258,6 +270,8 @@ export default function HomeScreen(): React.JSX.Element {
             ))}
           </ScrollView>
         </View>
+
+        <View style={{ height: 10 }} />
       </ScrollView>
     </SafeAreaView>
   );
