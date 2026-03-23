@@ -26,6 +26,7 @@ export type RootTabParamList = {
     | { openFilter?: boolean; openAsPopular?: boolean; viewCourseId?: string }
     | undefined;
   MyRoute: undefined;
+  Map: undefined;
   Chat: undefined;
   All: undefined;
 
@@ -79,6 +80,7 @@ function TabNavigator() {
             GenderOnBoard: "gender onboard",
             OnBoardEnd: "onboard end",
             ChatRoomScreen: "chatroom",
+            Map: "Map",
           };
           return (
             <Ionicons
