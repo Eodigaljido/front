@@ -1,21 +1,34 @@
 import React from "react";
-import { View, Text, Image, TouchableOpacity } from "react-native";
+import { View, Text, Image, TouchableOpacity, Dimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
 import type { RootStackParamList } from "../../App";
 
-import rooti_map_onboard from "../../assets/onboard/rooti_run_onboard.png";
+import rooti_run_onboard from "../../assets/onboard/rooti_run_onboard.png";
+
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 export default function OnBoardEnd(): React.JSX.Element {
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={["top"]}>
       <View className="flex-1 justify-center items-center px-6">
         <View className="items-center">
-          <View className="flex-row justify-center items-center mb-6">
-            <Image source={rooti_map_onboard} className="w-64 h-64 mx-2" />
+          <View className="flex-row justify-center items-center mb-6 overflow-hidden w-screen">
+            <Image
+              source={rooti_run_onboard}
+              className="w-64 h-64"
+              style={{ marginLeft: -(SCREEN_WIDTH * 0.25) }}
+            />
+            <Image source={rooti_run_onboard} className="w-64 h-64 mx-4" />
+            <Image
+              source={rooti_run_onboard}
+              className="w-64 h-64"
+              style={{ marginRight: -(SCREEN_WIDTH * 0.25) }}
+            />
           </View>
 
           <Text className="text-3xl font-bold text-gray-800 mb-4">

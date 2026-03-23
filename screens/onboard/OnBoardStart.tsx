@@ -1,8 +1,10 @@
 import React from "react";
-import { View, Text, Image, TouchableOpacity } from "react-native";
+import { View, Text, Image, TouchableOpacity, Dimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
+
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 import rooti_map_onboard from "../../assets/onboard/rooti_map_onboard.png";
 
@@ -19,8 +21,18 @@ export default function OnBoardStart(): React.JSX.Element {
     <SafeAreaView className="flex-1 bg-white" edges={["top"]}>
       <View className="flex-1 justify-center items-center px-6">
         <View className="items-center">
-          <View className="flex-row justify-center items-center mb-6">
-            <Image source={rooti_map_onboard} className="w-64 h-64 mx-2" />
+          <View className="flex-row justify-center items-center mb-6 overflow-hidden w-screen">
+            <Image
+              source={rooti_map_onboard}
+              className="w-64 h-64"
+              style={{ marginLeft: -(SCREEN_WIDTH * 0.25) }}
+            />
+            <Image source={rooti_map_onboard} className="w-64 h-64 mx-4" />
+            <Image
+              source={rooti_map_onboard}
+              className="w-64 h-64"
+              style={{ marginRight: -(SCREEN_WIDTH * 0.25) }}
+            />
           </View>
 
           <Text className="text-3xl font-bold text-gray-800 mb-4">
