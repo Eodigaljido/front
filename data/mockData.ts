@@ -241,6 +241,41 @@ export const MOCK_COURSES: CourseItem[] = [
   },
 ];
 
+/** 코스별 지도 중심 좌표 (목 데이터 · 추후 API로 대체) */
+const DEFAULT_MAP_CENTER = { lat: 37.5665, lng: 126.978 };
+const COURSE_MAP_CENTER: Record<string, { lat: number; lng: number }> = {
+  '1': { lat: 35.8714, lng: 128.6014 },
+  '2': { lat: 37.2636, lng: 127.0286 },
+  '3': { lat: 35.8714, lng: 128.6014 },
+  '4': { lat: 37.5563, lng: 126.9236 },
+  '5': { lat: 37.498, lng: 127.0276 },
+  '6': { lat: 35.1587, lng: 129.1604 },
+  '7': { lat: 37.4484, lng: 126.6264 },
+  '8': { lat: 36.3504, lng: 127.3845 },
+};
+
+export function getCourseMapCenter(courseId: string): { lat: number; lng: number } {
+  return COURSE_MAP_CENTER[courseId] ?? DEFAULT_MAP_CENTER;
+}
+
+/** 경로 단계 클릭 시 이동할 임시 좌표 (코스 중심 기준 오프셋) */
+const STEP_DELTAS = [
+  { lat: 0, lng: 0 },
+  { lat: 0.0012, lng: -0.0011 },
+  { lat: -0.0014, lng: 0.0013 },
+  { lat: 0.0018, lng: 0.0016 },
+  { lat: -0.0019, lng: -0.0015 },
+];
+
+export function getCourseStepMapPoint(courseId: string, stepIndex: number): { lat: number; lng: number } {
+  const base = getCourseMapCenter(courseId);
+  const delta = STEP_DELTAS[stepIndex % STEP_DELTAS.length];
+  return {
+    lat: base.lat + delta.lat,
+    lng: base.lng + delta.lng,
+  };
+}
+
 /** 주변 인기 코스용 (조회수 상위) - 홈에서 사용 */
 export function getPopularNearbyCourses(limit = 5): CourseItem[] {
   return [...MOCK_COURSES].sort((a, b) => b.views - a.views).slice(0, limit);
