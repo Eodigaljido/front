@@ -1,0 +1,12 @@
+declare module "*.png";
+declare module "*.jpg";
+declare module "*.jpeg";
+declare module "*.svg";
+declare module "*.ttf";
+declare module "*.otf";
+declare module "*.woff";
+declare module "*.woff2";
+declare module "*.json";
+declare module "*.js";
+declare module "*.ts";
+declare module "*.tsx";
