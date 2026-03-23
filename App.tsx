@@ -10,11 +10,13 @@ import SharedRouteScreen from './screens/SharedRouteScreen';
 import MyRouteScreen from './screens/MyRouteScreen';
 import ChatScreen from './screens/ChatScreen';
 import AllScreen from './screens/AllScreen';
+import MapScreen from './screens/MapScreen-Test';
 
 export type RootTabParamList = {
   Home: undefined;
   SharedRoute: { openFilter?: boolean; openAsPopular?: boolean; viewCourseId?: string } | undefined;
   MyRoute: undefined;
+  Map: undefined;
   Chat: undefined;
   All: undefined;
 };
@@ -33,6 +35,7 @@ export default function App(): React.JSX.Element {
               Home: 'home',
               SharedRoute: 'paper-plane',
               MyRoute: 'map',
+              Map: 'navigate-outline',
               Chat: 'chatbubble',
               All: 'menu',
             };
@@ -78,8 +81,9 @@ export default function App(): React.JSX.Element {
       >
         <Tab.Screen name="Home" component={HomeScreen} options={{ headerShown: false, title: '홈', tabBarLabel: '홈' }} />
         <Tab.Screen name="SharedRoute" component={SharedRouteScreen} options={{ headerShown: false, title: '공유 루트', tabBarLabel: '공유 루트' }} />
-        <Tab.Screen name="MyRoute" component={MyRouteScreen} options={{ title: '내 루트', tabBarLabel: '내 루트' }} />
-        <Tab.Screen name="Chat" component={ChatScreen} options={{ title: '채팅', tabBarLabel: '채팅' }} />
+        <Tab.Screen name="MyRoute" component={MyRouteScreen} options={{ headerShown: false, title: '내 루트', tabBarLabel: '내 루트' }} />
+        {/* <Tab.Screen name="Map" component={MapScreen} options={{ headerShown: false, title: '지도', tabBarLabel: '지도' }} /> */}
+        <Tab.Screen name="Chat" component={ChatScreen} options={{ headerShown: false, title: '채팅', tabBarLabel: '채팅' }} />
         <Tab.Screen name="All" component={AllScreen} options={{ title: '전체', tabBarLabel: '전체' }} />
       </Tab.Navigator>
       </NavigationContainer>
