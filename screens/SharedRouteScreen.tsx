@@ -17,8 +17,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { MOCK_COURSES, type CourseItem } from '../data/mockData';
+import { MOCK_COURSES, getCourseMapCenter, getCourseStepMapPoint, type CourseItem } from '../data/mockData';
 import { useMockData } from '../context/MockDataContext';
+import KakaoMapWebView from '../components/KakaoMapWebView';
 
 type SharedRouteParams = {
   openFilter?: boolean;
@@ -291,12 +292,24 @@ export default function SharedRouteScreen(): React.JSX.Element {
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
   const [selectedSort, setSelectedSort] = useState<string | null>(null);
   const [viewingCourseId, setViewingCourseId] = useState<string | null>(null);
+  const [mapFocus, setMapFocus] = useState<{ lat: number; lng: number } | null>(null);
+  const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
 
   useEffect(() => {
     if (params?.openFilter) setFilterVisible(true);
     if (params?.openAsPopular) setSelectedSort('인기순');
     if (params?.viewCourseId) setViewingCourseId(params.viewCourseId);
   }, [params?.openFilter, params?.openAsPopular, params?.viewCourseId]);
+
+  useEffect(() => {
+    if (!viewingCourseId) {
+      setMapFocus(null);
+      setSelectedStepId(null);
+      return;
+    }
+    setMapFocus(getCourseMapCenter(viewingCourseId));
+    setSelectedStepId(null);
+  }, [viewingCourseId]);
 
   const filteredCourses = useMemo(() => {
     let list = [...MOCK_COURSES];
@@ -487,28 +500,87 @@ export default function SharedRouteScreen(): React.JSX.Element {
         animationType="slide"
         onRequestClose={() => setViewingCourseId(null)}
       >
-        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        <View style={{ flex: 1 }}>
+          {/* 2층: 회색 배경 레이어 */}
+          <View
+            pointerEvents="none"
+            style={[
+              StyleSheet.absoluteFillObject,
+              { backgroundColor: 'rgba(107,114,128,0.45)' },
+            ]}
+          />
           <Pressable
-            style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' }}
+            style={StyleSheet.absoluteFillObject}
             onPress={() => setViewingCourseId(null)}
           />
+
+          {/* 1층: 지도 + 상세 시트 */}
+          <View style={{ flex: 1, justifyContent: 'flex-end' }}>
           <View
-            className="rounded-t-3xl bg-white"
-            style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 24, maxHeight: '75%' }}
+            className="overflow-hidden rounded-t-3xl"
+            style={{ maxHeight: '82%', backgroundColor: '#0f172a' }}
           >
             {viewingCourseId && (() => {
               const course = MOCK_COURSES.find((c) => c.id === viewingCourseId);
               if (!course) return null;
 
               const hours = (course.overallDurationMinutes / 60).toFixed(1);
+              const mapCenter = mapFocus ?? getCourseMapCenter(course.id);
 
               return (
-                <ScrollView showsVerticalScrollIndicator={false}>
+                <>
+                  {/* 상단: 어두운 영역 + 지도 */}
+                  <View
+                    style={{
+                      backgroundColor: '#0f172a',
+                      paddingHorizontal: 0,
+                      paddingTop: 14,
+                      paddingBottom: 14,
+                      borderTopLeftRadius: 24,
+                      borderTopRightRadius: 24,
+                      overflow: 'hidden',
+                      borderBottomWidth: StyleSheet.hairlineWidth,
+                      borderBottomColor: '#1e293b',
+                    }}
+                  >
+                    <View className="mb-2 flex-row items-center justify-between px-4">
+                      <Text className="text-sm font-semibold text-white/90">코스 위치</Text>
+                      <Pressable onPress={() => setViewingCourseId(null)} hitSlop={12}>
+                        <Ionicons name="close" size={26} color="#e2e8f0" />
+                      </Pressable>
+                    </View>
+                    <View
+                      style={{
+                        height: 200,
+                        marginHorizontal: 10,
+                        borderRadius: 14,
+                        overflow: 'hidden',
+                        backgroundColor: '#0f172a',
+                        borderWidth: 2,
+                        borderColor: '#0f172a',
+                      }}
+                    >
+                      <KakaoMapWebView
+                        key={`${mapCenter.lat}-${mapCenter.lng}`}
+                        latitude={mapCenter.lat}
+                        longitude={mapCenter.lng}
+                        level={4}
+                        style={{ width: '100%', height: 200 }}
+                      />
+                    </View>
+                    <Text className="mt-2 px-4 text-[11px] text-slate-400">
+                      대략적인 중심 위치입니다
+                    </Text>
+                  </View>
+
+                  <ScrollView
+                    showsVerticalScrollIndicator={false}
+                    className="bg-white"
+                    contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 28 }}
+                  >
                   <View className="mb-4 flex-row items-center justify-between">
                     <Text className="text-xl font-bold text-gray-900">코스 상세</Text>
-                    <Pressable onPress={() => setViewingCourseId(null)} hitSlop={12}>
-                      <Ionicons name="close" size={28} color="#374151" />
-                    </Pressable>
+                    <View style={{ width: 28 }} />
                   </View>
 
                   <Text className="mb-1 text-base font-semibold text-gray-900">{course.title}</Text>
@@ -555,10 +627,17 @@ export default function SharedRouteScreen(): React.JSX.Element {
                   <Text className="mb-2 text-sm font-semibold text-gray-900">코스 경로</Text>
                   <View className="mb-6 rounded-xl bg-gray-50 p-3">
                     {course.routeSteps.map((step, index) => (
-                      <View
+                      <Pressable
                         key={step.id}
+                        onPress={() => {
+                          setMapFocus(getCourseStepMapPoint(course.id, index));
+                          setSelectedStepId(step.id);
+                        }}
                         className="flex-row items-start py-1.5"
-                        style={index > 0 ? { borderTopWidth: 1, borderTopColor: '#e5e7eb' } : null}
+                        style={[
+                          index > 0 ? { borderTopWidth: 1, borderTopColor: '#e5e7eb' } : null,
+                          selectedStepId === step.id ? { backgroundColor: 'rgba(59,130,246,0.08)', borderRadius: 8 } : null,
+                        ]}
                       >
                         <Text className="mt-0.5 w-5 text-xs font-semibold text-gray-500">
                           {index + 1}.
@@ -569,7 +648,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
                             평균 머문 시간 약 {step.stayMinutes}분
                           </Text>
                         </View>
-                      </View>
+                      </Pressable>
                     ))}
                   </View>
 
@@ -604,8 +683,10 @@ export default function SharedRouteScreen(): React.JSX.Element {
                     추후에는 실제 이용자가 직접 후기를 남기고, 댓글로 소통할 수 있도록 확장될 예정입니다.
                   </Text>
                 </ScrollView>
+                </>
               );
             })()}
+          </View>
           </View>
         </View>
       </Modal>
