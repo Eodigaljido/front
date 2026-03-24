@@ -1,5 +1,12 @@
-import React from "react";
-import { View, Text, Image, TouchableOpacity, Dimensions } from "react-native";
+import React, { useEffect } from "react";
+import {
+  View,
+  Text,
+  Image,
+  TouchableOpacity,
+  Dimensions,
+  BackHandler, // 뒤로가기 방지
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
@@ -12,6 +19,15 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 export default function OnBoardEnd(): React.JSX.Element {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+
+  // 뒤로가기 방지
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => true,
+    );
+    return () => backHandler.remove();
+  }, []);
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={["top"]}>
