@@ -1,5 +1,6 @@
 import React from 'react';
 import { StatusBar } from 'expo-status-bar';
+import { View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -30,7 +31,7 @@ export default function App(): React.JSX.Element {
         <StatusBar style="auto" />
       <Tab.Navigator
         screenOptions={({ route }) => ({
-          tabBarIcon: ({ focused }) => {
+          tabBarIcon: ({ focused, color }) => {
             const icons: Record<keyof RootTabParamList, string> = {
               Home: 'home',
               SharedRoute: 'paper-plane',
@@ -40,27 +41,41 @@ export default function App(): React.JSX.Element {
               All: 'menu',
             };
             return (
-              <Ionicons
-                name={icons[route.name]}
-                size={24}
-                color={focused ? '#007AFF' : '#000'}
-              />
+              <View
+                style={{
+                  backgroundColor: focused ? 'rgba(0,122,255,0.12)' : 'transparent',
+                  minWidth: 36,
+                  minHeight: 30,
+                  paddingHorizontal: 8,
+                  paddingVertical: 4,
+                  borderRadius: 12,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Ionicons
+                  name={icons[route.name]}
+                  size={20}
+                  color={color}
+                />
+              </View>
             );
           },
           tabBarActiveTintColor: '#007AFF',
-          tabBarInactiveTintColor: '#000',
+          tabBarInactiveTintColor: '#6b7280',
           tabBarStyle: {
             position: 'absolute',
             width: '88%',
             alignSelf: 'center',
             bottom: 24,
             marginHorizontal: '6%',
-            height: 72,
-            paddingTop: 8,
+            height: 74,
+            paddingTop: 10,
             paddingBottom: 8,
             backgroundColor: '#fff',
             borderRadius: 28,
             borderTopWidth: 0,
+            overflow: 'visible',
             shadowColor: '#000',
             shadowOffset: { width: 0, height: 12 },
             shadowOpacity: 0.22,
@@ -75,7 +90,9 @@ export default function App(): React.JSX.Element {
             marginTop: 4,
           },
           tabBarItemStyle: {
-            paddingVertical: 6,
+            paddingVertical: 5,
+            justifyContent: 'center',
+            alignItems: 'center',
           },
         })}
       >
