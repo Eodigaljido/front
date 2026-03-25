@@ -9,6 +9,8 @@ import SharedRouteScreen from './screens/SharedRouteScreen';
 import MyRouteScreen from './screens/MyRouteScreen';
 import ChatScreen from './screens/ChatScreen';
 import AllScreen from './screens/AllScreen';
+import LoginScreen from './screens/LoginScreen';
+import SignupScreen from './screens/SignupScreen';
 
 export type RootTabParamList = {
   Home: undefined;
@@ -16,6 +18,8 @@ export type RootTabParamList = {
   MyRoute: undefined;
   Chat: undefined;
   All: undefined;
+  Login: undefined;
+  Signup: undefined;
 };
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
@@ -25,6 +29,7 @@ export default function App(): React.JSX.Element {
     <NavigationContainer>
       <StatusBar style="auto" />
       <Tab.Navigator
+        initialRouteName="Home"
         screenOptions={({ route }) => ({
           tabBarIcon: ({ focused }) => {
             const icons: Record<keyof RootTabParamList, string> = {
@@ -33,13 +38,11 @@ export default function App(): React.JSX.Element {
               MyRoute: 'map',
               Chat: 'chatbubble',
               All: 'menu',
+              Login: 'log-in',
+              Signup: 'person-add',
             };
             return (
-              <Ionicons
-                name={icons[route.name]}
-                size={24}
-                color={focused ? '#007AFF' : '#000'}
-              />
+              <Ionicons name={icons[route.name]} size={24} color={focused ? '#007AFF' : '#000'} />
             );
           },
           tabBarActiveTintColor: '#007AFF',
@@ -74,11 +77,52 @@ export default function App(): React.JSX.Element {
           },
         })}
       >
-        <Tab.Screen name="Home" component={HomeScreen} options={{ title: '홈', tabBarLabel: '홈' }} />
-        <Tab.Screen name="SharedRoute" component={SharedRouteScreen} options={{ headerShown: false, title: '공유 루트', tabBarLabel: '공유 루트' }} />
-        <Tab.Screen name="MyRoute" component={MyRouteScreen} options={{ title: '내 루트', tabBarLabel: '내 루트' }} />
-        <Tab.Screen name="Chat" component={ChatScreen} options={{ title: '채팅', tabBarLabel: '채팅' }} />
-        <Tab.Screen name="All" component={AllScreen} options={{ title: '전체', tabBarLabel: '전체' }} />
+        <Tab.Screen
+          name="Home"
+          component={HomeScreen}
+          options={{ title: '홈', tabBarLabel: '홈' }}
+        />
+        <Tab.Screen
+          name="SharedRoute"
+          component={SharedRouteScreen}
+          options={{ headerShown: false, title: '공유 루트', tabBarLabel: '공유 루트' }}
+        />
+        <Tab.Screen
+          name="MyRoute"
+          component={MyRouteScreen}
+          options={{ title: '내 루트', tabBarLabel: '내 루트' }}
+        />
+        <Tab.Screen
+          name="Chat"
+          component={ChatScreen}
+          options={{ title: '채팅', tabBarLabel: '채팅' }}
+        />
+        <Tab.Screen
+          name="All"
+          component={AllScreen}
+          options={{ title: '전체', tabBarLabel: '전체' }}
+        />
+        <Tab.Screen
+          name="Login"
+          component={LoginScreen}
+          options={{
+            headerShown: false,
+            tabBarStyle: { display: 'none' },
+            title: '로그인',
+            tabBarLabel: '로그인',
+          }}
+        />
+        <Tab.Screen
+          name="Signup"
+          component={SignupScreen}
+          options={{
+            headerShown: false,
+            headerPressOpacity: 0.3,
+            tabBarStyle: { display: 'none' },
+            title: '회원가입',
+            tabBarLabel: '회원가입',
+          }}
+        />
       </Tab.Navigator>
     </NavigationContainer>
   );
