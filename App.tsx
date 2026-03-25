@@ -18,7 +18,7 @@ import ActivityOnBoard from "./screens/onboard/ActivityOnBoard";
 import GenderOnBoard from "./screens/onboard/GenderOnBoard";
 import OnBoardEnd from "./screens/onboard/OnBoardEnd";
 import { ChatRoomScreen } from "./screens/ChatRoomScreen";
-import ChatHomeScreen from "./screens/ChatHomeScreen";
+import ChatHomeScreen from "./screens/chat/ChatHomeScreen";
 
 export type RootTabParamList = {
   Home: undefined;
