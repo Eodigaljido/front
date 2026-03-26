@@ -101,7 +101,7 @@ export default function App(): React.JSX.Element {
         <Tab.Screen name="MyRoute" component={MyRouteScreen} options={{ headerShown: false, title: '내 루트', tabBarLabel: '내 루트' }} />
         {/* <Tab.Screen name="Map" component={MapScreen} options={{ headerShown: false, title: '지도', tabBarLabel: '지도' }} /> */}
         <Tab.Screen name="Chat" component={ChatScreen} options={{ headerShown: false, title: '채팅', tabBarLabel: '채팅' }} />
-        <Tab.Screen name="All" component={AllScreen} options={{ title: '전체', tabBarLabel: '전체' }} />
+        <Tab.Screen name="All" component={AllScreen} options={{ headerShown: false, title: '전체', tabBarLabel: '전체' }} />
       </Tab.Navigator>
       </NavigationContainer>
     </MockDataProvider>
