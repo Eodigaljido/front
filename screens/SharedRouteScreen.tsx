@@ -13,6 +13,7 @@ import {
   StyleSheet,
   Animated,
   Alert,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute } from '@react-navigation/native';
@@ -175,26 +176,63 @@ function FilterBottomSheet({
   onReset: () => void;
   onApply: () => void;
 }) {
+  const sheetOffY = useMemo(
+    () => Math.min(420, Dimensions.get('window').height * 0.5),
+    []
+  );
   const backdropOpacity = useRef(new Animated.Value(0)).current;
+  const sheetTranslateY = useRef(new Animated.Value(sheetOffY)).current;
+  const [renderModal, setRenderModal] = useState(false);
 
   useEffect(() => {
+    if (visible) setRenderModal(true);
+  }, [visible]);
+
+  useEffect(() => {
+    if (!renderModal) return;
     if (visible) {
-      Animated.timing(backdropOpacity, {
-        toValue: 1,
-        duration: 280,
-        useNativeDriver: true,
-      }).start();
-    } else {
+      sheetTranslateY.setValue(sheetOffY);
       backdropOpacity.setValue(0);
+      const id = requestAnimationFrame(() => {
+        Animated.parallel([
+          Animated.timing(backdropOpacity, {
+            toValue: 1,
+            duration: 220,
+            useNativeDriver: true,
+          }),
+          Animated.spring(sheetTranslateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            friction: 9,
+            tension: 68,
+          }),
+        ]).start();
+      });
+      return () => cancelAnimationFrame(id);
     }
-  }, [visible, backdropOpacity]);
+    Animated.parallel([
+      Animated.timing(backdropOpacity, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+      Animated.timing(sheetTranslateY, {
+        toValue: sheetOffY,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) setRenderModal(false);
+    });
+  }, [visible, renderModal, sheetOffY]);
 
   return (
     <Modal
-      visible={visible}
+      visible={renderModal}
       transparent
-      animationType="slide"
+      animationType="none"
       statusBarTranslucent
+      onRequestClose={onClose}
     >
       <View style={{ flex: 1, justifyContent: 'flex-end' }}>
         <Animated.View
@@ -208,6 +246,11 @@ function FilterBottomSheet({
         >
           <Pressable style={{ flex: 1 }} onPress={onClose} />
         </Animated.View>
+        <Animated.View
+          style={{
+            transform: [{ translateY: sheetTranslateY }],
+          }}
+        >
         <View className="rounded-t-3xl bg-gray-100 pb-8 pt-5" style={{ paddingHorizontal: 20 }}>
         <Text className="mb-4 text-xl font-bold text-black">필터</Text>
 
@@ -274,6 +317,7 @@ function FilterBottomSheet({
           </Pressable>
         </View>
         </View>
+        </Animated.View>
       </View>
     </Modal>
   );
@@ -294,6 +338,62 @@ export default function SharedRouteScreen(): React.JSX.Element {
   const [viewingCourseId, setViewingCourseId] = useState<string | null>(null);
   const [mapFocus, setMapFocus] = useState<{ lat: number; lng: number } | null>(null);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
+  const [detailModalMounted, setDetailModalMounted] = useState(false);
+  const detailBackdropOpacity = useRef(new Animated.Value(0)).current;
+  const detailSheetTranslateY = useRef(new Animated.Value(500)).current;
+  const detailSheetOffY = useMemo(
+    () => Math.min(520, Dimensions.get('window').height * 0.6),
+    []
+  );
+  const viewingCourseIdRef = useRef<string | null>(null);
+  viewingCourseIdRef.current = viewingCourseId;
+
+  useEffect(() => {
+    if (viewingCourseId) setDetailModalMounted(true);
+  }, [viewingCourseId]);
+
+  useEffect(() => {
+    if (!(detailModalMounted && viewingCourseId)) return;
+    detailSheetTranslateY.setValue(detailSheetOffY);
+    detailBackdropOpacity.setValue(0);
+    const id = requestAnimationFrame(() => {
+      Animated.parallel([
+        Animated.timing(detailBackdropOpacity, {
+          toValue: 1,
+          duration: 220,
+          useNativeDriver: true,
+        }),
+        Animated.spring(detailSheetTranslateY, {
+          toValue: 0,
+          useNativeDriver: true,
+          friction: 9,
+          tension: 68,
+        }),
+      ]).start();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [viewingCourseId, detailModalMounted, detailSheetOffY]);
+
+  const closeCourseDetail = () => {
+    if (!viewingCourseIdRef.current) return;
+    Animated.parallel([
+      Animated.timing(detailBackdropOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(detailSheetTranslateY, {
+        toValue: detailSheetOffY,
+        duration: 230,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) {
+        setViewingCourseId(null);
+        setDetailModalMounted(false);
+      }
+    });
+  };
 
   useEffect(() => {
     if (params?.openFilter) setFilterVisible(true);
@@ -493,32 +593,42 @@ export default function SharedRouteScreen(): React.JSX.Element {
         }}
       />
 
-      {/* 코스 상세 보기 모달 */}
+      {/* 코스 상세 보기 모달 — 배경은 페이드, 시트만 슬라이드 (Modal slide는 백드롭까지 같이 움직임) */}
       <Modal
-        visible={!!viewingCourseId}
+        visible={detailModalMounted}
         transparent
-        animationType="slide"
-        onRequestClose={() => setViewingCourseId(null)}
+        animationType="none"
+        onRequestClose={closeCourseDetail}
       >
         <View style={{ flex: 1 }}>
-          {/* 2층: 회색 배경 레이어 */}
-          <View
-            pointerEvents="none"
+          <Animated.View
             style={[
               StyleSheet.absoluteFillObject,
-              { backgroundColor: 'rgba(107,114,128,0.45)' },
+              {
+                opacity: detailBackdropOpacity,
+              },
             ]}
-          />
-          <Pressable
-            style={StyleSheet.absoluteFillObject}
-            onPress={() => setViewingCourseId(null)}
-          />
+          >
+            <Pressable
+              style={[
+                StyleSheet.absoluteFillObject,
+                { backgroundColor: 'rgba(107,114,128,0.45)' },
+              ]}
+              onPress={closeCourseDetail}
+            />
+          </Animated.View>
 
-          {/* 1층: 지도 + 상세 시트 */}
-          <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+          <View style={{ flex: 1, justifyContent: 'flex-end' }} pointerEvents="box-none">
+          <Animated.View
+            style={{
+              width: '100%',
+              maxHeight: '82%',
+              transform: [{ translateY: detailSheetTranslateY }],
+            }}
+          >
           <View
             className="overflow-hidden rounded-t-3xl"
-            style={{ maxHeight: '82%', backgroundColor: '#0f172a' }}
+            style={{ maxHeight: '100%', backgroundColor: '#0f172a' }}
           >
             {viewingCourseId && (() => {
               const course = MOCK_COURSES.find((c) => c.id === viewingCourseId);
@@ -545,7 +655,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
                   >
                     <View className="mb-2 flex-row items-center justify-between px-4">
                       <Text className="text-sm font-semibold text-white/90">코스 위치</Text>
-                      <Pressable onPress={() => setViewingCourseId(null)} hitSlop={12}>
+                      <Pressable onPress={closeCourseDetail} hitSlop={12}>
                         <Ionicons name="close" size={26} color="#e2e8f0" />
                       </Pressable>
                     </View>
@@ -687,6 +797,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
               );
             })()}
           </View>
+          </Animated.View>
           </View>
         </View>
       </Modal>
