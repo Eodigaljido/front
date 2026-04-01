@@ -12,7 +12,8 @@ import ChatScreen from './screens/ChatScreen';
 import AllScreen from './screens/AllScreen';
 import LoginScreen from './screens/LoginScreen';
 import SignupScreen from './screens/SignupScreen';
-import MapScreen from './screens/MapScreen-Test';
+import StartScreen from './screens/StartScreen';
+// import MapScreen from './screens/MapScreen-Test';
 
 export type RootTabParamList = {
   Home: undefined;
@@ -23,6 +24,7 @@ export type RootTabParamList = {
   All: undefined;
   Login: undefined;
   Signup: undefined;
+  Start: undefined;
 };
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
@@ -45,6 +47,7 @@ export default function App(): React.JSX.Element {
                 All: 'menu',
                 Login: 'log-in',
                 Signup: 'person-add',
+                Start: 'rocket',
               };
               return (
                 <Ionicons name={icons[route.name]} size={24} color={focused ? '#007AFF' : '#000'} />
@@ -123,10 +126,19 @@ export default function App(): React.JSX.Element {
             component={SignupScreen}
             options={{
               headerShown: false,
-              headerPressOpacity: 0.3,
               tabBarStyle: { display: 'none' },
               title: '회원가입',
               tabBarLabel: '회원가입',
+            }}
+          />
+          <Tab.Screen
+            name="Start"
+            component={StartScreen}
+            options={{
+              headerShown: false,
+              tabBarStyle: { display: 'none' },
+              title: '시작',
+              tabBarLabel: '시작',
             }}
           />
         </Tab.Navigator>
