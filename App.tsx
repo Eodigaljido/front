@@ -1,6 +1,7 @@
 import React from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { NavigationContainer } from '@react-navigation/native';
+import { View } from 'react-native';
+import { NavigationContainer, getFocusedRouteNameFromRoute } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -28,6 +29,28 @@ export type RootTabParamList = {
 };
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
+
+const TAB_BAR_STYLE = {
+  position: 'absolute' as const,
+  width: '88%' as const,
+  alignSelf: 'center' as const,
+  bottom: 24,
+  marginHorizontal: '6%' as const,
+  height: 74,
+  paddingTop: 10,
+  paddingBottom: 8,
+  backgroundColor: '#fff',
+  borderRadius: 28,
+  borderTopWidth: 0,
+  overflow: 'visible' as const,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 12 },
+  shadowOpacity: 0.22,
+  shadowRadius: 24,
+  borderWidth: 1,
+  borderColor: 'rgba(0,0,0,0.06)',
+  elevation: 24,
+};
 
 export default function App(): React.JSX.Element {
   return (
