@@ -134,7 +134,7 @@ export default function App(): React.JSX.Element {
             component={AllScreen}
             options={{ title: '전체', tabBarLabel: '전체' }}
           />
-          <Tab.Screen
+          {/* <Tab.Screen
             name="Login"
             component={LoginScreen}
             options={{
@@ -163,7 +163,7 @@ export default function App(): React.JSX.Element {
               title: '시작',
               tabBarLabel: '시작',
             }}
-          />
+          /> */}
         </Tab.Navigator>
       </NavigationContainer>
     </MockDataProvider>
