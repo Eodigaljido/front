@@ -22,14 +22,14 @@ export default function ChatScreen(): React.JSX.Element {
   if (MOCK_CHAT_ROOMS.length === 0) {
     return (
       <SafeAreaView className="flex-1 bg-white" edges={['top']}>
-        <View className="flex-1 items-center justify-center px-8">
-          <View className="rounded-full bg-gray-100 p-6">
+        <View className="items-center justify-center flex-1 px-8">
+          <View className="p-6 bg-gray-100 rounded-full">
             <Ionicons name="chatbubbles-outline" size={48} color="#9ca3af" />
           </View>
-          <Text className="mt-4 text-center text-lg font-semibold text-gray-700">
+          <Text className="mt-4 text-lg font-semibold text-center text-gray-700">
             채팅이 없습니다
           </Text>
-          <Text className="mt-2 text-center text-sm text-gray-500">
+          <Text className="mt-2 text-sm text-center text-gray-500">
             코스를 공유하고 대화를 나눠 보세요.
           </Text>
         </View>
@@ -39,12 +39,9 @@ export default function ChatScreen(): React.JSX.Element {
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
-      <View className="border-b border-gray-100 px-4 py-3">
-        <Text className="text-lg font-bold text-gray-900">채팅</Text>
-      </View>
       <FlatList
         data={MOCK_CHAT_ROOMS}
-        keyExtractor={(item) => item.id}
+        keyExtractor={item => item.id}
         contentContainerStyle={{ paddingTop: 12, paddingBottom: 100 }}
         renderItem={({ item }) => (
           <Pressable style={CARD_STYLE}>
