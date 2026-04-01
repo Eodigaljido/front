@@ -1,48 +1,209 @@
 // @ts-nocheck
-import React, { useMemo } from 'react';
-import { View, Text, Pressable, FlatList, Alert } from 'react-native';
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  ScrollView,
+  Pressable,
+  Modal,
+  Image,
+  FlatList,
+  ImageBackground,
+  StyleSheet,
+  Alert,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
-import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
-import type { RootTabParamList } from '../App';
 import { Ionicons } from '@expo/vector-icons';
+import { MOCK_COURSES, getCourseMapCenter, getCourseStepMapPoint, type CourseItem } from '../data/mockData';
 import { useMockData } from '../context/MockDataContext';
-import { MOCK_COURSES, type CourseItem } from '../data/mockData';
-
-type MyRouteNavProp = BottomTabNavigationProp<RootTabParamList, 'MyRoute'>;
+import KakaoMapWebView from '../components/KakaoMapWebView';
+import FilterBottomSheet from '../components/FilterBottomSheet';
 
 const CARD_STYLE = {
-  backgroundColor: '#fff',
-  borderRadius: 16,
-  padding: 16,
-  marginHorizontal: 16,
-  marginBottom: 12,
   shadowColor: '#000',
   shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.06,
+  shadowOpacity: 0.08,
   shadowRadius: 8,
   elevation: 3,
 };
 
+function CourseCard({
+  item,
+  onPressCard,
+  onRemove,
+}: {
+  item: CourseItem;
+  onPressCard: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <View className="mx-4 mb-3 overflow-hidden rounded-2xl bg-white" style={CARD_STYLE}>
+      <Pressable
+        onPress={onPressCard}
+        style={({ pressed }) => ({ opacity: pressed ? 0.96 : 1 })}
+      >
+        {/* 상단: 썸네일 + 제목/메타 + 삭제 아이콘 */}
+        <View className="flex-row border-b border-gray-100 p-3.5">
+          <View className="h-[80px] w-[80px] shrink-0 overflow-hidden rounded-xl bg-gray-100">
+            {item.thumbnail ? (
+              <Image source={{ uri: item.thumbnail }} className="h-full w-full" resizeMode="cover" />
+            ) : (
+              <View className="h-full w-full items-center justify-center bg-gray-100">
+                <Ionicons name="image-outline" size={28} color="#d1d5db" />
+              </View>
+            )}
+          </View>
+          <View className="ml-3 flex-1 min-w-0 justify-center">
+            <Text className="text-[15px] font-semibold leading-snug text-gray-900" numberOfLines={2}>
+              {item.title}
+            </Text>
+            <Text className="mt-1 text-xs text-gray-500">{item.meta}</Text>
+          </View>
+          <Pressable onPress={onRemove} className="justify-center pl-1" hitSlop={8}>
+            <Ionicons name="trash-outline" size={22} color="#ef4444" />
+          </Pressable>
+        </View>
+
+        {/* 경로 안내 */}
+        <View className="flex-row items-center px-3.5 py-2.5">
+          <View className="rounded-md bg-green-500 px-2 py-1">
+            <Text className="text-[11px] font-semibold text-white">출발</Text>
+          </View>
+          <Text className="ml-2 text-[13px] text-gray-900" numberOfLines={1}>
+            {item.departure}
+          </Text>
+          <View className="mx-2 h-3 w-px bg-gray-300" />
+          <View className="rounded-md bg-red-500 px-2 py-1">
+            <Text className="text-[11px] font-semibold text-white">도착</Text>
+          </View>
+          <Text className="ml-2 flex-1 text-[13px] text-gray-900" numberOfLines={1}>
+            {item.arrival}
+          </Text>
+        </View>
+      </Pressable>
+    </View>
+  );
+}
+
 export default function MyRouteScreen(): React.JSX.Element {
-  const navigation = useNavigation<MyRouteNavProp>();
   const { savedCourseIds, removeSavedCourse } = useMockData();
 
-  const savedCourses = useMemo(
-    () => MOCK_COURSES.filter(c => savedCourseIds.includes(c.id)),
-    [savedCourseIds],
-  );
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterVisible, setFilterVisible] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
+  const [selectedSort, setSelectedSort] = useState<string | null>(null);
+  const [viewingCourseId, setViewingCourseId] = useState<string | null>(null);
+  const [mapFocus, setMapFocus] = useState<{ lat: number; lng: number } | null>(null);
+  const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!viewingCourseId) {
+      setMapFocus(null);
+      setSelectedStepId(null);
+      return;
+    }
+    setMapFocus(getCourseMapCenter(viewingCourseId));
+    setSelectedStepId(null);
+  }, [viewingCourseId]);
+
+  const filteredCourses = useMemo(() => {
+    let list = MOCK_COURSES.filter(c => savedCourseIds.includes(c.id));
+
+    if (selectedCategory) list = list.filter(c => c.category === selectedCategory);
+    if (selectedRegion) list = list.filter(c => c.region === selectedRegion);
+
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      list = list.filter(
+        c =>
+          c.title.toLowerCase().includes(q) ||
+          c.meta.toLowerCase().includes(q) ||
+          c.departure.toLowerCase().includes(q) ||
+          c.arrival.toLowerCase().includes(q),
+      );
+    }
+
+    if (selectedSort === '인기순' || selectedSort === '조회순') {
+      list = [...list].sort((a, b) => b.views - a.views);
+    } else if (selectedSort === '최신순') {
+      list = [...list].sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
+    }
+
+    return list;
+  }, [savedCourseIds, searchQuery, selectedCategory, selectedRegion, selectedSort]);
 
   const handleRemove = (item: CourseItem) => {
     Alert.alert('저장 삭제', `"${item.title}" 코스를 저장 목록에서 삭제할까요?`, [
       { text: '취소', style: 'cancel' },
-      { text: '삭제', style: 'destructive', onPress: () => removeSavedCourse(item.id) },
+      {
+        text: '삭제',
+        style: 'destructive',
+        onPress: () => {
+          removeSavedCourse(item.id);
+          if (viewingCourseId === item.id) setViewingCourseId(null);
+        },
+      },
     ]);
   };
 
-  if (savedCourses.length === 0) {
-    return (
-      <SafeAreaView className="flex-1 bg-white" edges={['top']}>
+  return (
+    <SafeAreaView className="flex-1 bg-white" edges={['top']}>
+      {/* 헤더 배너 */}
+      <View className="overflow-hidden">
+        <ImageBackground
+          source={require('../assets/banner-water.png')}
+          resizeMode="cover"
+          style={{ width: '100%', minHeight: 100 }}
+          imageStyle={{ opacity: 0.9 }}
+        >
+          <View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.35)' }} />
+          <View className="px-5 pb-5 pt-2 flex-row items-center" style={{ zIndex: 1, minHeight: 100 }}>
+            <Text className="text-2xl font-bold text-white">내 코스</Text>
+            <View
+              style={{
+                width: 1,
+                height: 30,
+                backgroundColor: 'rgba(255,255,255,0.9)',
+                marginHorizontal: 16,
+              }}
+            />
+            <View className="flex-1 justify-center">
+              <Text className="text-sm text-white opacity-95">나만의 경로를 짜고</Text>
+              <Text className="mt-0.5 text-sm text-white opacity-95">동선을 파악해 보아요!</Text>
+            </View>
+          </View>
+        </ImageBackground>
+      </View>
+
+      {/* 검색 + 필터 */}
+      <View className="flex-row items-center gap-2 border-b border-gray-100 px-4 py-3">
+        <View className="flex-1 flex-row items-center rounded-xl bg-gray-100 px-4 py-2.5">
+          <Ionicons name="search-outline" size={20} color="#9ca3af" />
+          <TextInput
+            placeholder="루트 이름, 장소 검색"
+            placeholderTextColor="#9ca3af"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            className="ml-2 flex-1 text-base text-gray-800"
+          />
+        </View>
+        <Pressable
+          onPress={() => setFilterVisible(true)}
+          className="h-10 w-10 items-center justify-center rounded-xl bg-gray-100"
+        >
+          <Ionicons name="options-outline" size={22} color="#374151" />
+        </Pressable>
+      </View>
+
+      {/* 저장 코스 수 */}
+      <View className="px-4 py-2.5 border-b border-gray-100">
+        <Text className="text-sm text-gray-500">{filteredCourses.length}개의 코스를 저장했어요</Text>
+      </View>
+
+      {/* 코스 리스트 */}
+      {filteredCourses.length === 0 ? (
         <View className="items-center justify-center flex-1 px-8">
           <View className="p-6 bg-gray-100 rounded-full">
             <Ionicons name="bookmark-outline" size={48} color="#9ca3af" />
@@ -53,58 +214,232 @@ export default function MyRouteScreen(): React.JSX.Element {
           <Text className="mt-2 text-sm text-center text-gray-500">
             공유 루트에서 마음에 드는 코스를 저장해 보세요.
           </Text>
-          <Pressable
-            onPress={() => navigation.navigate('SharedRoute')}
-            className="px-6 py-3 mt-6 bg-blue-500 rounded-xl"
-          >
-            <Text className="font-medium text-white">공유 루트 보기</Text>
-          </Pressable>
         </View>
-      </SafeAreaView>
-    );
-  }
+      ) : (
+        <FlatList<CourseItem>
+          data={filteredCourses}
+          keyExtractor={item => item.id}
+          renderItem={({ item }) => (
+            <CourseCard
+              item={item}
+              onPressCard={() => setViewingCourseId(item.id)}
+              onRemove={() => handleRemove(item)}
+            />
+          )}
+          contentContainerStyle={{ paddingTop: 8, paddingBottom: 100 }}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
 
-  return (
-    <SafeAreaView className="flex-1 bg-white" edges={['top']}>
-      <View className="px-4 py-3 border-b border-gray-100">
-        <Text className="text-lg font-bold text-gray-900">저장한 코스</Text>
-        <Text className="mt-0.5 text-sm text-gray-500">
-          {savedCourses.length}개의 코스를 저장했어요
-        </Text>
-      </View>
-      <FlatList<CourseItem>
-        data={savedCourses}
-        keyExtractor={item => item.id}
-        contentContainerStyle={{ paddingTop: 12, paddingBottom: 100 }}
-        renderItem={({ item }) => (
-          <View style={CARD_STYLE}>
-            <View className="flex-row items-start justify-between">
-              <View className="flex-1 min-w-0">
-                <Text className="text-base font-semibold text-gray-900" numberOfLines={2}>
-                  {item.title}
-                </Text>
-                <Text className="mt-1 text-xs text-gray-500">{item.meta}</Text>
-                <View className="flex-row items-center gap-2 mt-2">
-                  <View className="rounded bg-green-100 px-2 py-0.5">
-                    <Text className="text-xs text-green-700">{item.departure}</Text>
-                  </View>
-                  <Ionicons name="arrow-forward" size={14} color="#9ca3af" />
-                  <View className="rounded bg-red-100 px-2 py-0.5">
-                    <Text className="text-xs text-red-700">{item.arrival}</Text>
-                  </View>
-                </View>
-              </View>
-              <Pressable
-                onPress={() => handleRemove(item)}
-                className="p-2 ml-2 bg-gray-100 rounded-lg"
-                hitSlop={8}
-              >
-                <Ionicons name="trash-outline" size={20} color="#ef4444" />
-              </Pressable>
+      <FilterBottomSheet
+        visible={filterVisible}
+        onClose={() => setFilterVisible(false)}
+        selectedCategory={selectedCategory}
+        selectedRegion={selectedRegion}
+        selectedSort={selectedSort}
+        onCategoryToggle={cat => setSelectedCategory(prev => (prev === cat ? null : cat))}
+        onRegionToggle={region => setSelectedRegion(prev => (prev === region ? null : region))}
+        onSortToggle={opt => setSelectedSort(prev => (prev === opt ? null : opt))}
+        onReset={() => {
+          setSelectedCategory(null);
+          setSelectedRegion(null);
+          setSelectedSort(null);
+        }}
+        onApply={() => {}}
+      />
+
+      {/* 코스 상세 보기 모달 */}
+      <Modal
+        visible={!!viewingCourseId}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setViewingCourseId(null)}
+      >
+        <View style={{ flex: 1 }}>
+          <View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(107,114,128,0.45)' }]}
+          />
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setViewingCourseId(null)} />
+
+          <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+            <View
+              className="overflow-hidden rounded-t-3xl"
+              style={{ maxHeight: '82%', backgroundColor: '#0f172a' }}
+            >
+              {viewingCourseId &&
+                (() => {
+                  const course = MOCK_COURSES.find(c => c.id === viewingCourseId);
+                  if (!course) return null;
+
+                  const hours = (course.overallDurationMinutes / 60).toFixed(1);
+                  const mapCenter = mapFocus ?? getCourseMapCenter(course.id);
+
+                  return (
+                    <>
+                      <View
+                        style={{
+                          backgroundColor: '#0f172a',
+                          paddingTop: 14,
+                          paddingBottom: 14,
+                          borderTopLeftRadius: 24,
+                          borderTopRightRadius: 24,
+                          overflow: 'hidden',
+                          borderBottomWidth: StyleSheet.hairlineWidth,
+                          borderBottomColor: '#1e293b',
+                        }}
+                      >
+                        <View className="mb-2 flex-row items-center justify-between px-4">
+                          <Text className="text-sm font-semibold text-white/90">코스 위치</Text>
+                          <Pressable onPress={() => setViewingCourseId(null)} hitSlop={12}>
+                            <Ionicons name="close" size={26} color="#e2e8f0" />
+                          </Pressable>
+                        </View>
+                        <View
+                          style={{
+                            height: 200,
+                            marginHorizontal: 10,
+                            borderRadius: 14,
+                            overflow: 'hidden',
+                            backgroundColor: '#0f172a',
+                            borderWidth: 2,
+                            borderColor: '#0f172a',
+                          }}
+                        >
+                          <KakaoMapWebView
+                            key={`${mapCenter.lat}-${mapCenter.lng}`}
+                            latitude={mapCenter.lat}
+                            longitude={mapCenter.lng}
+                            level={4}
+                            style={{ width: '100%', height: 200 }}
+                          />
+                        </View>
+                        <Text className="mt-2 px-4 text-[11px] text-slate-400">
+                          대략적인 중심 위치입니다
+                        </Text>
+                      </View>
+
+                      <ScrollView
+                        showsVerticalScrollIndicator={false}
+                        className="bg-white"
+                        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 28 }}
+                      >
+                        <View className="mb-4 flex-row items-center justify-between">
+                          <Text className="text-xl font-bold text-gray-900">코스 상세</Text>
+                          <Pressable
+                            onPress={() => {
+                              setViewingCourseId(null);
+                              handleRemove(course);
+                            }}
+                            className="flex-row items-center gap-1 rounded-xl bg-red-50 px-3 py-2"
+                          >
+                            <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                            <Text className="text-sm font-semibold text-red-500">저장 삭제</Text>
+                          </Pressable>
+                        </View>
+
+                        <Text className="mb-1 text-base font-semibold text-gray-900">{course.title}</Text>
+                        <Text className="mb-2 text-sm text-gray-500">{course.meta}</Text>
+
+                        <View className="mb-3 flex-row flex-wrap items-center gap-2">
+                          <View className="rounded-full bg-gray-100 px-3 py-1">
+                            <Text className="text-xs text-gray-700">{course.category}</Text>
+                          </View>
+                          <View className="rounded-full bg-gray-100 px-3 py-1">
+                            <Text className="text-xs text-gray-700">{course.region}</Text>
+                          </View>
+                          <View className="rounded-full bg-blue-50 px-3 py-1">
+                            <Text className="text-xs text-blue-700">예상 소요 약 {hours}시간</Text>
+                          </View>
+                          <View className="rounded-full bg-yellow-50 px-3 py-1">
+                            <Text className="text-xs text-yellow-700">
+                              ★ {course.rating.toFixed(1)} ({course.reviewCount}명)
+                            </Text>
+                          </View>
+                        </View>
+
+                        <Text className="mb-4 text-xs text-gray-400">
+                          이용자들이 실제로 코스를 다녀온 기록을 기반으로 한 대략적인 체류 시간입니다.
+                        </Text>
+
+                        <View className="mb-6 rounded-xl bg-gray-50 p-3">
+                          <View className="flex-row items-center">
+                            <View className="rounded bg-green-100 px-2 py-1">
+                              <Text className="text-xs font-medium text-green-700">출발</Text>
+                            </View>
+                            <Text className="ml-2 flex-1 text-sm text-gray-900">{course.departure}</Text>
+                          </View>
+                          <View className="mt-2 flex-row items-center">
+                            <View className="rounded bg-red-100 px-2 py-1">
+                              <Text className="text-xs font-medium text-red-700">도착</Text>
+                            </View>
+                            <Text className="ml-2 flex-1 text-sm text-gray-900">{course.arrival}</Text>
+                          </View>
+                        </View>
+
+                        <Text className="mb-2 text-sm font-semibold text-gray-900">코스 경로</Text>
+                        <View className="mb-6 rounded-xl bg-gray-50 p-3">
+                          {course.routeSteps.map((step, index) => (
+                            <Pressable
+                              key={step.id}
+                              onPress={() => {
+                                setMapFocus(getCourseStepMapPoint(course.id, index));
+                                setSelectedStepId(step.id);
+                              }}
+                              className="flex-row items-start py-1.5"
+                              style={[
+                                index > 0 ? { borderTopWidth: 1, borderTopColor: '#e5e7eb' } : null,
+                                selectedStepId === step.id
+                                  ? { backgroundColor: 'rgba(59,130,246,0.08)', borderRadius: 8 }
+                                  : null,
+                              ]}
+                            >
+                              <Text className="mt-0.5 w-5 text-xs font-semibold text-gray-500">
+                                {index + 1}.
+                              </Text>
+                              <View className="flex-1">
+                                <Text className="text-sm font-medium text-gray-900">{step.name}</Text>
+                                <Text className="mt-0.5 text-xs text-gray-500">
+                                  평균 머문 시간 약 {step.stayMinutes}분
+                                </Text>
+                              </View>
+                            </Pressable>
+                          ))}
+                        </View>
+
+                        <Text className="mb-2 text-sm font-semibold text-gray-900">이용자 후기</Text>
+                        {course.reviews.length === 0 ? (
+                          <View className="mb-2 rounded-xl bg-gray-50 p-3">
+                            <Text className="text-xs text-gray-500">
+                              아직 등록된 후기가 없습니다. 코스를 다녀온 후 첫 후기를 남겨 보세요.
+                            </Text>
+                          </View>
+                        ) : (
+                          <View className="mb-2 rounded-xl bg-gray-50 p-3">
+                            {course.reviews.map(review => (
+                              <View key={review.id} className="mb-3 last:mb-0">
+                                <View className="flex-row items-center justify-between">
+                                  <Text className="text-sm font-semibold text-gray-900">{review.userName}</Text>
+                                  <Text className="text-xs text-yellow-600">★ {review.rating.toFixed(1)}</Text>
+                                </View>
+                                <Text className="mt-1 text-xs text-gray-700">{review.text}</Text>
+                                <Text className="mt-0.5 text-[11px] text-gray-400">{review.date}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        )}
+
+                        <Text className="mt-1 text-[11px] text-gray-400">
+                          추후에는 실제 이용자가 직접 후기를 남기고, 댓글로 소통할 수 있도록 확장될 예정입니다.
+                        </Text>
+                      </ScrollView>
+                    </>
+                  );
+                })()}
             </View>
           </View>
-        )}
-      />
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

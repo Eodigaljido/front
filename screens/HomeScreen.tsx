@@ -114,7 +114,7 @@ export default function HomeScreen(): React.JSX.Element {
                   className="px-3 py-2 rounded-full bg-white/15"
                   style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
                 >
-                  <Text className="text-xs font-semibold text-white">변경</Text>
+                  <Text className="text-xs font-semibold text-white">갱신</Text>
                 </Pressable>
               </View>
 
