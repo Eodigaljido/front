@@ -11,9 +11,9 @@ import SharedRouteScreen from './screens/SharedRouteScreen';
 import MyRouteScreen from './screens/MyRouteScreen';
 import ChatScreen from './screens/ChatScreen';
 import AllScreen from './screens/AllScreen';
-import LoginScreen from './screens/LoginScreen';
-import SignupScreen from './screens/SignupScreen';
-import StartScreen from './screens/StartScreen';
+// import LoginScreen from './screens/LoginScreen';
+// import SignupScreen from './screens/SignupScreen';
+// import StartScreen from './screens/StartScreen';
 // import MapScreen from './screens/MapScreen-Test';
 
 export type RootTabParamList = {
