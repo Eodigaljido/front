@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
 import { NavigationContainer, getFocusedRouteNameFromRoute } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 
 import { MockDataProvider } from './context/MockDataContext';
@@ -11,6 +12,12 @@ import SharedRouteScreen from './screens/SharedRouteScreen';
 import MyRouteScreen from './screens/MyRouteScreen';
 import ChatScreen from './screens/ChatScreen';
 import AllScreen from './screens/AllScreen';
+import OnBoardStart from './screens/onboard/OnBoardStart';
+import AreaOnBoard from './screens/onboard/AreaOnBoard';
+import AgeOnBoard from './screens/onboard/AgeOnBoard';
+import ActivityOnBoard from './screens/onboard/ActivityOnBoard';
+import GenderOnBoard from './screens/onboard/GenderOnBoard';
+import OnBoardEnd from './screens/onboard/OnBoardEnd';
 // import LoginScreen from './screens/LoginScreen';
 // import SignupScreen from './screens/SignupScreen';
 // import StartScreen from './screens/StartScreen';
@@ -26,9 +33,32 @@ export type RootTabParamList = {
   Login: undefined;
   Signup: undefined;
   Start: undefined;
+
+  // 온보드 관련
+  OnBoardStart: undefined;
+  AreaOnBoard: undefined;
+  AgeOnBoard: undefined;
+  ActivityOnBoard: undefined;
+  GenderOnBoard: undefined;
+  OnBoardEnd: undefined;
+};
+
+export type RootStackParamList = {
+  Home: undefined;
+  Tabs: undefined;
+  HomeScreen: undefined;
+
+  // 온보드 관련
+  OnBoardStart: undefined;
+  AreaOnBoard: undefined;
+  AgeOnBoard: undefined;
+  ActivityOnBoard: undefined;
+  GenderOnBoard: undefined;
+  OnBoardEnd: undefined;
 };
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
+const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const TAB_BAR_STYLE = {
   position: 'absolute' as const,
@@ -52,7 +82,7 @@ const TAB_BAR_STYLE = {
   elevation: 24,
 };
 
-export default function App(): React.JSX.Element {
+function TabNavigator() {
   return (
     <MockDataProvider>
       <NavigationContainer>
@@ -68,6 +98,12 @@ export default function App(): React.JSX.Element {
                 Map: 'navigate-outline',
                 Chat: 'chatbubble',
                 All: 'menu',
+                OnBoardStart: 'onboard start',
+                AreaOnBoard: 'area onboard',
+                AgeOnBoard: 'age onboard',
+                ActivityOnBoard: 'activity onboard',
+                GenderOnBoard: 'gender onboard',
+                OnBoardEnd: 'onboard end',
                 Login: 'log-in',
                 Signup: 'person-add',
                 Start: 'rocket',
@@ -165,6 +201,26 @@ export default function App(): React.JSX.Element {
             }}
           /> */}
         </Tab.Navigator>
+      </NavigationContainer>
+    </MockDataProvider>
+  );
+}
+
+export default function App(): React.JSX.Element {
+  return (
+    <MockDataProvider>
+      <NavigationContainer>
+        <StatusBar style="auto" />
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="Tabs" component={TabNavigator} />
+          <Stack.Screen name="Home" component={HomeScreen} />
+          <Stack.Screen name="OnBoardStart" component={OnBoardStart} />
+          <Stack.Screen name="AreaOnBoard" component={AreaOnBoard} />
+          <Stack.Screen name="AgeOnBoard" component={AgeOnBoard} />
+          <Stack.Screen name="ActivityOnBoard" component={ActivityOnBoard} />
+          <Stack.Screen name="GenderOnBoard" component={GenderOnBoard} />
+          <Stack.Screen name="OnBoardEnd" component={OnBoardEnd} />
+        </Stack.Navigator>
       </NavigationContainer>
     </MockDataProvider>
   );
