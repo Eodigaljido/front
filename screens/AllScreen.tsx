@@ -119,7 +119,7 @@ export default function AllScreen(): React.JSX.Element {
               </View>
             </View>
             <Pressable
-              onPress={() => Alert.alert('프로필 설정', '프로필 설정 화면을 준비 중입니다.')}
+              onPress={() => navigation.navigate('ProfileSettings')}
               className="flex-row items-center active:opacity-80"
             >
               <Ionicons name="settings-outline" size={14} color="#111827" />
