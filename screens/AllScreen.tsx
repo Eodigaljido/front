@@ -1,5 +1,4 @@
 // @ts-nocheck
-// @ts-nocheck
 import React from 'react';
 import { View, Text, Pressable, Image, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -51,7 +50,8 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'location-outline',
       iconColor: '#9ca3af',
       iconBg: '#f3f4f6',
-      onPress: () => navigation.navigate('SharedRoute' as keyof RootTabParamList, { openAsPopular: true }),
+      onPress: () =>
+        navigation.navigate('SharedRoute' as keyof RootTabParamList, { openAsPopular: true }),
     },
   ];
 
@@ -89,7 +89,11 @@ export default function AllScreen(): React.JSX.Element {
           key={item.id}
           onPress={item.onPress}
           className="flex-row items-center py-4 active:opacity-80"
-          style={index !== items.length - 1 ? { borderBottomWidth: 1, borderBottomColor: '#f3f4f6' } : undefined}
+          style={
+            index !== items.length - 1
+              ? { borderBottomWidth: 1, borderBottomColor: '#f3f4f6' }
+              : undefined
+          }
         >
           <View
             className="items-center justify-center w-6 h-6 mr-3 rounded-md"
