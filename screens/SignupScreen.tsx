@@ -274,7 +274,7 @@ export default function SignupScreen() {
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
       <View
-        className="justify-center flex-1 px-6"
+        className="justify-center flex-1 px-10"
         contentContainerStyle={{ paddingBottom: 40 }}
         keyboardShouldPersistTaps="handled"
       >
@@ -355,7 +355,7 @@ export default function SignupScreen() {
                 onChangeText={text => handleChange('phone', text, setPhone)}
                 onBlur={() => handleBlur('phone', phone)}
                 placeholder="휴대전화(-제외)"
-                keyboardType="number-pad"
+                keyboardType="phone-pad"
                 className="flex-1 py-4"
               />
               <TouchableOpacity
