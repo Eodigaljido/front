@@ -172,7 +172,7 @@ function TabNavigator() {
         component={AllScreen}
         options={{ title: '전체', tabBarLabel: '전체' }}
       />
-      {/* <Tab.Screen
+      <Tab.Screen
         name="Login"
         component={LoginScreen}
         options={{
@@ -201,7 +201,7 @@ function TabNavigator() {
           title: '시작',
           tabBarLabel: '시작',
         }}
-      /> */}
+      />
     </Tab.Navigator>
   );
 }
