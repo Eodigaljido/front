@@ -15,9 +15,21 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { MOCK_COURSES, getCourseMapCenter, getCourseStepMapPoint, type CourseItem } from '../data/mockData';
+import { useNavigation } from '@react-navigation/native';
+import {
+  MOCK_COURSES,
+  getCourseMapCenter,
+  getCourseStepMapPoint,
+  type CourseItem,
+} from '../data/mockData';
+import {
+  userRouteToCourseItem,
+  userRouteMapPath,
+  userRouteMapCenter,
+  type UserSavedRoute,
+} from '../data/userSavedRoute';
 import { useMockData } from '../context/MockDataContext';
-import KakaoMapWebView from '../components/KakaoMapWebView';
+import AppMapView from '../components/AppMapView';
 import FilterBottomSheet from '../components/FilterBottomSheet';
 
 const CARD_STYLE = {
@@ -86,8 +98,15 @@ function CourseCard({
   );
 }
 
+function getUserRouteStepPoint(route: UserSavedRoute, stepIndex: number): { lat: number; lng: number } {
+  const s = route.stops[stepIndex];
+  if (s?.lat != null && s?.lng != null) return { lat: s.lat, lng: s.lng };
+  return userRouteMapCenter(route);
+}
+
 export default function MyRouteScreen(): React.JSX.Element {
-  const { savedCourseIds, removeSavedCourse } = useMockData();
+  const stackNav = useNavigation<any>();
+  const { savedCourseIds, removeSavedCourse, userSavedRoutes, deleteUserRoute } = useMockData();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterVisible, setFilterVisible] = useState(false);
@@ -108,16 +127,22 @@ export default function MyRouteScreen(): React.JSX.Element {
     setSelectedStepId(null);
   }, [viewingCourseId]);
 
-  const filteredCourses = useMemo(() => {
-    let list = MOCK_COURSES.filter(c => savedCourseIds.includes(c.id));
+  const mergedCourses = useMemo(() => {
+    const fromUser = userSavedRoutes.map(userRouteToCourseItem);
+    const fromMock = MOCK_COURSES.filter((c) => savedCourseIds.includes(c.id));
+    return [...fromUser, ...fromMock];
+  }, [userSavedRoutes, savedCourseIds]);
 
-    if (selectedCategory) list = list.filter(c => c.category === selectedCategory);
-    if (selectedRegion) list = list.filter(c => c.region === selectedRegion);
+  const filteredCourses = useMemo(() => {
+    let list = mergedCourses;
+
+    if (selectedCategory) list = list.filter((c) => c.category === selectedCategory);
+    if (selectedRegion) list = list.filter((c) => c.region === selectedRegion);
 
     const q = searchQuery.trim().toLowerCase();
     if (q) {
       list = list.filter(
-        c =>
+        (c) =>
           c.title.toLowerCase().includes(q) ||
           c.meta.toLowerCase().includes(q) ||
           c.departure.toLowerCase().includes(q) ||
@@ -132,7 +157,9 @@ export default function MyRouteScreen(): React.JSX.Element {
     }
 
     return list;
-  }, [savedCourseIds, searchQuery, selectedCategory, selectedRegion, selectedSort]);
+  }, [mergedCourses, searchQuery, selectedCategory, selectedRegion, selectedSort]);
+
+  const isUserSavedRouteId = (id: string) => userSavedRoutes.some((r) => r.id === id);
 
   const handleRemove = (item: CourseItem) => {
     Alert.alert('저장 삭제', `"${item.title}" 코스를 저장 목록에서 삭제할까요?`, [
@@ -141,11 +168,23 @@ export default function MyRouteScreen(): React.JSX.Element {
         text: '삭제',
         style: 'destructive',
         onPress: () => {
-          removeSavedCourse(item.id);
+          if (isUserSavedRouteId(item.id)) deleteUserRoute(item.id);
+          else removeSavedCourse(item.id);
           if (viewingCourseId === item.id) setViewingCourseId(null);
         },
       },
     ]);
+  };
+
+  const openRouteCreateEdit = (routeId: string, collaborative: boolean) => {
+    stackNav.getParent()?.navigate('RouteCreate', {
+      editRouteId: routeId,
+      collaborative,
+    });
+  };
+
+  const openRouteCreateFromMockCourse = (mockCourseId: string) => {
+    stackNav.getParent()?.navigate('RouteCreate', { seedMockCourseId: mockCourseId });
   };
 
   return (
@@ -173,6 +212,12 @@ export default function MyRouteScreen(): React.JSX.Element {
               <Text className="text-sm text-white opacity-95">나만의 경로를 짜고</Text>
               <Text className="mt-0.5 text-sm text-white opacity-95">동선을 파악해 보아요!</Text>
             </View>
+            <Pressable
+              onPress={() => stackNav.getParent()?.navigate('RouteCreate')}
+              className="rounded-xl bg-white/20 px-3 py-2 active:opacity-90"
+            >
+              <Text className="text-xs font-bold text-white">루트 제작</Text>
+            </Pressable>
           </View>
         </ImageBackground>
       </View>
@@ -212,7 +257,7 @@ export default function MyRouteScreen(): React.JSX.Element {
             저장한 코스가 없습니다
           </Text>
           <Text className="mt-2 text-sm text-center text-gray-500">
-            공유 루트에서 마음에 드는 코스를 저장해 보세요.
+            루트 제작에서 직접 저장하거나, 공유 루트에서 코스를 저장해 보세요.
           </Text>
         </View>
       ) : (
@@ -269,11 +314,29 @@ export default function MyRouteScreen(): React.JSX.Element {
             >
               {viewingCourseId &&
                 (() => {
-                  const course = MOCK_COURSES.find(c => c.id === viewingCourseId);
+                  const ur = userSavedRoutes.find((r) => r.id === viewingCourseId);
+                  const courseFromMock = MOCK_COURSES.find((c) => c.id === viewingCourseId);
+                  const course = courseFromMock ?? (ur ? userRouteToCourseItem(ur) : null);
                   if (!course) return null;
 
                   const hours = (course.overallDurationMinutes / 60).toFixed(1);
-                  const mapCenter = mapFocus ?? getCourseMapCenter(course.id);
+                  let pathPts: { latitude: number; longitude: number }[] | undefined;
+                  if (ur && userRouteMapPath(ur).length >= 1) {
+                    pathPts = userRouteMapPath(ur).map((p) => ({
+                      latitude: p.latitude,
+                      longitude: p.longitude,
+                    }));
+                  } else if (course.routeSteps.length >= 1) {
+                    pathPts = course.routeSteps.map((_, i) => {
+                      const p = getCourseStepMapPoint(course.id, i);
+                      return { latitude: p.lat, longitude: p.lng };
+                    });
+                  } else {
+                    pathPts = undefined;
+                  }
+                  const fallbackCenter = ur ? userRouteMapCenter(ur) : getCourseMapCenter(course.id);
+                  const mapCenter = mapFocus ?? fallbackCenter;
+                  const mapLevel = pathPts && pathPts.length >= 2 ? 5 : 4;
 
                   return (
                     <>
@@ -306,16 +369,25 @@ export default function MyRouteScreen(): React.JSX.Element {
                             borderColor: '#0f172a',
                           }}
                         >
-                          <KakaoMapWebView
-                            key={`${mapCenter.lat}-${mapCenter.lng}`}
+                          <AppMapView
+                            key={
+                              ur
+                                ? `ur-${ur.id}-${mapCenter.lat}-${mapCenter.lng}-${pathPts?.length ?? 0}`
+                                : `mc-${course.id}-${mapCenter.lat}-${mapCenter.lng}-${pathPts?.length ?? 0}`
+                            }
                             latitude={mapCenter.lat}
                             longitude={mapCenter.lng}
-                            level={4}
+                            level={mapLevel}
+                            path={pathPts && pathPts.length >= 1 ? pathPts : undefined}
                             style={{ width: '100%', height: 200 }}
                           />
                         </View>
                         <Text className="mt-2 px-4 text-[11px] text-slate-400">
-                          대략적인 중심 위치입니다
+                          {pathPts && pathPts.length >= 2
+                            ? ur
+                              ? '저장된 경로(목 데이터)를 표시합니다'
+                              : '공유 코스 경로(목 좌표)를 표시합니다'
+                            : '대략적인 중심 위치입니다'}
                         </Text>
                       </View>
 
@@ -324,8 +396,22 @@ export default function MyRouteScreen(): React.JSX.Element {
                         className="bg-white"
                         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 28 }}
                       >
-                        <View className="mb-4 flex-row items-center justify-between">
-                          <Text className="text-xl font-bold text-gray-900">코스 상세</Text>
+                        <View className="mb-4 flex-row flex-wrap items-center justify-end gap-2">
+                          <Text className="mr-auto text-xl font-bold text-gray-900">코스 상세</Text>
+                          <Pressable
+                            onPress={() => {
+                              setViewingCourseId(null);
+                              if (ur) {
+                                openRouteCreateEdit(ur.id, ur.collaborative === true);
+                              } else {
+                                openRouteCreateFromMockCourse(course.id);
+                              }
+                            }}
+                            className="flex-row items-center gap-1 rounded-xl bg-sky-50 px-3 py-2"
+                          >
+                            <Ionicons name="create-outline" size={16} color="#0284c7" />
+                            <Text className="text-sm font-semibold text-sky-600">수정</Text>
+                          </Pressable>
                           <Pressable
                             onPress={() => {
                               setViewingCourseId(null);
@@ -351,15 +437,19 @@ export default function MyRouteScreen(): React.JSX.Element {
                           <View className="rounded-full bg-blue-50 px-3 py-1">
                             <Text className="text-xs text-blue-700">예상 소요 약 {hours}시간</Text>
                           </View>
-                          <View className="rounded-full bg-yellow-50 px-3 py-1">
-                            <Text className="text-xs text-yellow-700">
-                              ★ {course.rating.toFixed(1)} ({course.reviewCount}명)
-                            </Text>
-                          </View>
+                          {course.rating > 0 || course.reviewCount > 0 ? (
+                            <View className="rounded-full bg-yellow-50 px-3 py-1">
+                              <Text className="text-xs text-yellow-700">
+                                ★ {course.rating.toFixed(1)} ({course.reviewCount}명)
+                              </Text>
+                            </View>
+                          ) : null}
                         </View>
 
                         <Text className="mb-4 text-xs text-gray-400">
-                          이용자들이 실제로 코스를 다녀온 기록을 기반으로 한 대략적인 체류 시간입니다.
+                          {ur
+                            ? '루트 제작 화면에서 저장한 목 데이터입니다. 편집으로 다시 수정할 수 있어요.'
+                            : '이용자들이 실제로 코스를 다녀온 기록을 기반으로 한 대략적인 체류 시간입니다.'}
                         </Text>
 
                         <View className="mb-6 rounded-xl bg-gray-50 p-3">
@@ -383,7 +473,8 @@ export default function MyRouteScreen(): React.JSX.Element {
                             <Pressable
                               key={step.id}
                               onPress={() => {
-                                setMapFocus(getCourseStepMapPoint(course.id, index));
+                                if (ur) setMapFocus(getUserRouteStepPoint(ur, index));
+                                else setMapFocus(getCourseStepMapPoint(course.id, index));
                                 setSelectedStepId(step.id);
                               }}
                               className="flex-row items-start py-1.5"
@@ -400,7 +491,9 @@ export default function MyRouteScreen(): React.JSX.Element {
                               <View className="flex-1">
                                 <Text className="text-sm font-medium text-gray-900">{step.name}</Text>
                                 <Text className="mt-0.5 text-xs text-gray-500">
-                                  평균 머문 시간 약 {step.stayMinutes}분
+                                  {ur
+                                    ? '저장된 정류장 (목)'
+                                    : `평균 머문 시간 약 ${step.stayMinutes}분`}
                                 </Text>
                               </View>
                             </Pressable>
@@ -411,12 +504,14 @@ export default function MyRouteScreen(): React.JSX.Element {
                         {course.reviews.length === 0 ? (
                           <View className="mb-2 rounded-xl bg-gray-50 p-3">
                             <Text className="text-xs text-gray-500">
-                              아직 등록된 후기가 없습니다. 코스를 다녀온 후 첫 후기를 남겨 보세요.
+                              {ur
+                                ? '직접 제작 루트에는 샘플 후기가 없습니다.'
+                                : '아직 등록된 후기가 없습니다. 코스를 다녀온 후 첫 후기를 남겨 보세요.'}
                             </Text>
                           </View>
                         ) : (
                           <View className="mb-2 rounded-xl bg-gray-50 p-3">
-                            {course.reviews.map(review => (
+                            {course.reviews.map((review) => (
                               <View key={review.id} className="mb-3 last:mb-0">
                                 <View className="flex-row items-center justify-between">
                                   <Text className="text-sm font-semibold text-gray-900">{review.userName}</Text>

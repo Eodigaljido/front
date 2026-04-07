@@ -20,7 +20,7 @@ import { useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { MOCK_COURSES, getCourseMapCenter, getCourseStepMapPoint, type CourseItem } from '../data/mockData';
 import { useMockData } from '../context/MockDataContext';
-import KakaoMapWebView from '../components/KakaoMapWebView';
+import AppMapView from '../components/AppMapView';
 import FilterBottomSheet, { CATEGORIES, REGIONS, SORT_OPTIONS } from '../components/FilterBottomSheet';
 
 type SharedRouteParams = {
@@ -497,7 +497,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
                         borderColor: '#0f172a',
                       }}
                     >
-                      <KakaoMapWebView
+                      <AppMapView
                         key={`${mapCenter.lat}-${mapCenter.lng}`}
                         latitude={mapCenter.lat}
                         longitude={mapCenter.lng}
