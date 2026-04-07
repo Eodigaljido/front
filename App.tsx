@@ -162,26 +162,26 @@ function TabNavigator() {
 export default function App(): React.JSX.Element {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-    <MockDataProvider>
-      <NavigationContainer>
-        <StatusBar style="auto" />
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="Tabs" component={TabNavigator} />
-          <Stack.Screen name="RouteCreate" component={RouteCreateScreen} />
-          <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
-          <Stack.Screen name="Home" component={HomeScreen} />
-          <Stack.Screen name="OnBoardStart" component={OnBoardStart} />
-          <Stack.Screen name="AreaOnBoard" component={AreaOnBoard} />
-          <Stack.Screen name="AgeOnBoard" component={AgeOnBoard} />
-          <Stack.Screen name="ActivityOnBoard" component={ActivityOnBoard} />
-          <Stack.Screen name="GenderOnBoard" component={GenderOnBoard} />
-          <Stack.Screen name="OnBoardEnd" component={OnBoardEnd} />
-          <Stack.Screen name="Login" component={LoginScreen} />
-          <Stack.Screen name="Signup" component={SignupScreen} />
-          <Stack.Screen name="Start" component={StartScreen} />
-        </Stack.Navigator>
-      </NavigationContainer>
-    </MockDataProvider>
+      <MockDataProvider>
+        <NavigationContainer>
+          <StatusBar style="auto" />
+          <Stack.Navigator screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="Tabs" component={TabNavigator} />
+            <Stack.Screen name="RouteCreate" component={RouteCreateScreen} />
+            <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
+            <Stack.Screen name="Home" component={HomeScreen} />
+            <Stack.Screen name="OnBoardStart" component={OnBoardStart} />
+            <Stack.Screen name="AreaOnBoard" component={AreaOnBoard} />
+            <Stack.Screen name="AgeOnBoard" component={AgeOnBoard} />
+            <Stack.Screen name="ActivityOnBoard" component={ActivityOnBoard} />
+            <Stack.Screen name="GenderOnBoard" component={GenderOnBoard} />
+            <Stack.Screen name="OnBoardEnd" component={OnBoardEnd} />
+            <Stack.Screen name="Login" component={LoginScreen} />
+            <Stack.Screen name="Signup" component={SignupScreen} />
+            <Stack.Screen name="Start" component={StartScreen} />
+          </Stack.Navigator>
+        </NavigationContainer>
+      </MockDataProvider>
     </GestureHandlerRootView>
   );
 }

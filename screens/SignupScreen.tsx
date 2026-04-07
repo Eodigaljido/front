@@ -346,7 +346,7 @@ export default function SignupScreen() {
           {/* 휴대전화 */}
           <View>
             <View
-              className={`flex-row items-center px-5 rounded-full overflow-hidden ${errors.phone ? 'bg-red-50' : 'bg-gray-100'}`}
+              className={`flex-row items-stretch rounded-full overflow-hidden ${errors.phone ? 'bg-red-50' : 'bg-gray-100'}`}
               style={errors.phone ? { borderWidth: 1, borderColor: '#fca5a5' } : {}}
             >
               <TextInput
@@ -356,12 +356,12 @@ export default function SignupScreen() {
                 onBlur={() => handleBlur('phone', phone)}
                 placeholder="휴대전화(-제외)"
                 keyboardType="phone-pad"
-                className="flex-1 py-4"
+                className="flex-1 pl-5 py-4"
               />
               <TouchableOpacity
                 activeOpacity={0.7}
                 onPress={handleVerifyPress}
-                className="absolute right-0 justify-center h-full bg-blue-500 rounded-full px-7 align-center"
+                className="justify-center bg-blue-500 rounded-full px-7"
               >
                 <Text className="font-semibold text-white text-md">인증</Text>
               </TouchableOpacity>

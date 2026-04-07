@@ -147,6 +147,10 @@ function buildStaticBootstrapHtml(appKey: string): string {
       }
     });
   </script>
+  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=${appKey}&autoload=false" onload="initMap()"></script>
+</head>
+<body>
+  <div id="map"></div>
 </body>
 </html>`;
 }
@@ -223,7 +227,12 @@ export default function KakaoMapWebView({
 
   if (!appKey) {
     return (
-      <View style={[{ flex: 1, backgroundColor: '#f3f4f6', padding: 16, justifyContent: 'center' }, style]}>
+      <View
+        style={[
+          { flex: 1, backgroundColor: '#f3f4f6', padding: 16, justifyContent: 'center' },
+          style,
+        ]}
+      >
         <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 8 }}>
           카카오 지도 키가 필요해요
         </Text>

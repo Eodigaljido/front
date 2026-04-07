@@ -5,7 +5,7 @@ import {
   Text,
   TextInput,
   ScrollView,
-  Pressable,
+  TouchableOpacity,
   Modal,
   Image,
   FlatList,
@@ -15,20 +15,20 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
 import {
   MOCK_COURSES,
   getCourseMapCenter,
   getCourseStepMapPoint,
   type CourseItem,
 } from '../data/mockData';
-import {
-  userRouteToCourseItem,
-  userRouteMapPath,
-  userRouteMapCenter,
-  type UserSavedRoute,
-} from '../data/userSavedRoute';
+import { useNavigation } from '@react-navigation/native';
 import { useMockData } from '../context/MockDataContext';
+import {
+  UserSavedRoute,
+  userRouteToCourseItem,
+  userRouteMapCenter,
+  userRouteMapPath,
+} from '../data/userSavedRoute';
 import AppMapView from '../components/AppMapView';
 import FilterBottomSheet from '../components/FilterBottomSheet';
 
@@ -50,8 +50,8 @@ function CourseCard({
   onRemove: () => void;
 }) {
   return (
-    <View className="mx-4 mb-3 overflow-hidden rounded-2xl bg-white" style={CARD_STYLE}>
-      <Pressable
+    <View className="mx-4 mb-3 overflow-hidden bg-white rounded-2xl" style={CARD_STYLE}>
+      <TouchableOpacity
         onPress={onPressCard}
         style={({ pressed }) => ({ opacity: pressed ? 0.96 : 1 })}
       >
@@ -59,46 +59,56 @@ function CourseCard({
         <View className="flex-row border-b border-gray-100 p-3.5">
           <View className="h-[80px] w-[80px] shrink-0 overflow-hidden rounded-xl bg-gray-100">
             {item.thumbnail ? (
-              <Image source={{ uri: item.thumbnail }} className="h-full w-full" resizeMode="cover" />
+              <Image
+                source={{ uri: item.thumbnail }}
+                className="w-full h-full"
+                resizeMode="cover"
+              />
             ) : (
-              <View className="h-full w-full items-center justify-center bg-gray-100">
+              <View className="items-center justify-center w-full h-full bg-gray-100">
                 <Ionicons name="image-outline" size={28} color="#d1d5db" />
               </View>
             )}
           </View>
-          <View className="ml-3 flex-1 min-w-0 justify-center">
-            <Text className="text-[15px] font-semibold leading-snug text-gray-900" numberOfLines={2}>
+          <View className="justify-center flex-1 min-w-0 ml-3">
+            <Text
+              className="text-[15px] font-semibold leading-snug text-gray-900"
+              numberOfLines={2}
+            >
               {item.title}
             </Text>
             <Text className="mt-1 text-xs text-gray-500">{item.meta}</Text>
           </View>
-          <Pressable onPress={onRemove} className="justify-center pl-1" hitSlop={8}>
+          <TouchableOpacity onPress={onRemove} className="justify-center pl-1" hitSlop={8}>
             <Ionicons name="trash-outline" size={22} color="#ef4444" />
-          </Pressable>
+          </TouchableOpacity>
         </View>
 
         {/* 경로 안내 */}
         <View className="flex-row items-center px-3.5 py-2.5">
-          <View className="rounded-md bg-green-500 px-2 py-1">
+          <View className="px-2 py-1 bg-green-500 rounded-md">
             <Text className="text-[11px] font-semibold text-white">출발</Text>
           </View>
           <Text className="ml-2 text-[13px] text-gray-900" numberOfLines={1}>
             {item.departure}
           </Text>
-          <View className="mx-2 h-3 w-px bg-gray-300" />
-          <View className="rounded-md bg-red-500 px-2 py-1">
+          <View className="w-px h-3 mx-2 bg-gray-300" />
+          <View className="px-2 py-1 bg-red-500 rounded-md">
             <Text className="text-[11px] font-semibold text-white">도착</Text>
           </View>
           <Text className="ml-2 flex-1 text-[13px] text-gray-900" numberOfLines={1}>
             {item.arrival}
           </Text>
         </View>
-      </Pressable>
+      </TouchableOpacity>
     </View>
   );
 }
 
-function getUserRouteStepPoint(route: UserSavedRoute, stepIndex: number): { lat: number; lng: number } {
+function getUserRouteStepPoint(
+  route: UserSavedRoute,
+  stepIndex: number,
+): { lat: number; lng: number } {
   const s = route.stops[stepIndex];
   if (s?.lat != null && s?.lng != null) return { lat: s.lat, lng: s.lng };
   return userRouteMapCenter(route);
@@ -129,20 +139,20 @@ export default function MyRouteScreen(): React.JSX.Element {
 
   const mergedCourses = useMemo(() => {
     const fromUser = userSavedRoutes.map(userRouteToCourseItem);
-    const fromMock = MOCK_COURSES.filter((c) => savedCourseIds.includes(c.id));
+    const fromMock = MOCK_COURSES.filter(c => savedCourseIds.includes(c.id));
     return [...fromUser, ...fromMock];
   }, [userSavedRoutes, savedCourseIds]);
 
   const filteredCourses = useMemo(() => {
     let list = mergedCourses;
 
-    if (selectedCategory) list = list.filter((c) => c.category === selectedCategory);
-    if (selectedRegion) list = list.filter((c) => c.region === selectedRegion);
+    if (selectedCategory) list = list.filter(c => c.category === selectedCategory);
+    if (selectedRegion) list = list.filter(c => c.region === selectedRegion);
 
     const q = searchQuery.trim().toLowerCase();
     if (q) {
       list = list.filter(
-        (c) =>
+        c =>
           c.title.toLowerCase().includes(q) ||
           c.meta.toLowerCase().includes(q) ||
           c.departure.toLowerCase().includes(q) ||
@@ -159,7 +169,7 @@ export default function MyRouteScreen(): React.JSX.Element {
     return list;
   }, [mergedCourses, searchQuery, selectedCategory, selectedRegion, selectedSort]);
 
-  const isUserSavedRouteId = (id: string) => userSavedRoutes.some((r) => r.id === id);
+  const isUserSavedRouteId = (id: string) => userSavedRoutes.some(r => r.id === id);
 
   const handleRemove = (item: CourseItem) => {
     Alert.alert('저장 삭제', `"${item.title}" 코스를 저장 목록에서 삭제할까요?`, [
@@ -198,7 +208,10 @@ export default function MyRouteScreen(): React.JSX.Element {
           imageStyle={{ opacity: 0.9 }}
         >
           <View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.35)' }} />
-          <View className="px-5 pb-5 pt-2 flex-row items-center" style={{ zIndex: 1, minHeight: 100 }}>
+          <View
+            className="flex-row items-center px-5 pt-2 pb-5"
+            style={{ zIndex: 1, minHeight: 100 }}
+          >
             <Text className="text-2xl font-bold text-white">내 코스</Text>
             <View
               style={{
@@ -208,22 +221,23 @@ export default function MyRouteScreen(): React.JSX.Element {
                 marginHorizontal: 16,
               }}
             />
-            <View className="flex-1 justify-center">
+            <View className="justify-center flex-1">
               <Text className="text-sm text-white opacity-95">나만의 경로를 짜고</Text>
               <Text className="mt-0.5 text-sm text-white opacity-95">동선을 파악해 보아요!</Text>
             </View>
-            <Pressable
+            <TouchableOpacity
+              activeOpacity={0.7}
               onPress={() => stackNav.getParent()?.navigate('RouteCreate')}
-              className="rounded-xl bg-white/20 px-3 py-2 active:opacity-90"
+              className="px-3 py-2 rounded-xl bg-white/20 active:opacity-90"
             >
               <Text className="text-xs font-bold text-white">루트 제작</Text>
-            </Pressable>
+            </TouchableOpacity>
           </View>
         </ImageBackground>
       </View>
 
       {/* 검색 + 필터 */}
-      <View className="flex-row items-center gap-2 border-b border-gray-100 px-4 py-3">
+      <View className="flex-row items-center gap-2 px-4 py-3 border-b border-gray-100">
         <View className="flex-1 flex-row items-center rounded-xl bg-gray-100 px-4 py-2.5">
           <Ionicons name="search-outline" size={20} color="#9ca3af" />
           <TextInput
@@ -231,20 +245,22 @@ export default function MyRouteScreen(): React.JSX.Element {
             placeholderTextColor="#9ca3af"
             value={searchQuery}
             onChangeText={setSearchQuery}
-            className="ml-2 flex-1 text-base text-gray-800"
+            className="flex-1 ml-2 text-base text-gray-800"
           />
         </View>
-        <Pressable
+        <TouchableOpacity
           onPress={() => setFilterVisible(true)}
-          className="h-10 w-10 items-center justify-center rounded-xl bg-gray-100"
+          className="items-center justify-center w-10 h-10 bg-gray-100 rounded-xl"
         >
           <Ionicons name="options-outline" size={22} color="#374151" />
-        </Pressable>
+        </TouchableOpacity>
       </View>
 
       {/* 저장 코스 수 */}
       <View className="px-4 py-2.5 border-b border-gray-100">
-        <Text className="text-sm text-gray-500">{filteredCourses.length}개의 코스를 저장했어요</Text>
+        <Text className="text-sm text-gray-500">
+          {filteredCourses.length}개의 코스를 저장했어요
+        </Text>
       </View>
 
       {/* 코스 리스트 */}
@@ -305,7 +321,10 @@ export default function MyRouteScreen(): React.JSX.Element {
             pointerEvents="none"
             style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(107,114,128,0.45)' }]}
           />
-          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setViewingCourseId(null)} />
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            onPress={() => setViewingCourseId(null)}
+          />
 
           <View style={{ flex: 1, justifyContent: 'flex-end' }}>
             <View
@@ -314,15 +333,15 @@ export default function MyRouteScreen(): React.JSX.Element {
             >
               {viewingCourseId &&
                 (() => {
-                  const ur = userSavedRoutes.find((r) => r.id === viewingCourseId);
-                  const courseFromMock = MOCK_COURSES.find((c) => c.id === viewingCourseId);
+                  const ur = userSavedRoutes.find(r => r.id === viewingCourseId);
+                  const courseFromMock = MOCK_COURSES.find(c => c.id === viewingCourseId);
                   const course = courseFromMock ?? (ur ? userRouteToCourseItem(ur) : null);
                   if (!course) return null;
 
                   const hours = (course.overallDurationMinutes / 60).toFixed(1);
                   let pathPts: { latitude: number; longitude: number }[] | undefined;
                   if (ur && userRouteMapPath(ur).length >= 1) {
-                    pathPts = userRouteMapPath(ur).map((p) => ({
+                    pathPts = userRouteMapPath(ur).map(p => ({
                       latitude: p.latitude,
                       longitude: p.longitude,
                     }));
@@ -334,7 +353,9 @@ export default function MyRouteScreen(): React.JSX.Element {
                   } else {
                     pathPts = undefined;
                   }
-                  const fallbackCenter = ur ? userRouteMapCenter(ur) : getCourseMapCenter(course.id);
+                  const fallbackCenter = ur
+                    ? userRouteMapCenter(ur)
+                    : getCourseMapCenter(course.id);
                   const mapCenter = mapFocus ?? fallbackCenter;
                   const mapLevel = pathPts && pathPts.length >= 2 ? 5 : 4;
 
@@ -352,11 +373,11 @@ export default function MyRouteScreen(): React.JSX.Element {
                           borderBottomColor: '#1e293b',
                         }}
                       >
-                        <View className="mb-2 flex-row items-center justify-between px-4">
+                        <View className="flex-row items-center justify-between px-4 mb-2">
                           <Text className="text-sm font-semibold text-white/90">코스 위치</Text>
-                          <Pressable onPress={() => setViewingCourseId(null)} hitSlop={12}>
+                          <TouchableOpacity onPress={() => setViewingCourseId(null)} hitSlop={12}>
                             <Ionicons name="close" size={26} color="#e2e8f0" />
-                          </Pressable>
+                          </TouchableOpacity>
                         </View>
                         <View
                           style={{
@@ -394,83 +415,76 @@ export default function MyRouteScreen(): React.JSX.Element {
                       <ScrollView
                         showsVerticalScrollIndicator={false}
                         className="bg-white"
-                        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 28 }}
+                        contentContainerStyle={{
+                          paddingHorizontal: 20,
+                          paddingTop: 16,
+                          paddingBottom: 28,
+                        }}
                       >
-                        <View className="mb-4 flex-row flex-wrap items-center justify-end gap-2">
-                          <Text className="mr-auto text-xl font-bold text-gray-900">코스 상세</Text>
-                          <Pressable
-                            onPress={() => {
-                              setViewingCourseId(null);
-                              if (ur) {
-                                openRouteCreateEdit(ur.id, ur.collaborative === true);
-                              } else {
-                                openRouteCreateFromMockCourse(course.id);
-                              }
-                            }}
-                            className="flex-row items-center gap-1 rounded-xl bg-sky-50 px-3 py-2"
-                          >
-                            <Ionicons name="create-outline" size={16} color="#0284c7" />
-                            <Text className="text-sm font-semibold text-sky-600">수정</Text>
-                          </Pressable>
-                          <Pressable
+                        <View className="flex-row items-center justify-between mb-4">
+                          <Text className="text-xl font-bold text-gray-900">코스 상세</Text>
+                          <TouchableOpacity
                             onPress={() => {
                               setViewingCourseId(null);
                               handleRemove(course);
                             }}
-                            className="flex-row items-center gap-1 rounded-xl bg-red-50 px-3 py-2"
+                            className="flex-row items-center gap-1 px-3 py-2 rounded-xl bg-red-50"
                           >
                             <Ionicons name="trash-outline" size={16} color="#ef4444" />
                             <Text className="text-sm font-semibold text-red-500">저장 삭제</Text>
-                          </Pressable>
+                          </TouchableOpacity>
                         </View>
 
-                        <Text className="mb-1 text-base font-semibold text-gray-900">{course.title}</Text>
+                        <Text className="mb-1 text-base font-semibold text-gray-900">
+                          {course.title}
+                        </Text>
                         <Text className="mb-2 text-sm text-gray-500">{course.meta}</Text>
 
-                        <View className="mb-3 flex-row flex-wrap items-center gap-2">
-                          <View className="rounded-full bg-gray-100 px-3 py-1">
+                        <View className="flex-row flex-wrap items-center gap-2 mb-3">
+                          <View className="px-3 py-1 bg-gray-100 rounded-full">
                             <Text className="text-xs text-gray-700">{course.category}</Text>
                           </View>
-                          <View className="rounded-full bg-gray-100 px-3 py-1">
+                          <View className="px-3 py-1 bg-gray-100 rounded-full">
                             <Text className="text-xs text-gray-700">{course.region}</Text>
                           </View>
-                          <View className="rounded-full bg-blue-50 px-3 py-1">
+                          <View className="px-3 py-1 rounded-full bg-blue-50">
                             <Text className="text-xs text-blue-700">예상 소요 약 {hours}시간</Text>
                           </View>
-                          {course.rating > 0 || course.reviewCount > 0 ? (
-                            <View className="rounded-full bg-yellow-50 px-3 py-1">
-                              <Text className="text-xs text-yellow-700">
-                                ★ {course.rating.toFixed(1)} ({course.reviewCount}명)
-                              </Text>
-                            </View>
-                          ) : null}
+                          <View className="px-3 py-1 rounded-full bg-yellow-50">
+                            <Text className="text-xs text-yellow-700">
+                              ★ {course.rating.toFixed(1)} ({course.reviewCount}명)
+                            </Text>
+                          </View>
                         </View>
 
                         <Text className="mb-4 text-xs text-gray-400">
-                          {ur
-                            ? '루트 제작 화면에서 저장한 목 데이터입니다. 편집으로 다시 수정할 수 있어요.'
-                            : '이용자들이 실제로 코스를 다녀온 기록을 기반으로 한 대략적인 체류 시간입니다.'}
+                          이용자들이 실제로 코스를 다녀온 기록을 기반으로 한 대략적인 체류
+                          시간입니다.
                         </Text>
 
-                        <View className="mb-6 rounded-xl bg-gray-50 p-3">
+                        <View className="p-3 mb-6 rounded-xl bg-gray-50">
                           <View className="flex-row items-center">
-                            <View className="rounded bg-green-100 px-2 py-1">
+                            <View className="px-2 py-1 bg-green-100 rounded">
                               <Text className="text-xs font-medium text-green-700">출발</Text>
                             </View>
-                            <Text className="ml-2 flex-1 text-sm text-gray-900">{course.departure}</Text>
+                            <Text className="flex-1 ml-2 text-sm text-gray-900">
+                              {course.departure}
+                            </Text>
                           </View>
-                          <View className="mt-2 flex-row items-center">
-                            <View className="rounded bg-red-100 px-2 py-1">
+                          <View className="flex-row items-center mt-2">
+                            <View className="px-2 py-1 bg-red-100 rounded">
                               <Text className="text-xs font-medium text-red-700">도착</Text>
                             </View>
-                            <Text className="ml-2 flex-1 text-sm text-gray-900">{course.arrival}</Text>
+                            <Text className="flex-1 ml-2 text-sm text-gray-900">
+                              {course.arrival}
+                            </Text>
                           </View>
                         </View>
 
                         <Text className="mb-2 text-sm font-semibold text-gray-900">코스 경로</Text>
-                        <View className="mb-6 rounded-xl bg-gray-50 p-3">
+                        <View className="p-3 mb-6 rounded-xl bg-gray-50">
                           {course.routeSteps.map((step, index) => (
-                            <Pressable
+                            <TouchableOpacity
                               key={step.id}
                               onPress={() => {
                                 if (ur) setMapFocus(getUserRouteStepPoint(ur, index));
@@ -489,20 +503,24 @@ export default function MyRouteScreen(): React.JSX.Element {
                                 {index + 1}.
                               </Text>
                               <View className="flex-1">
-                                <Text className="text-sm font-medium text-gray-900">{step.name}</Text>
+                                <Text className="text-sm font-medium text-gray-900">
+                                  {step.name}
+                                </Text>
                                 <Text className="mt-0.5 text-xs text-gray-500">
                                   {ur
                                     ? '저장된 정류장 (목)'
                                     : `평균 머문 시간 약 ${step.stayMinutes}분`}
                                 </Text>
                               </View>
-                            </Pressable>
+                            </TouchableOpacity>
                           ))}
                         </View>
 
-                        <Text className="mb-2 text-sm font-semibold text-gray-900">이용자 후기</Text>
+                        <Text className="mb-2 text-sm font-semibold text-gray-900">
+                          이용자 후기
+                        </Text>
                         {course.reviews.length === 0 ? (
-                          <View className="mb-2 rounded-xl bg-gray-50 p-3">
+                          <View className="p-3 mb-2 rounded-xl bg-gray-50">
                             <Text className="text-xs text-gray-500">
                               {ur
                                 ? '직접 제작 루트에는 샘플 후기가 없습니다.'
@@ -510,22 +528,29 @@ export default function MyRouteScreen(): React.JSX.Element {
                             </Text>
                           </View>
                         ) : (
-                          <View className="mb-2 rounded-xl bg-gray-50 p-3">
-                            {course.reviews.map((review) => (
+                          <View className="p-3 mb-2 rounded-xl bg-gray-50">
+                            {course.reviews.map(review => (
                               <View key={review.id} className="mb-3 last:mb-0">
                                 <View className="flex-row items-center justify-between">
-                                  <Text className="text-sm font-semibold text-gray-900">{review.userName}</Text>
-                                  <Text className="text-xs text-yellow-600">★ {review.rating.toFixed(1)}</Text>
+                                  <Text className="text-sm font-semibold text-gray-900">
+                                    {review.userName}
+                                  </Text>
+                                  <Text className="text-xs text-yellow-600">
+                                    ★ {review.rating.toFixed(1)}
+                                  </Text>
                                 </View>
                                 <Text className="mt-1 text-xs text-gray-700">{review.text}</Text>
-                                <Text className="mt-0.5 text-[11px] text-gray-400">{review.date}</Text>
+                                <Text className="mt-0.5 text-[11px] text-gray-400">
+                                  {review.date}
+                                </Text>
                               </View>
                             ))}
                           </View>
                         )}
 
                         <Text className="mt-1 text-[11px] text-gray-400">
-                          추후에는 실제 이용자가 직접 후기를 남기고, 댓글로 소통할 수 있도록 확장될 예정입니다.
+                          추후에는 실제 이용자가 직접 후기를 남기고, 댓글로 소통할 수 있도록 확장될
+                          예정입니다.
                         </Text>
                       </ScrollView>
                     </>
