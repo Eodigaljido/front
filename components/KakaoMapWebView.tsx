@@ -26,31 +26,38 @@ export default function KakaoMapWebView({
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=${appKey}&autoload=false"></script>
   <style>html, body, #map { width:100%; height:100%; margin:0; padding:0; }</style>
+  <script>
+    function initMap() {
+      kakao.maps.load(function () {
+        var map = new kakao.maps.Map(
+          document.getElementById('map'),
+          {
+            center: new kakao.maps.LatLng(${latitude}, ${longitude}),
+            level: ${level}
+          }
+        );
+        var marker = new kakao.maps.Marker({ position: map.getCenter() });
+        marker.setMap(map);
+      });
+    }
+  </script>
+  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=${appKey}&autoload=false" onload="initMap()"></script>
 </head>
 <body>
   <div id="map"></div>
-  <script>
-    kakao.maps.load(function () {
-      var map = new kakao.maps.Map(
-        document.getElementById('map'),
-        {
-          center: new kakao.maps.LatLng(${latitude}, ${longitude}),
-          level: ${level}
-        }
-      );
-      var marker = new kakao.maps.Marker({ position: map.getCenter() });
-      marker.setMap(map);
-    });
-  </script>
 </body>
 </html>`;
   }, [appKey, latitude, longitude, level]);
 
   if (!appKey) {
     return (
-      <View style={[{ flex: 1, backgroundColor: '#f3f4f6', padding: 16, justifyContent: 'center' }, style]}>
+      <View
+        style={[
+          { flex: 1, backgroundColor: '#f3f4f6', padding: 16, justifyContent: 'center' },
+          style,
+        ]}
+      >
         <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 8 }}>
           카카오 지도 키가 필요해요
         </Text>
@@ -86,4 +93,3 @@ export default function KakaoMapWebView({
     />
   );
 }
-
