@@ -26,7 +26,7 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'create-outline',
       iconColor: '#2563eb',
       iconBg: '#dbeafe',
-      onPress: () => navigation.navigate('MyRoute' as keyof RootTabParamList),
+      onPress: () => navigation.getParent()?.navigate('RouteCreate'),
     },
     {
       id: 'share-route',
@@ -119,7 +119,7 @@ export default function AllScreen(): React.JSX.Element {
               </View>
             </View>
             <Pressable
-              onPress={() => navigation.navigate('ProfileSettings')}
+              onPress={() => navigation.getParent()?.navigate('ProfileSettings')}
               className="flex-row items-center active:opacity-80"
             >
               <Ionicons name="settings-outline" size={14} color="#111827" />
