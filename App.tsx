@@ -1,7 +1,8 @@
 import React from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
-import { NavigationContainer, getFocusedRouteNameFromRoute } from '@react-navigation/native';
+import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,7 +22,8 @@ import OnBoardEnd from './screens/onboard/OnBoardEnd';
 import LoginScreen from './screens/LoginScreen';
 import SignupScreen from './screens/SignupScreen';
 import StartScreen from './screens/StartScreen';
-// import MapScreen from './screens/MapScreen-Test';
+import RouteCreateScreen from './screens/RouteCreateScreen';
+import ProfileSettingsScreen from './screens/ProfileSettingsScreen';
 
 export type RootTabParamList = {
   Home: undefined;
@@ -48,6 +50,10 @@ export type RootStackParamList = {
   Tabs: undefined;
   HomeScreen: undefined;
   Start: undefined;
+  RouteCreate:
+    | { editRouteId?: string; collaborative?: boolean; seedMockCourseId?: string }
+    | undefined;
+  ProfileSettings: undefined;
 
   // Auth 관련
   Login: undefined;
@@ -64,28 +70,6 @@ export type RootStackParamList = {
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
-
-// const TAB_BAR_STYLE = {
-//   position: 'absolute' as const,
-//   width: '88%' as const,
-//   alignSelf: 'center' as const,
-//   bottom: 24,
-//   marginHorizontal: '6%' as const,
-//   height: 74,
-//   paddingTop: 10,
-//   paddingBottom: 8,
-//   backgroundColor: '#fff',
-//   borderRadius: 28,
-//   borderTopWidth: 0,
-//   overflow: 'visible' as const,
-//   shadowColor: '#000',
-//   shadowOffset: { width: 0, height: 12 },
-//   shadowOpacity: 0.22,
-//   shadowRadius: 24,
-//   borderWidth: 1,
-//   borderColor: 'rgba(0,0,0,0.06)',
-//   elevation: 24,
-// };
 
 function TabNavigator() {
   return (
@@ -161,7 +145,6 @@ function TabNavigator() {
         component={MyRouteScreen}
         options={{ headerShown: false, title: '내 루트', tabBarLabel: '내 루트' }}
       />
-      {/* <Tab.Screen name="Map" component={MapScreen} options={{ headerShown: false, title: '지도', tabBarLabel: '지도' }} /> */}
       <Tab.Screen
         name="Chat"
         component={ChatScreen}
@@ -170,49 +153,22 @@ function TabNavigator() {
       <Tab.Screen
         name="All"
         component={AllScreen}
-        options={{ title: '전체', tabBarLabel: '전체' }}
+        options={{ headerShown: false, title: '전체', tabBarLabel: '전체' }}
       />
-      {/* <Tab.Screen
-        name="Login"
-        component={LoginScreen}
-        options={{
-          headerShown: false,
-          tabBarStyle: { display: 'none' },
-          title: '로그인',
-          tabBarLabel: '로그인',
-        }}
-      />
-      <Tab.Screen
-        name="Signup"
-        component={SignupScreen}
-        options={{
-          headerShown: false,
-          tabBarStyle: { display: 'none' },
-          title: '회원가입',
-          tabBarLabel: '회원가입',
-        }}
-      />
-      <Tab.Screen
-        name="Start"
-        component={StartScreen}
-        options={{
-          headerShown: false,
-          tabBarStyle: { display: 'none' },
-          title: '시작',
-          tabBarLabel: '시작',
-        }}
-      /> */}
     </Tab.Navigator>
   );
 }
 
 export default function App(): React.JSX.Element {
   return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
     <MockDataProvider>
       <NavigationContainer>
         <StatusBar style="auto" />
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           <Stack.Screen name="Tabs" component={TabNavigator} />
+          <Stack.Screen name="RouteCreate" component={RouteCreateScreen} />
+          <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
           <Stack.Screen name="Home" component={HomeScreen} />
           <Stack.Screen name="OnBoardStart" component={OnBoardStart} />
           <Stack.Screen name="AreaOnBoard" component={AreaOnBoard} />
@@ -226,5 +182,6 @@ export default function App(): React.JSX.Element {
         </Stack.Navigator>
       </NavigationContainer>
     </MockDataProvider>
+    </GestureHandlerRootView>
   );
 }
