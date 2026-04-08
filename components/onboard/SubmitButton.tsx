@@ -15,6 +15,7 @@ const SubmitButton = ({
       }`}
       disabled={disabled}
       onPress={onPress}
+      activeOpacity={0.7}
     >
       <Text className="text-white font-bold text-lg">제출</Text>
     </TouchableOpacity>

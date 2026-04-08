@@ -30,7 +30,7 @@ export default function ActivityOnBoard(): React.JSX.Element {
       </View>
       <View className="px-6 pt-8">
         <Title>
-          좋아하는<Text className="text-blue-500">활동</Text>이{"\n"}
+          좋아하는<Text className="text-blue-500"> 활동</Text>이{"\n"}
           무엇인가요?
         </Title>
         <Description desc={`취미 활동에 따라서 추천하는 장소가 달라져요!`} />
