@@ -133,7 +133,7 @@ function TabNavigator() {
       <Tab.Screen
         name="Chat"
         component={ChatScreen}
-        options={{ title: "채팅", tabBarLabel: "채팅" }}
+        options={{ headerShown: false, title: "채팅", tabBarLabel: "채팅" }}
       />
       <Tab.Screen
         name="All"
