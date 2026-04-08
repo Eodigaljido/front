@@ -1,15 +1,35 @@
 // @ts-nocheck
 import React from "react";
-import { View, Text, Image, TouchableOpacity, Input } from "react-native";
+import { View, Text, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
 import ProgressBar from "@/components/onboard/ProgressBar";
 import Title from "@/components/onboard/Title";
 import Description from "@/components/onboard/Description";
-import RadioButton from "@/components/onboard/RadioButton";
+import AreaRadioButton from "@/components/onboard/AreaRadioButton";
 import PreviousButton from "@/components/onboard/PreviousButton";
 import NextButton from "@/components/onboard/NextButton";
+
+const REGIONS = [
+  "서울",
+  "부산",
+  "대구",
+  "인천",
+  "광주",
+  "대전",
+  "울산",
+  "세종",
+  "경기도",
+  "강원도",
+  "충청북도",
+  "충청남도",
+  "전라북도",
+  "전라남도",
+  "경상북도",
+  "경상남도",
+  "제주도",
+];
 
 export default function AreaOnBoard(): React.JSX.Element {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
@@ -20,39 +40,32 @@ export default function AreaOnBoard(): React.JSX.Element {
       <View>
         <ProgressBar value={1} />
       </View>
-      <View className="px-6 pt-8">
+      <View className="px-6 pt-8 flex-1">
         <Title>
           <Text className="text-blue-500">거주 지역</Text>이{"\n"}
           어디인가요?
         </Title>
         <Description desc={`거주 지역에 따라서 추천하는 장소가 달라져요!`} />
-        <View className="mt-6 gap-3">
-          <RadioButton
-            label="10대"
-            value={selectedArea === "10대"}
-            onPress={() => setSelectedArea("10대")}
-          />
-
-          <RadioButton
-            label="20대"
-            value={selectedArea === "20대"}
-            onPress={() => setSelectedArea("20대")}
-          />
-
-          <RadioButton
-            label="30대"
-            value={selectedArea === "30대"}
-            onPress={() => setSelectedArea("30대")}
-          />
-
-          <RadioButton
-            label="40대 이상"
-            value={selectedArea === "40대 이상"}
-            onPress={() => setSelectedArea("40대 이상")}
-          />
-        </View>
+        <ScrollView
+          className="mt-6"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 20 }}
+        >
+          <View className="flex-row flex-wrap">
+            {REGIONS.map((region) => (
+              <View key={region} className="w-1/2 p-2">
+                <AreaRadioButton
+                  label={region}
+                  value={selectedArea === region}
+                  onPress={() => setSelectedArea(region)}
+                />
+              </View>
+            ))}
+          </View>
+        </ScrollView>
       </View>
-      <View className="flex-row items-center justify-between px-10 mt-20">
+      <View className="flex-row items-center justify-between px-10 py-20">
+        <PreviousButton onPress={() => navigation.goBack()} />
         <NextButton
           disabled={!selectedArea}
           onPress={() => navigation.navigate("AgeOnBoard")}
