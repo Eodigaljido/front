@@ -15,6 +15,7 @@ export default function RadioButton({
         value ? "border-blue-500 bg-blue-500" : "border-gray-300 bg-gray-200"
       }`}
       onPress={onPress}
+      activeOpacity={1}
     >
       <View className={`w-5 h-10 rounded-full`} />
       <Text
