@@ -46,11 +46,7 @@ export default function AreaOnBoard(): React.JSX.Element {
           어디인가요?
         </Title>
         <Description desc={`거주 지역에 따라서 추천하는 장소가 달라져요!`} />
-        <ScrollView
-          className="mt-6"
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 20 }}
-        >
+        <ScrollView className="mt-6" showsVerticalScrollIndicator={false}>
           <View className="flex-row flex-wrap">
             {REGIONS.map((region) => (
               <View key={region} className="w-1/2 p-2">
@@ -62,14 +58,13 @@ export default function AreaOnBoard(): React.JSX.Element {
               </View>
             ))}
           </View>
+          <View className="flex-row items-center justify-end px-4 pt-5 pb-4">
+            <NextButton
+              disabled={!selectedArea}
+              onPress={() => navigation.navigate("AgeOnBoard")}
+            />
+          </View>
         </ScrollView>
-      </View>
-      <View className="flex-row items-center justify-between px-10 py-20">
-        <PreviousButton onPress={() => navigation.goBack()} />
-        <NextButton
-          disabled={!selectedArea}
-          onPress={() => navigation.navigate("AgeOnBoard")}
-        />
       </View>
     </SafeAreaView>
   );
