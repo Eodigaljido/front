@@ -1,8 +1,8 @@
-// @ts-nocheck — Expo Go는 expo-maps 네이티브 없음 → WebView 폴백
+// @ts-nocheck
 import React, { useMemo } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { Platform } from 'react-native';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
-import KakaoMapWebView from './KakaoMapWebView';
+import GoogleMapWebView from './GoogleMapWebView';
 import type { MapPathPoint } from './mapTypes';
 
 type Props = {
@@ -13,16 +13,14 @@ type Props = {
   style?: object;
 };
 
-/** expo-maps와 동일 형태 — Expo Go 경로에서 expo-maps 패키지를 로드하지 않기 위해 로컬 정의 */
-type Coordinates = { latitude?: number; longitude?: number };
-type CameraPosition = { coordinates?: Coordinates; zoom?: number };
-
 const ROUTE_COLOR = '#2563eb';
 
-/** Expo Go(storeClient)에는 ExpoMaps 네이티브 모듈이 없음 — 개발 빌드에서만 Apple/Google Maps 사용 */
 function isExpoGoClient(): boolean {
   return Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 }
+
+type Coordinates = { latitude?: number; longitude?: number };
+type CameraPosition = { coordinates?: Coordinates; zoom?: number };
 
 function validPoints(path: MapPathPoint[] | undefined): MapPathPoint[] {
   return (path ?? []).filter(
@@ -84,14 +82,18 @@ function cameraForPath(
   };
 }
 
-function AppMapViewExpoMapsImpl({
+/**
+ * Android 개발 빌드: expo-maps GoogleMaps.View
+ * iOS · Expo Go · 그 외: Google Maps JavaScript API(WebView) — expo-maps는 Android만 네이티브 Google 지원
+ */
+function AppMapViewExpoGoogleMapsImpl({
   latitude = 37.5665,
   longitude = 126.978,
   level = 8,
   path,
   style,
 }: Props): React.JSX.Element {
-  const { AppleMaps, GoogleMaps } = require('expo-maps');
+  const { GoogleMaps } = require('expo-maps');
 
   const pts = useMemo(() => validPoints(path), [path]);
   const cameraPosition = useMemo(
@@ -109,20 +111,7 @@ function AppMapViewExpoMapsImpl({
     [lineCoords],
   );
 
-  const polylinesApple = useMemo(() => {
-    if (lineCoords.length < 2) return [];
-    return [
-      {
-        id: 'route',
-        coordinates: lineCoords,
-        color: ROUTE_COLOR,
-        width: 5,
-        contourStyle: 'GEODESIC' as const,
-      },
-    ];
-  }, [lineCoords]);
-
-  const polylinesGoogle = useMemo(() => {
+  const polylines = useMemo(() => {
     if (lineCoords.length < 2) return [];
     return [
       {
@@ -137,54 +126,24 @@ function AppMapViewExpoMapsImpl({
 
   const baseStyle = [{ flex: 1, backgroundColor: '#e5e7eb' }, style];
 
-  if (Platform.OS === 'ios') {
-    return (
-      <AppleMaps.View
-        style={baseStyle}
-        cameraPosition={cameraPosition}
-        markers={markers}
-        polylines={polylinesApple}
-        uiSettings={{ compassEnabled: true, scaleBarEnabled: true, myLocationButtonEnabled: false }}
-      />
-    );
-  }
-
-  if (Platform.OS === 'android') {
-    return (
-      <GoogleMaps.View
-        style={baseStyle}
-        cameraPosition={cameraPosition}
-        markers={markers}
-        polylines={polylinesGoogle}
-        uiSettings={{ compassEnabled: true, myLocationButtonEnabled: false }}
-      />
-    );
-  }
-
   return (
-    <View style={[styles.fallback, style]}>
-      <Text style={styles.fallbackText}>지도는 iOS·Android 앱에서 표시됩니다.</Text>
-    </View>
+    <GoogleMaps.View
+      style={baseStyle}
+      cameraPosition={cameraPosition}
+      markers={markers}
+      polylines={polylines}
+      uiSettings={{ compassEnabled: true, myLocationButtonEnabled: false }}
+    />
   );
 }
 
-/**
- * 개발 빌드: expo-maps(Apple / Google). Expo Go: 카카오 WebView.
- */
 export default function AppMapView(props: Props): React.JSX.Element {
-  if (isExpoGoClient()) {
-    return <KakaoMapWebView {...props} />;
-  }
-  return <AppMapViewExpoMapsImpl {...props} />;
-}
+  const useNativeGoogle =
+    Platform.OS === 'android' && !isExpoGoClient();
 
-const styles = StyleSheet.create({
-  fallback: {
-    flex: 1,
-    backgroundColor: '#e5e7eb',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-  },
-  fallbackText: { fontSize: 14, color: '#4b5563', textAlign: 'center' },
-});
+  if (useNativeGoogle) {
+    return <AppMapViewExpoGoogleMapsImpl {...props} />;
+  }
+
+  return <GoogleMapWebView {...props} />;
+}
