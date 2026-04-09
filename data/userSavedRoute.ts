@@ -14,6 +14,12 @@ export type UserSavedRouteLeg = {
   id: string;
   mode: string;
   minutes: number;
+  transitType?: 'bus' | 'subway' | 'train';
+  /** Google Directions 기반 한 줄 요약 */
+  directionsSummary?: string;
+  /** 단계별 안내(줄바꿈) */
+  directionsDetail?: string;
+  distanceMeters?: number;
 };
 
 export type UserSavedRoute = {
