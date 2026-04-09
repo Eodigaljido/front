@@ -108,7 +108,7 @@ function OtpModal({ visible, onClose }: { visible: boolean; onClose: () => void 
           {otp.map((digit, i) => (
             <View key={i} className="items-center">
               <TextInput
-                ref={ref => (inputRefs.current[i] = ref)}
+                // ref={ref => (inputRefs.current[i] = ref)}
                 value={digit}
                 onChangeText={text => handleChange(text, i)}
                 onKeyPress={e => handleKeyPress(e, i)}
