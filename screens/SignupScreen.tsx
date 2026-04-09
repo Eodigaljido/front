@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
@@ -10,15 +9,20 @@ import {
   Modal,
   Pressable,
   StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../App';
+import { usePasswordMask } from '../hooks/usePasswordMask';
+
+type SignupNavProp = NativeStackNavigationProp<RootStackParamList, 'Signup'>;
 
 const OTP_LENGTH = 5;
 const TIMER_SECONDS = 5 * 60;
 const DEBOUNCE_MS = 500;
-const MASK_DELAY_MS = 800;
-const MASK_CHAR = '•';
 
 function validateField(field: string, value: string): string {
   switch (field) {
@@ -68,7 +72,7 @@ function OtpModal({ visible, onClose }: { visible: boolean; onClose: () => void 
     }
   };
 
-  const handleKeyPress = (e: any, index: number) => {
+  const handleKeyPress = (e: { nativeEvent: { key: string } }, index: number) => {
     if (e.nativeEvent.key === 'Backspace' && !otp[index] && index > 0) {
       inputRefs.current[index - 1]?.focus();
     }
@@ -136,9 +140,9 @@ function OtpModal({ visible, onClose }: { visible: boolean; onClose: () => void 
 }
 
 export default function SignupScreen() {
+  const navigation = useNavigation<SignupNavProp>();
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
-  const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
@@ -150,18 +154,12 @@ export default function SignupScreen() {
   const phoneRef = useRef<TextInput>(null);
   const debounceRefs = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  // 비밀번호 마스킹 관련
-  const realPasswordRef = useRef('');
-  const [displayPassword, setDisplayPassword] = useState('');
-  const maskTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { displayPassword, realPasswordRef, handleInput: maskHandleInput, maskAll } = usePasswordMask();
 
-  const navigation = useNavigation();
-
-  // 언마운트 시 모든 타이머 정리
+  // 언마운트 시 debounce 타이머 정리
   useEffect(() => {
     return () => {
       Object.values(debounceRefs.current).forEach(clearTimeout);
-      if (maskTimerRef.current) clearTimeout(maskTimerRef.current);
     };
   }, []);
 
@@ -192,17 +190,9 @@ export default function SignupScreen() {
     [setFieldError],
   );
 
-  // 비밀번호 입력: 마지막 타이핑 문자를 MASK_DELAY_MS 후 •로 교체
   const handlePasswordInput = useCallback(
     (inputText: string) => {
-      const prevReal = realPasswordRef.current;
-      const newReal =
-        inputText.length >= prevReal.length
-          ? prevReal + inputText.slice(prevReal.length) // 추가
-          : prevReal.slice(0, inputText.length); // 삭제
-
-      realPasswordRef.current = newReal;
-      setPassword(newReal);
+      const newReal = maskHandleInput(inputText);
 
       if (touched['password']) {
         clearTimeout(debounceRefs.current['password']);
@@ -211,21 +201,8 @@ export default function SignupScreen() {
           DEBOUNCE_MS,
         );
       }
-
-      if (inputText.length > prevReal.length) {
-        const addedLen = inputText.length - prevReal.length;
-        setDisplayPassword(MASK_CHAR.repeat(newReal.length - addedLen) + newReal.slice(-addedLen));
-        if (maskTimerRef.current) clearTimeout(maskTimerRef.current);
-        maskTimerRef.current = setTimeout(
-          () => setDisplayPassword(MASK_CHAR.repeat(newReal.length)),
-          MASK_DELAY_MS,
-        );
-      } else {
-        if (maskTimerRef.current) clearTimeout(maskTimerRef.current);
-        setDisplayPassword(MASK_CHAR.repeat(newReal.length));
-      }
     },
-    [touched, setFieldError],
+    [touched, setFieldError, maskHandleInput],
   );
 
   const validateAll = () => {
@@ -273,9 +250,13 @@ export default function SignupScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
-      <View
-        className="justify-center flex-1 px-10"
-        contentContainerStyle={{ paddingBottom: 40 }}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+      <ScrollView
+        className="flex-1 px-10"
+        contentContainerStyle={{ justifyContent: 'center', flexGrow: 1, paddingBottom: 40 }}
         keyboardShouldPersistTaps="handled"
       >
         {/* 헤더 */}
@@ -297,6 +278,7 @@ export default function SignupScreen() {
               onBlur={() => handleBlur('email', email)}
               placeholder="이메일 혹은 아이디"
               keyboardType="email-address"
+              autoCapitalize="none"
               className={inputClass('email')}
               style={inputStyle('email')}
             />
@@ -329,8 +311,7 @@ export default function SignupScreen() {
               onChangeText={handlePasswordInput}
               onBlur={() => {
                 clearTimeout(debounceRefs.current['password']);
-                if (maskTimerRef.current) clearTimeout(maskTimerRef.current);
-                setDisplayPassword(MASK_CHAR.repeat(realPasswordRef.current.length));
+                maskAll();
                 setTouched(prev => ({ ...prev, password: true }));
                 setFieldError('password', realPasswordRef.current);
               }}
@@ -414,7 +395,8 @@ export default function SignupScreen() {
             <Text className="text-sm font-semibold text-gray-700">구글로 시작하기</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </ScrollView>
+      </KeyboardAvoidingView>
 
       <OtpModal visible={modalVisible} onClose={() => setModalVisible(false)} />
     </SafeAreaView>
