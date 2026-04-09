@@ -92,7 +92,7 @@ function OtpModal({ visible, onClose }: { visible: boolean; onClose: () => void 
         <TouchableOpacity
           onPress={onClose}
           className="absolute top-5 right-6"
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
         >
           <Text className="text-xl font-bold text-gray-800">✕</Text>
         </TouchableOpacity>
@@ -154,7 +154,12 @@ export default function SignupScreen() {
   const phoneRef = useRef<TextInput>(null);
   const debounceRefs = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  const { displayPassword, realPasswordRef, handleInput: maskHandleInput, maskAll } = usePasswordMask();
+  const {
+    displayPassword,
+    realPasswordRef,
+    handleInput: maskHandleInput,
+    maskAll,
+  } = usePasswordMask();
 
   // 언마운트 시 debounce 타이머 정리
   useEffect(() => {
@@ -254,148 +259,148 @@ export default function SignupScreen() {
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-      <ScrollView
-        className="flex-1 px-10"
-        contentContainerStyle={{ justifyContent: 'center', flexGrow: 1, paddingBottom: 40 }}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* 헤더 */}
-        <View className="mb-16">
-          <Text className="text-4xl font-bold leading-tight text-black">
-            사용자님의{'\n'}
-            <Text className="text-blue-500">정보를</Text> 알려주세요.
-          </Text>
-        </View>
-
-        {/* 입력 필드 */}
-        <View className="gap-4">
-          {/* 이메일 혹은 아이디 */}
-          <View>
-            <TextInput
-              ref={emailRef}
-              value={email}
-              onChangeText={text => handleChange('email', text, setEmail)}
-              onBlur={() => handleBlur('email', email)}
-              placeholder="이메일 혹은 아이디"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              className={inputClass('email')}
-              style={inputStyle('email')}
-            />
-            <Text className="mt-1 ml-2 text-sm text-red-400" style={{ minHeight: 20 }}>
-              {errors.email ?? ''}
-            </Text>
-          </View>
-
-          {/* 이름 */}
-          <View>
-            <TextInput
-              ref={nameRef}
-              value={name}
-              onChangeText={text => handleChange('name', text, setName)}
-              onBlur={() => handleBlur('name', name)}
-              placeholder="아이디"
-              className={inputClass('name')}
-              style={inputStyle('name')}
-            />
-            <Text className="mt-1 ml-2 text-sm text-red-400" style={{ minHeight: 20 }}>
-              {errors.name ?? ''}
-            </Text>
-          </View>
-
-          {/* 비밀번호 */}
-          <View>
-            <TextInput
-              ref={passwordRef}
-              value={displayPassword}
-              onChangeText={handlePasswordInput}
-              onBlur={() => {
-                clearTimeout(debounceRefs.current['password']);
-                maskAll();
-                setTouched(prev => ({ ...prev, password: true }));
-                setFieldError('password', realPasswordRef.current);
-              }}
-              placeholder="비밀번호"
-              className={inputClass('password')}
-              style={inputStyle('password')}
-            />
-            <Text className="mt-1 ml-2 text-sm text-red-400" style={{ minHeight: 20 }}>
-              {errors.password ?? ''}
-            </Text>
-          </View>
-
-          {/* 휴대전화 */}
-          <View>
-            <View
-              className={`flex-row items-center px-5 rounded-full overflow-hidden ${errors.phone ? 'bg-red-50' : 'bg-gray-100'}`}
-              style={errors.phone ? { borderWidth: 1, borderColor: '#fca5a5' } : {}}
-            >
-              <TextInput
-                ref={phoneRef}
-                value={phone}
-                onChangeText={text => handleChange('phone', text, setPhone)}
-                onBlur={() => handleBlur('phone', phone)}
-                placeholder="휴대전화(-제외)"
-                keyboardType="phone-pad"
-                className="flex-1 py-4"
-              />
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={handleVerifyPress}
-                className="absolute right-0 justify-center h-full bg-blue-500 rounded-full px-7 align-center"
-              >
-                <Text className="font-semibold text-white text-md">인증</Text>
-              </TouchableOpacity>
-            </View>
-            <Text className="mt-1 ml-2 text-sm text-red-400" style={{ minHeight: 20 }}>
-              {errors.phone ?? ''}
-            </Text>
-          </View>
-        </View>
-
-        {/* 회원가입 버튼 */}
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={handleSignup}
-          className="items-center justify-center w-full mt-6 bg-blue-500 rounded-full h-14"
+        <ScrollView
+          className="flex-1 px-10"
+          contentContainerStyle={{ justifyContent: 'center', flexGrow: 1, paddingBottom: 40 }}
+          keyboardShouldPersistTaps="handled"
         >
-          <Text className="text-base font-bold text-white">회원가입</Text>
-        </TouchableOpacity>
+          {/* 헤더 */}
+          <View className="mb-16">
+            <Text className="text-4xl font-bold leading-tight text-black">
+              사용자님의{'\n'}
+              <Text className="text-blue-500">정보를</Text> 알려주세요.
+            </Text>
+          </View>
 
-        {/* 로그인 링크 */}
-        <View className="flex-row items-center justify-center mt-7">
-          <Text className="text-sm text-gray-500">이미 계정이 있으신가요? </Text>
-          <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('Login')}>
-            <Text className="text-sm font-semibold text-blue-500">로그인</Text>
-          </TouchableOpacity>
-        </View>
+          {/* 입력 필드 */}
+          <View className="gap-4">
+            {/* 이메일 혹은 아이디 */}
+            <View>
+              <TextInput
+                ref={emailRef}
+                value={email}
+                onChangeText={text => handleChange('email', text, setEmail)}
+                onBlur={() => handleBlur('email', email)}
+                placeholder="이메일 혹은 아이디"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                className={inputClass('email')}
+                style={inputStyle('email')}
+              />
+              <Text className="mt-1 ml-2 text-sm text-red-400" style={{ minHeight: 20 }}>
+                {errors.email ?? ''}
+              </Text>
+            </View>
 
-        {/* 소셜 버튼 */}
-        <View className="flex-row gap-3 mt-8">
+            {/* 이름 */}
+            <View>
+              <TextInput
+                ref={nameRef}
+                value={name}
+                onChangeText={text => handleChange('name', text, setName)}
+                onBlur={() => handleBlur('name', name)}
+                placeholder="아이디"
+                className={inputClass('name')}
+                style={inputStyle('name')}
+              />
+              <Text className="mt-1 ml-2 text-sm text-red-400" style={{ minHeight: 20 }}>
+                {errors.name ?? ''}
+              </Text>
+            </View>
+
+            {/* 비밀번호 */}
+            <View>
+              <TextInput
+                ref={passwordRef}
+                value={displayPassword}
+                onChangeText={handlePasswordInput}
+                onBlur={() => {
+                  clearTimeout(debounceRefs.current['password']);
+                  maskAll();
+                  setTouched(prev => ({ ...prev, password: true }));
+                  setFieldError('password', realPasswordRef.current);
+                }}
+                placeholder="비밀번호"
+                className={inputClass('password')}
+                style={inputStyle('password')}
+              />
+              <Text className="mt-1 ml-2 text-sm text-red-400" style={{ minHeight: 20 }}>
+                {errors.password ?? ''}
+              </Text>
+            </View>
+
+            {/* 휴대전화 */}
+            <View>
+              <View
+                className={`flex-row items-center rounded-full ${errors.phone ? 'bg-red-50' : 'bg-gray-100'}`}
+                style={errors.phone ? { borderWidth: 1, borderColor: '#fca5a5' } : {}}
+              >
+                <TextInput
+                  ref={phoneRef}
+                  value={phone}
+                  onChangeText={text => handleChange('phone', text, setPhone)}
+                  onBlur={() => handleBlur('phone', phone)}
+                  placeholder="휴대전화(-제외)"
+                  keyboardType="phone-pad"
+                  className="flex-1 py-4 pl-5 text-base"
+                />
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={handleVerifyPress}
+                  className="self-stretch justify-center bg-blue-500 rounded-full px-7"
+                >
+                  <Text className="text-sm font-semibold text-white">인증</Text>
+                </TouchableOpacity>
+              </View>
+              <Text className="mt-1 ml-2 text-sm text-red-400" style={{ minHeight: 20 }}>
+                {errors.phone ?? ''}
+              </Text>
+            </View>
+          </View>
+
+          {/* 회원가입 버튼 */}
           <TouchableOpacity
             activeOpacity={0.7}
-            className="flex-1 flex-row items-center justify-center gap-2 h-12 bg-[#ffeb00] rounded-2xl"
+            onPress={handleSignup}
+            className="items-center justify-center w-full mt-6 bg-blue-500 rounded-full h-14"
           >
-            <Image
-              style={{ width: 22, height: 22, borderRadius: 9999 }}
-              source={require('@/assets/kakaotalk_sharing_btn/kakaotalk_sharing_btn_medium.png')}
-              resizeMode="contain"
-            />
-            <Text className="text-sm font-semibold text-gray-800">카카오로 시작하기</Text>
+            <Text className="text-base font-bold text-white">회원가입</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            activeOpacity={0.7}
-            className="flex-row items-center justify-center flex-1 h-12 gap-2 bg-white border border-gray-200 rounded-2xl"
-          >
-            <Image
-              style={{ width: 18, height: 18 }}
-              source={require('@/assets/Google_logo.png')}
-              resizeMode="contain"
-            />
-            <Text className="text-sm font-semibold text-gray-700">구글로 시작하기</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
+
+          {/* 로그인 링크 */}
+          <View className="flex-row items-center justify-center mt-7">
+            <Text className="text-sm text-gray-500">이미 계정이 있으신가요? </Text>
+            <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('Login')}>
+              <Text className="text-sm font-semibold text-blue-500">로그인</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* 소셜 버튼 */}
+          <View className="flex-row gap-3 mt-8">
+            <TouchableOpacity
+              activeOpacity={0.7}
+              className="flex-1 flex-row items-center justify-center gap-2 h-12 bg-[#ffeb00] rounded-2xl"
+            >
+              <Image
+                style={{ width: 22, height: 22, borderRadius: 9999 }}
+                source={require('@/assets/kakaotalk_sharing_btn/kakaotalk_sharing_btn_medium.png')}
+                resizeMode="contain"
+              />
+              <Text className="text-sm font-semibold text-gray-800">카카오로 시작하기</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              className="flex-row items-center justify-center flex-1 h-12 gap-2 bg-white border border-gray-200 rounded-2xl"
+            >
+              <Image
+                style={{ width: 18, height: 18 }}
+                source={require('@/assets/Google_logo.png')}
+                resizeMode="contain"
+              />
+              <Text className="text-sm font-semibold text-gray-700">구글로 시작하기</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
       </KeyboardAvoidingView>
 
       <OtpModal visible={modalVisible} onClose={() => setModalVisible(false)} />
