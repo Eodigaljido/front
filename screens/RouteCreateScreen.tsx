@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -24,11 +24,12 @@ import {
   TRANSPORT_LABELS,
   type TransportMode,
   MOCK_RECENT_PLACES,
-  filterPlaces,
-  findPlaceById,
+  type MockPlace,
   estimateMinutes,
   MOCK_COLLABORATORS,
 } from '../data/routeCreateMocks';
+import { searchKakaoPlacesByKeyword } from '../data/kakaoLocalApi';
+import { fetchGoogleDirectionsLeg, type DirectionsMode } from '../data/googleDirectionsApi';
 import type { CourseItem } from '../data/mockData';
 import { MOCK_COURSES, getCourseStepMapPoint } from '../data/mockData';
 
@@ -45,6 +46,10 @@ type RouteLeg = {
   id: string;
   mode: TransportMode;
   minutes: number;
+  transitType?: 'bus' | 'subway' | 'train';
+  directionsSummary?: string;
+  directionsDetail?: string;
+  distanceMeters?: number;
 };
 
 const ROUTE_CREATE_EMPTY_STOPS: RouteStop[] = [
@@ -95,6 +100,19 @@ function transportIcon(mode: TransportMode): string {
 
 function uid() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+const TRANSIT_TYPE_LABELS = {
+  bus: '버스',
+  subway: '지하철',
+  train: '기차',
+} as const;
+
+type TransitType = keyof typeof TRANSIT_TYPE_LABELS;
+
+function legTransportLabel(mode: TransportMode, transitType?: TransitType): string {
+  if (mode !== 'transit') return TRANSPORT_LABELS[mode];
+  return transitType ? `대중교통(${TRANSIT_TYPE_LABELS[transitType]})` : TRANSPORT_LABELS.transit;
 }
 
 /** 공유 루트 목 코스 → 루트 제작 정류장/구간 (저장 시 새 내 루트로 추가) */
@@ -184,7 +202,12 @@ function rebuildLegsForStops(
     }
     out.push(
       found
-        ? { ...found, id: uid() }
+        ? {
+            id: uid(),
+            mode: found.mode,
+            minutes: found.minutes,
+            transitType: found.transitType,
+          }
         : {
             id: uid(),
             mode: 'transit' as TransportMode,
@@ -204,6 +227,100 @@ function buildMapPath(stops: RouteStop[]) {
     }
   }
   return pts;
+}
+
+function dedupePathPoints(pts: { latitude: number; longitude: number }[]) {
+  const out: { latitude: number; longitude: number }[] = [];
+  for (const p of pts) {
+    const last = out[out.length - 1];
+    if (
+      !last ||
+      Math.abs(last.latitude - p.latitude) > 1e-8 ||
+      Math.abs(last.longitude - p.longitude) > 1e-8
+    ) {
+      out.push(p);
+    }
+  }
+  return out;
+}
+
+function snapPolylineToEndpoints(
+  seg: { latitude: number; longitude: number }[],
+  from: { lat: number; lng: number },
+  to: { lat: number; lng: number },
+) {
+  if (seg.length === 0) {
+    return [
+      { latitude: from.lat, longitude: from.lng },
+      { latitude: to.lat, longitude: to.lng },
+    ];
+  }
+  const next = seg.map((p) => ({ latitude: p.latitude, longitude: p.longitude }));
+  next[0] = { latitude: from.lat, longitude: from.lng };
+  next[next.length - 1] = { latitude: to.lat, longitude: to.lng };
+  return next;
+}
+
+function buildModeAwareMapPath(stops: RouteStop[], legs: RouteLeg[]) {
+  const validStops = stops.filter((s) => s.lat != null && s.lng != null);
+  if (validStops.length < 2) return buildMapPath(stops);
+  const out: { latitude: number; longitude: number }[] = [];
+
+  for (let i = 0; i < validStops.length - 1; i++) {
+    const a = validStops[i];
+    const b = validStops[i + 1];
+    const leg = legs[i];
+    const start = { latitude: a.lat as number, longitude: a.lng as number };
+    const end = { latitude: b.lat as number, longitude: b.lng as number };
+    const mid = {
+      latitude: (start.latitude + end.latitude) / 2,
+      longitude: (start.longitude + end.longitude) / 2,
+    };
+
+    const latSpan = end.latitude - start.latitude;
+    const lngSpan = end.longitude - start.longitude;
+    const len = Math.max(0.0001, Math.hypot(latSpan, lngSpan));
+    const normal = { lat: -lngSpan / len, lng: latSpan / len };
+
+    let curve = 0.0008;
+    if (leg?.mode === 'walk') curve = 0.0005;
+    if (leg?.mode === 'bike') curve = 0.001;
+    if (leg?.mode === 'car') curve = 0.00035;
+    if (leg?.mode === 'transit') {
+      curve =
+        leg.transitType === 'bus' ? 0.0013 : leg.transitType === 'train' ? 0.0006 : 0.0009;
+    }
+    const p1 = {
+      latitude: mid.latitude + normal.lat * curve,
+      longitude: mid.longitude + normal.lng * curve,
+    };
+    const p2 = {
+      latitude: mid.latitude - normal.lat * curve * 0.6,
+      longitude: mid.longitude - normal.lng * curve * 0.6,
+    };
+
+    const seg: { latitude: number; longitude: number }[] = [];
+    const samples = leg?.mode === 'transit' && leg.transitType === 'bus' ? 9 : 7;
+    for (let t = 0; t <= samples; t++) {
+      const u = t / samples;
+      const one = 1 - u;
+      const latitude =
+        one * one * one * start.latitude +
+        3 * one * one * u * p1.latitude +
+        3 * one * u * u * p2.latitude +
+        u * u * u * end.latitude;
+      const longitude =
+        one * one * one * start.longitude +
+        3 * one * one * u * p1.longitude +
+        3 * one * u * u * p2.longitude +
+        u * u * u * end.longitude;
+      seg.push({ latitude, longitude });
+    }
+    if (i === 0) out.push(...seg);
+    else out.push(...seg.slice(1));
+  }
+
+  return out;
 }
 
 const MAP_DEFAULT_LAT = 35.1796;
@@ -450,8 +567,14 @@ export default function RouteCreateScreen(): React.JSX.Element {
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<MockPlace[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [selectedMode, setSelectedMode] = useState<TransportMode | null>(null);
+  const [selectedTransitType, setSelectedTransitType] = useState<TransitType>('subway');
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
+  const [searchTargetStopId, setSearchTargetStopId] = useState<string | null>(null);
+  const [mapRoutePath, setMapRoutePath] = useState<{ latitude: number; longitude: number }[]>([]);
 
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
@@ -493,6 +616,13 @@ export default function RouteCreateScreen(): React.JSX.Element {
               id: l.id,
               mode: normalizeLegMode(l.mode),
               minutes: l.minutes,
+              transitType:
+                normalizeLegMode(l.mode) === 'transit'
+                  ? ((l as any).transitType ?? 'subway')
+                  : undefined,
+              directionsSummary: l.directionsSummary,
+              directionsDetail: l.directionsDetail,
+              distanceMeters: l.distanceMeters,
             })),
           );
           setActivity([
@@ -535,33 +665,195 @@ export default function RouteCreateScreen(): React.JSX.Element {
     ]),
   );
 
-  const searchResults = useMemo(
-    () => filterPlaces(searchQuery),
-    [searchQuery],
+  const selectablePlaces = useMemo(() => {
+    const m = new Map<string, MockPlace>();
+    for (const p of MOCK_RECENT_PLACES) m.set(p.id, p);
+    for (const p of searchResults) m.set(p.id, p);
+    return Array.from(m.values());
+  }, [searchResults]);
+
+  const selectedPlace = selectedPlaceId
+    ? selectablePlaces.find((p) => p.id === selectedPlaceId) ?? null
+    : null;
+
+  const mapPath = useMemo(() => buildModeAwareMapPath(stops, legs), [stops, legs]);
+  const pathStopsForMap = useMemo(() => buildMapPath(stops), [stops]);
+
+  /** 좌표·이동수단이 바뀔 때만 Directions 재호출 (응답으로 갱신되는 minutes/summary는 제외) */
+  const directionsRouteKey = useMemo(
+    () =>
+      `${stops.length}|${stops.map((s) => `${s.lat ?? ''},${s.lng ?? ''}`).join('|')}@@${legs.length}|${legs.map((l) => `${l.mode}:${l.transitType ?? ''}`).join('|')}`,
+    [stops, legs],
   );
-
-  const selectedPlace = selectedPlaceId ? findPlaceById(selectedPlaceId) ?? null : null;
-
-  const mapPath = useMemo(() => buildMapPath(stops), [stops]);
 
   const viaStops = useMemo(() => stops.filter((s) => s.kind === 'via'), [stops]);
   const totalMinutes = useMemo(() => legs.reduce((sum, l) => sum + l.minutes, 0), [legs]);
 
   const showAddButton = Boolean(selectedPlace && selectedMode);
 
-  const openSearch = useCallback(() => {
+  const openSearch = useCallback((targetStopId?: string) => {
     setSearchOpen(true);
     setSearchQuery('');
+    setSearchResults([]);
+    setSearchError(null);
+    setSearchLoading(false);
     setSelectedPlaceId(null);
     setSelectedMode(null);
+    setSelectedTransitType('subway');
+    setSearchTargetStopId(typeof targetStopId === 'string' ? targetStopId : null);
   }, []);
 
   const closeSearch = useCallback(() => {
     setSearchOpen(false);
     setSearchQuery('');
+    setSearchResults([]);
+    setSearchError(null);
+    setSearchLoading(false);
     setSelectedPlaceId(null);
     setSelectedMode(null);
+    setSelectedTransitType('subway');
+    setSearchTargetStopId(null);
   }, []);
+
+  useEffect(() => {
+    if (!searchOpen) return;
+    const q = searchQuery.trim();
+    if (!q) {
+      setSearchResults([]);
+      setSearchError(null);
+      setSearchLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setSearchLoading(true);
+    setSearchError(null);
+    const t = setTimeout(async () => {
+      try {
+        const rows = await searchKakaoPlacesByKeyword(q, controller.signal);
+        setSearchResults(rows);
+      } catch (e: any) {
+        if (controller.signal.aborted) return;
+        setSearchResults([]);
+        setSearchError(e?.message ?? '장소 검색 중 오류가 발생했습니다.');
+      } finally {
+        if (!controller.signal.aborted) setSearchLoading(false);
+      }
+    }, 350);
+
+    return () => {
+      clearTimeout(t);
+      controller.abort();
+    };
+  }, [searchOpen, searchQuery]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+
+    const run = async () => {
+      const stopsSnap = stopsRef.current;
+      const legsSnap = legsRef.current;
+      const fallbackPath = buildModeAwareMapPath(stopsSnap, legsSnap);
+
+      const canUseRealRoute = stopsSnap.length >= 2 && legsSnap.length >= 1;
+      if (!canUseRealRoute) {
+        if (!cancelled) setMapRoutePath(fallbackPath);
+        return;
+      }
+
+      try {
+        const results = await Promise.all(
+          stopsSnap.slice(0, -1).map(async (s, i) => {
+            const e = stopsSnap[i + 1];
+            const leg = legsSnap[i];
+            if (!s || !e || !leg || s.lat == null || s.lng == null || e.lat == null || e.lng == null) {
+              return null;
+            }
+            const modeMap: Record<TransportMode, DirectionsMode> = {
+              walk: 'walking',
+              bike: 'bicycling',
+              car: 'driving',
+              transit: 'transit',
+            };
+            try {
+              const r = await fetchGoogleDirectionsLeg({
+                from: { latitude: s.lat, longitude: s.lng },
+                to: { latitude: e.lat, longitude: e.lng },
+                mode: modeMap[leg.mode],
+                transitType: leg.mode === 'transit' ? leg.transitType : undefined,
+                signal: controller.signal,
+              });
+              const path = snapPolylineToEndpoints(
+                r.path,
+                { lat: s.lat, lng: s.lng },
+                { lat: e.lat, lng: e.lng },
+              );
+              return {
+                path,
+                durationMinutes: r.durationMinutes,
+                summary: r.summary,
+                detail: r.detail,
+                distanceMeters: r.distanceMeters,
+              };
+            } catch {
+              return null;
+            }
+          }),
+        );
+
+        const merged: { latitude: number; longitude: number }[] = [];
+        for (let i = 0; i < results.length; i++) {
+          const r = results[i];
+          const s = stopsSnap[i];
+          const e = stopsSnap[i + 1];
+          let seg: { latitude: number; longitude: number }[] = [];
+          if (r?.path && r.path.length >= 2) {
+            seg = r.path;
+          } else if (
+            s?.lat != null &&
+            s?.lng != null &&
+            e?.lat != null &&
+            e?.lng != null
+          ) {
+            seg = [
+              { latitude: s.lat, longitude: s.lng },
+              { latitude: e.lat, longitude: e.lng },
+            ];
+          }
+          if (seg.length < 2) continue;
+          if (merged.length === 0) merged.push(...seg);
+          else merged.push(...seg.slice(1));
+        }
+        const cleaned = dedupePathPoints(merged);
+
+        if (cancelled) return;
+        setMapRoutePath(cleaned.length > 0 ? cleaned : fallbackPath);
+        setLegs((prev) => {
+          if (prev.length !== results.length) return prev;
+          return prev.map((leg, i) => {
+            const r = results[i];
+            if (!r) return leg;
+            return {
+              ...leg,
+              minutes: r.durationMinutes,
+              directionsSummary: r.summary,
+              directionsDetail: r.detail,
+              distanceMeters: r.distanceMeters,
+            };
+          });
+        });
+      } catch {
+        if (!cancelled) setMapRoutePath(buildModeAwareMapPath(stopsRef.current, legsRef.current));
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [directionsRouteKey]);
 
   const pushActivity = useCallback((line: string) => {
     setActivity((a) => [line, ...a].slice(0, 8));
@@ -704,10 +996,71 @@ export default function RouteCreateScreen(): React.JSX.Element {
 
   const addStopToRoute = useCallback(() => {
     if (!selectedPlace || !selectedMode) return;
+    const m = estimateMinutes(selectedMode, selectedPlace.id);
+
+    if (searchTargetStopId) {
+      const target = stops.find((s) => s.id === searchTargetStopId);
+      if (!target) {
+        closeSearch();
+        return;
+      }
+      const targetTitle = target.kind === 'start' ? '출발지' : target.kind === 'end' ? '도착지' : '경유지';
+      const timeLine =
+        target.kind === 'start'
+          ? `${legTransportLabel(selectedMode, selectedMode === 'transit' ? selectedTransitType : undefined)} · 약 ${m}분 · 출발`
+          : target.kind === 'end'
+            ? `${legTransportLabel(selectedMode, selectedMode === 'transit' ? selectedTransitType : undefined)} · 약 ${m}분 · 도착 예정`
+            : `${legTransportLabel(selectedMode, selectedMode === 'transit' ? selectedTransitType : undefined)} · 약 ${m}분`;
+
+      setStops((prev) =>
+        prev.map((s) =>
+          s.id === searchTargetStopId
+            ? {
+                ...s,
+                title: selectedPlace.name,
+                timeLine,
+                lat: selectedPlace.latitude,
+                lng: selectedPlace.longitude,
+              }
+            : s,
+        ),
+      );
+      if (target.kind === 'start') {
+        setLegs((prev) =>
+          prev.length > 0
+            ? [
+                {
+                  ...prev[0],
+                  mode: selectedMode,
+                  minutes: m,
+                  transitType: selectedMode === 'transit' ? selectedTransitType : undefined,
+                },
+                ...prev.slice(1),
+              ]
+            : prev,
+        );
+      } else if (target.kind === 'end') {
+        setLegs((prev) =>
+          prev.length > 0
+            ? [
+                ...prev.slice(0, -1),
+                {
+                  ...prev[prev.length - 1],
+                  mode: selectedMode,
+                  minutes: m,
+                  transitType: selectedMode === 'transit' ? selectedTransitType : undefined,
+                },
+              ]
+            : prev,
+        );
+      }
+      pushActivity(`${targetTitle}를 "${selectedPlace.name}"(으)로 변경했습니다.`);
+      closeSearch();
+      return;
+    }
 
     const startFilled = stops[0]?.lat != null && stops[0]?.lng != null;
     const endFilled = stops[stops.length - 1]?.lat != null && stops[stops.length - 1]?.lng != null;
-    const m = estimateMinutes(selectedMode, selectedPlace.id);
 
     if (!startFilled) {
       setStops((prev) => {
@@ -716,7 +1069,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
         const newStart: RouteStop = {
           ...prev[0],
           title: selectedPlace.name,
-          timeLine: `${TRANSPORT_LABELS[selectedMode]} · 약 ${m}분 · 출발`,
+          timeLine: `${legTransportLabel(selectedMode, selectedMode === 'transit' ? selectedTransitType : undefined)} · 약 ${m}분 · 출발`,
           lat: selectedPlace.latitude,
           lng: selectedPlace.longitude,
         };
@@ -737,13 +1090,20 @@ export default function RouteCreateScreen(): React.JSX.Element {
           {
             ...end,
             title: selectedPlace.name,
-            timeLine: `${TRANSPORT_LABELS[selectedMode]} · 약 ${m}분 · 도착 예정`,
+            timeLine: `${legTransportLabel(selectedMode, selectedMode === 'transit' ? selectedTransitType : undefined)} · 약 ${m}분 · 도착 예정`,
             lat: selectedPlace.latitude,
             lng: selectedPlace.longitude,
           },
         ];
       });
-      setLegs([{ id: uid(), mode: selectedMode, minutes: m }]);
+      setLegs([
+        {
+          id: uid(),
+          mode: selectedMode,
+          minutes: m,
+          transitType: selectedMode === 'transit' ? selectedTransitType : undefined,
+        },
+      ]);
       pushActivity(`도착지를 "${selectedPlace.name}"(으)로 설정했습니다.`);
       closeSearch();
       return;
@@ -757,7 +1117,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
         id: uid(),
         kind: 'via',
         title: selectedPlace.name,
-        timeLine: `${TRANSPORT_LABELS[selectedMode]} · 약 ${estimateMinutes(selectedMode, selectedPlace.id)}분`,
+        timeLine: `${legTransportLabel(selectedMode, selectedMode === 'transit' ? selectedTransitType : undefined)} · 약 ${estimateMinutes(selectedMode, selectedPlace.id)}분`,
         lat: selectedPlace.latitude,
         lng: selectedPlace.longitude,
       };
@@ -774,8 +1134,18 @@ export default function RouteCreateScreen(): React.JSX.Element {
       const secondHalf = Math.max(5, last.minutes - firstHalf);
       return [
         ...prev.slice(0, -1),
-        { id: uid(), mode: selectedMode, minutes: firstHalf },
-        { id: uid(), mode: selectedMode, minutes: secondHalf },
+        {
+          id: uid(),
+          mode: selectedMode,
+          minutes: firstHalf,
+          transitType: selectedMode === 'transit' ? selectedTransitType : undefined,
+        },
+        {
+          id: uid(),
+          mode: selectedMode,
+          minutes: secondHalf,
+          transitType: selectedMode === 'transit' ? selectedTransitType : undefined,
+        },
       ];
     });
 
@@ -785,7 +1155,16 @@ export default function RouteCreateScreen(): React.JSX.Element {
         : `경유지 "${selectedPlace.name}"을(를) 추가했습니다.`,
     );
     closeSearch();
-  }, [selectedPlace, selectedMode, closeSearch, pushActivity, stops, isCollaborative]);
+  }, [
+    selectedPlace,
+    selectedMode,
+    searchTargetStopId,
+    selectedTransitType,
+    closeSearch,
+    pushActivity,
+    stops,
+    isCollaborative,
+  ]);
 
   const removeStop = (id: string) => {
     const idx = stops.findIndex((s) => s.id === id);
@@ -811,6 +1190,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
               id: uid(),
               mode: a.mode,
               minutes: Math.max(5, a.minutes + b.minutes),
+              transitType: a.mode === 'transit' ? a.transitType : undefined,
             };
             return [...prev.slice(0, i), merged, ...prev.slice(i + 2)];
           });
@@ -821,6 +1201,10 @@ export default function RouteCreateScreen(): React.JSX.Element {
   };
 
   const editStop = (stop: RouteStop) => {
+    if (stop.kind === 'start' || stop.kind === 'end') {
+      openSearch(stop.id);
+      return;
+    }
     if (stop.lat == null || stop.lng == null) {
       openSearch();
       return;
@@ -897,6 +1281,10 @@ export default function RouteCreateScreen(): React.JSX.Element {
         id: l.id,
         mode: l.mode,
         minutes: l.minutes,
+        transitType: l.transitType,
+        directionsSummary: l.directionsSummary,
+        directionsDetail: l.directionsDetail,
+        distanceMeters: l.distanceMeters,
       })),
     });
     setPersistedRouteId(id);
@@ -908,9 +1296,39 @@ export default function RouteCreateScreen(): React.JSX.Element {
   };
 
   const updateLegMode = useCallback((legId: string, mode: TransportMode) => {
-    setLegs((prev) => prev.map((l) => (l.id === legId ? { ...l, mode } : l)));
+    setLegs((prev) =>
+      prev.map((l) =>
+        l.id === legId
+          ? {
+              ...l,
+              mode,
+              transitType: mode === 'transit' ? l.transitType ?? 'subway' : undefined,
+              directionsSummary: undefined,
+              directionsDetail: undefined,
+              distanceMeters: undefined,
+            }
+          : l,
+      ),
+    );
     setEditingLegId(null);
     pushActivity(`이동 수단을 ${TRANSPORT_LABELS[mode]}(으)로 변경했습니다.`);
+  }, [pushActivity]);
+
+  const updateLegTransitType = useCallback((legId: string, transitType: TransitType) => {
+    setLegs((prev) =>
+      prev.map((l) =>
+        l.id === legId && l.mode === 'transit'
+          ? {
+              ...l,
+              transitType,
+              directionsSummary: undefined,
+              directionsDetail: undefined,
+              distanceMeters: undefined,
+            }
+          : l,
+      ),
+    );
+    pushActivity(`대중교통 유형을 ${TRANSIT_TYPE_LABELS[transitType]}(으)로 변경했습니다.`);
   }, [pushActivity]);
 
   const renderStopBadge = (kind: RouteStop['kind']) => {
@@ -955,7 +1373,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
   };
 
   /** 1개: 마커만, 2개 이상: 선 + 마커 (웹: 카카오 JS / 네이티브: expo-maps) */
-  const mapPathProp = mapPath.length >= 1 ? mapPath : undefined;
+  const mapPathProp = mapRoutePath.length >= 1 ? mapRoutePath : undefined;
 
   /** 하단 시트 둥근 모서리 뒤로 지도가 비치도록 살짝 겹침 (rounded-t-3xl ≈ 24px) */
   const ROUTE_SHEET_TOP_OVERLAP = 24;
@@ -965,10 +1383,11 @@ export default function RouteCreateScreen(): React.JSX.Element {
       <View style={[StyleSheet.absoluteFillObject, { zIndex: 0 }]} pointerEvents="auto">
         <AppMapView
           style={{ flex: 1 }}
-          latitude={mapPath[0]?.latitude ?? MAP_DEFAULT_LAT}
-          longitude={mapPath[0]?.longitude ?? MAP_DEFAULT_LNG}
-          level={mapPath.length >= 2 ? 6 : 8}
+          latitude={mapRoutePath[0]?.latitude ?? mapPath[0]?.latitude ?? MAP_DEFAULT_LAT}
+          longitude={mapRoutePath[0]?.longitude ?? mapPath[0]?.longitude ?? MAP_DEFAULT_LNG}
+          level={mapRoutePath.length >= 2 ? 6 : 8}
           path={mapPathProp}
+          stops={pathStopsForMap.length >= 1 ? pathStopsForMap : undefined}
         />
       </View>
 
@@ -992,7 +1411,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
           </Pressable>
 
           <Pressable
-            onPress={openSearch}
+            onPress={() => openSearch()}
             className="ml-14 flex-row items-center rounded-2xl bg-white px-4 py-3 shadow-md active:opacity-95"
             style={{
               shadowColor: '#000',
@@ -1189,18 +1608,26 @@ export default function RouteCreateScreen(): React.JSX.Element {
                 {index < stops.length - 1 && legs[index] && (
                   <Pressable
                     onPress={() => setEditingLegId(legs[index].id)}
-                    className="ml-12 mb-2 flex-row items-center py-1 pl-2 active:opacity-70"
+                    className="ml-12 mb-2 py-1 pl-2 active:opacity-70"
                     style={{ borderLeftWidth: 3, borderLeftColor: 'rgba(37, 99, 235, 0.35)' }}
                   >
-                    <MaterialCommunityIcons
-                      name={transportIcon(legs[index].mode) as any}
-                      size={18}
-                      color="#2563eb"
-                    />
-                    <Text className="ml-2 text-xs font-medium text-blue-900/80">
-                      {TRANSPORT_LABELS[legs[index].mode]} · 약 {legs[index].minutes}분
-                    </Text>
-                    <Ionicons name="chevron-forward" size={12} color="#94a3b8" style={{ marginLeft: 4 }} />
+                    <View className="flex-row items-center">
+                      <MaterialCommunityIcons
+                        name={transportIcon(legs[index].mode) as any}
+                        size={18}
+                        color="#2563eb"
+                      />
+                      <Text className="ml-2 flex-1 text-xs font-medium text-blue-900/80">
+                        {legTransportLabel(legs[index].mode, legs[index].transitType)} · 약{' '}
+                        {legs[index].minutes}분
+                      </Text>
+                      <Ionicons name="chevron-forward" size={12} color="#94a3b8" style={{ marginLeft: 4 }} />
+                    </View>
+                    {legs[index].directionsSummary ? (
+                      <Text className="mt-0.5 pl-7 text-[11px] leading-4 text-slate-600" numberOfLines={3}>
+                        {legs[index].directionsSummary}
+                      </Text>
+                    ) : null}
                   </Pressable>
                 )}
               </View>
@@ -1311,6 +1738,11 @@ export default function RouteCreateScreen(): React.JSX.Element {
                   검색·최근 목록에서 이동할 장소를 선택해 주세요.
                 </Text>
               ) : null}
+              {searchTargetStopId ? (
+                <Text className="mt-1 text-[11px] font-medium text-sky-800">
+                  현재 선택된 출발지/도착지를 새 장소로 교체합니다.
+                </Text>
+              ) : null}
             </View>
 
             <View className="flex-row gap-2 px-3 py-3">
@@ -1335,6 +1767,31 @@ export default function RouteCreateScreen(): React.JSX.Element {
                 );
               })}
             </View>
+            {selectedMode === 'transit' ? (
+              <View className="px-3 pb-2">
+                <Text className="mb-1 text-[11px] font-medium text-gray-600">
+                  대중교통 종류를 선택하세요
+                </Text>
+                <View className="flex-row gap-2">
+                  {(Object.keys(TRANSIT_TYPE_LABELS) as TransitType[]).map((tt) => {
+                    const on = selectedTransitType === tt;
+                    return (
+                      <Pressable
+                        key={tt}
+                        onPress={() => setSelectedTransitType(tt)}
+                        className={`flex-1 items-center rounded-xl border py-2 ${
+                          on ? 'border-sky-500 bg-sky-50' : 'border-gray-200 bg-gray-100'
+                        }`}
+                      >
+                        <Text className={`text-[11px] font-bold ${on ? 'text-sky-700' : 'text-gray-700'}`}>
+                          {TRANSIT_TYPE_LABELS[tt]}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
 
             <ScrollView className="flex-1 px-3" keyboardShouldPersistTaps="handled">
               {searchQuery.trim() === '' ? (
@@ -1378,7 +1835,9 @@ export default function RouteCreateScreen(): React.JSX.Element {
                             onPress={addStopToRoute}
                             className="items-center border-t border-gray-200 bg-white py-3.5 active:bg-gray-50"
                           >
-                            <Text className="text-base font-bold text-gray-900">경로에 추가</Text>
+                            <Text className="text-base font-bold text-gray-900">
+                              {searchTargetStopId ? '이 위치로 변경' : '경로에 추가'}
+                            </Text>
                           </Pressable>
                         )}
                       </Pressable>
@@ -1388,7 +1847,11 @@ export default function RouteCreateScreen(): React.JSX.Element {
               ) : (
                 <>
                   <Text className="mb-2 px-1 text-sm font-bold text-gray-800">검색결과</Text>
-                  {searchResults.length === 0 ? (
+                  {searchLoading ? (
+                    <Text className="py-8 text-center text-sm text-gray-500">검색 중...</Text>
+                  ) : searchError ? (
+                    <Text className="py-8 text-center text-sm text-rose-500">{searchError}</Text>
+                  ) : searchResults.length === 0 ? (
                     <Text className="py-8 text-center text-sm text-gray-500">
                       검색 결과가 없습니다. 다른 키워드를 입력해 보세요.
                     </Text>
@@ -1426,7 +1889,9 @@ export default function RouteCreateScreen(): React.JSX.Element {
                               onPress={addStopToRoute}
                               className="items-center border-t border-gray-200 bg-white py-3.5 active:bg-gray-50"
                             >
-                              <Text className="text-base font-bold text-gray-900">경로에 추가</Text>
+                              <Text className="text-base font-bold text-gray-900">
+                                {searchTargetStopId ? '이 위치로 변경' : '경로에 추가'}
+                              </Text>
                             </Pressable>
                           )}
                         </Pressable>
@@ -1496,8 +1961,20 @@ export default function RouteCreateScreen(): React.JSX.Element {
             className="bg-black/40"
             onPress={() => setEditingLegId(null)}
           />
-          <View className="rounded-2xl bg-white p-5" style={{ zIndex: 1 }}>
+          <View className="max-h-[85%] rounded-2xl bg-white p-5" style={{ zIndex: 1 }}>
             <Text className="mb-3 text-lg font-bold text-gray-900">이동 수단 변경</Text>
+            {(() => {
+              const leg = legs.find((l) => l.id === editingLegId);
+              if (!leg?.directionsDetail) return null;
+              return (
+                <ScrollView
+                  className="mb-3 max-h-40 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2"
+                  nestedScrollEnabled
+                >
+                  <Text className="text-xs leading-5 text-slate-700">{leg.directionsDetail}</Text>
+                </ScrollView>
+              );
+            })()}
             {(Object.keys(TRANSPORT_LABELS) as TransportMode[]).map((mode) => {
               const leg = legs.find((l) => l.id === editingLegId);
               const isSelected = leg?.mode === mode;
@@ -1527,6 +2004,33 @@ export default function RouteCreateScreen(): React.JSX.Element {
                 </Pressable>
               );
             })}
+            {(() => {
+              const leg = legs.find((l) => l.id === editingLegId);
+              if (!leg || leg.mode !== 'transit') return null;
+              return (
+                <View className="mt-2">
+                  <Text className="mb-2 text-sm font-semibold text-gray-800">대중교통 종류</Text>
+                  <View className="flex-row gap-2">
+                    {(Object.keys(TRANSIT_TYPE_LABELS) as TransitType[]).map((tt) => {
+                      const on = (leg.transitType ?? 'subway') === tt;
+                      return (
+                        <Pressable
+                          key={tt}
+                          onPress={() => editingLegId && updateLegTransitType(editingLegId, tt)}
+                          className={`flex-1 items-center rounded-xl border px-3 py-2.5 ${
+                            on ? 'border-sky-500 bg-sky-50' : 'border-gray-200 bg-gray-50'
+                          }`}
+                        >
+                          <Text className={`text-sm font-semibold ${on ? 'text-sky-700' : 'text-gray-700'}`}>
+                            {TRANSIT_TYPE_LABELS[tt]}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              );
+            })()}
           </View>
         </View>
       </Modal>

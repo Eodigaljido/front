@@ -7,4 +7,6 @@ export const GOOGLE_MAPS_JS_API_KEY =
     ? String(process.env.EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY).trim()
     : typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY
       ? String(process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY).trim()
-      : '';
+      : typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY
+        ? String(process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY).trim()
+        : '';
