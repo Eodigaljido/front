@@ -21,17 +21,17 @@ export const ProfileIcon = ({ size = 60 }: { size?: number }) => {
         paddingRight: 16,
       }}
     >
-      <View className="flex-row gap-3">
+      <View className="flex-row gap-5">
         {names.map((name, index) => (
           <View key={index} className="items-center">
             <Image
               source={{
                 uri: imageUrls[index],
               }}
-              className="rounded-full mt-3"
+              className="rounded-full mt-5 border-2 border-gray-300"
               style={{ width: size, height: size }}
             />
-            <Text className="text-sm font-semibold mt-5 text-gray-700">
+            <Text className="text-sm font-semibold mt-3 text-gray-700">
               {name}
             </Text>
           </View>
