@@ -1,11 +1,12 @@
 import React from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
-import { View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { BottomTabBar, createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MockDataProvider } from './context/MockDataContext';
 import HomeScreen from './screens/HomeScreen';
@@ -71,12 +72,54 @@ export type RootStackParamList = {
 const Tab = createBottomTabNavigator<RootTabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+const TAB_ACCENT = '#f97316';
+const TAB_INACTIVE = '#64748b';
+const TAB_GLASS_BG = 'rgba(255, 255, 255, 0.88)';
+const TAB_GLASS_BORDER = 'rgba(148, 163, 184, 0.35)';
+
+function TabBarGlassBackground() {
+  return (
+    <View
+      pointerEvents="none"
+      style={[
+        StyleSheet.absoluteFill,
+        {
+          borderRadius: 22,
+          backgroundColor: TAB_GLASS_BG,
+          borderWidth: StyleSheet.hairlineWidth * 2,
+          borderColor: TAB_GLASS_BORDER,
+        },
+      ]}
+    />
+  );
+}
+
 function TabNavigator() {
+  const insets = useSafeAreaInsets();
+  const bottomPad = Math.max(insets.bottom, Platform.OS === 'ios' ? 10 : 12);
+  const barVerticalPadding = 6;
+
   return (
     <Tab.Navigator
       initialRouteName="Home"
+      tabBar={(props) => (
+        <View
+          pointerEvents="box-none"
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: bottomPad,
+            alignItems: 'center',
+          }}
+        >
+          <View style={{ width: '88%' }}>
+            <BottomTabBar {...props} />
+          </View>
+        </View>
+      )}
       screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused }) => {
+        tabBarIcon: ({ focused, color }) => {
           const icons: Record<keyof RootTabParamList, string> = {
             Home: 'home',
             SharedRoute: 'paper-plane',
@@ -95,38 +138,47 @@ function TabNavigator() {
             Start: 'rocket',
           };
           return (
-            <Ionicons name={icons[route.name]} size={24} color={focused ? '#007AFF' : '#000'} />
+            <View
+              style={{
+                alignItems: 'center',
+                justifyContent: 'center',
+                paddingTop: 2,
+                minHeight: 28,
+              }}
+            >
+              <Ionicons name={icons[route.name] as any} size={22} color={color} />
+            </View>
           );
         },
-        tabBarActiveTintColor: '#007AFF',
-        tabBarInactiveTintColor: '#000',
+        tabBarActiveTintColor: TAB_ACCENT,
+        tabBarInactiveTintColor: TAB_INACTIVE,
+        tabBarBackground: TabBarGlassBackground,
         tabBarStyle: {
-          position: 'absolute',
-          width: '88%',
-          alignSelf: 'center',
-          bottom: 24,
-          marginHorizontal: '6%',
-          height: 72,
-          paddingTop: 8,
-          paddingBottom: 8,
-          backgroundColor: '#fff',
-          borderRadius: 28,
+          position: 'relative',
+          height: 56 + barVerticalPadding * 2 + (Platform.OS === 'android' ? 4 : 0),
+          paddingHorizontal: 4,
+          paddingTop: barVerticalPadding,
+          paddingBottom: barVerticalPadding,
+          backgroundColor: 'transparent',
           borderTopWidth: 0,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 12 },
-          shadowOpacity: 0.22,
-          shadowRadius: 24,
-          borderWidth: 1,
-          borderColor: 'rgba(0,0,0,0.06)',
-          elevation: 24,
+          elevation: Platform.OS === 'android' ? 14 : 0,
+          shadowColor: '#0f172a',
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: Platform.OS === 'ios' ? 0.12 : 0.18,
+          shadowRadius: 20,
+          borderRadius: 22,
         },
         tabBarLabelStyle: {
-          fontSize: 12,
+          fontSize: 10,
           fontWeight: '600',
-          marginTop: 4,
+          letterSpacing: -0.2,
+          marginTop: 0,
+          marginBottom: 0,
         },
         tabBarItemStyle: {
-          paddingVertical: 6,
+          paddingTop: 0,
+          paddingBottom: 0,
+          justifyContent: 'center',
         },
       })}
     >
@@ -161,27 +213,29 @@ function TabNavigator() {
 
 export default function App(): React.JSX.Element {
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <MockDataProvider>
-        <NavigationContainer>
-          <StatusBar style="auto" />
-          <Stack.Navigator screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="Tabs" component={TabNavigator} />
-            <Stack.Screen name="RouteCreate" component={RouteCreateScreen} />
-            <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
-            <Stack.Screen name="Home" component={HomeScreen} />
-            <Stack.Screen name="OnBoardStart" component={OnBoardStart} />
-            <Stack.Screen name="AreaOnBoard" component={AreaOnBoard} />
-            <Stack.Screen name="AgeOnBoard" component={AgeOnBoard} />
-            <Stack.Screen name="ActivityOnBoard" component={ActivityOnBoard} />
-            <Stack.Screen name="GenderOnBoard" component={GenderOnBoard} />
-            <Stack.Screen name="OnBoardEnd" component={OnBoardEnd} />
-            <Stack.Screen name="Login" component={LoginScreen} />
-            <Stack.Screen name="Signup" component={SignupScreen} />
-            <Stack.Screen name="Start" component={StartScreen} />
-          </Stack.Navigator>
-        </NavigationContainer>
-      </MockDataProvider>
-    </GestureHandlerRootView>
+    <SafeAreaProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <MockDataProvider>
+          <NavigationContainer>
+            <StatusBar style="auto" />
+            <Stack.Navigator screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="Tabs" component={TabNavigator} />
+              <Stack.Screen name="RouteCreate" component={RouteCreateScreen} />
+              <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
+              <Stack.Screen name="Home" component={HomeScreen} />
+              <Stack.Screen name="OnBoardStart" component={OnBoardStart} />
+              <Stack.Screen name="AreaOnBoard" component={AreaOnBoard} />
+              <Stack.Screen name="AgeOnBoard" component={AgeOnBoard} />
+              <Stack.Screen name="ActivityOnBoard" component={ActivityOnBoard} />
+              <Stack.Screen name="GenderOnBoard" component={GenderOnBoard} />
+              <Stack.Screen name="OnBoardEnd" component={OnBoardEnd} />
+              <Stack.Screen name="Login" component={LoginScreen} />
+              <Stack.Screen name="Signup" component={SignupScreen} />
+              <Stack.Screen name="Start" component={StartScreen} />
+            </Stack.Navigator>
+          </NavigationContainer>
+        </MockDataProvider>
+      </GestureHandlerRootView>
+    </SafeAreaProvider>
   );
 }
