@@ -44,10 +44,12 @@ function CourseCard({
   item,
   onPressCard,
   onRemove,
+  onEdit,
 }: {
   item: CourseItem;
   onPressCard: () => void;
   onRemove: () => void;
+  onEdit: () => void;
 }) {
   return (
     <View className="mx-4 mb-3 overflow-hidden bg-white rounded-2xl" style={CARD_STYLE}>
@@ -79,9 +81,14 @@ function CourseCard({
             </Text>
             <Text className="mt-1 text-xs text-gray-500">{item.meta}</Text>
           </View>
-          <TouchableOpacity onPress={onRemove} className="justify-center pl-1" hitSlop={8}>
-            <Ionicons name="trash-outline" size={22} color="#ef4444" />
-          </TouchableOpacity>
+          <View className="flex-row items-center">
+            <TouchableOpacity onPress={onEdit} className="justify-center pl-1" hitSlop={8}>
+              <Ionicons name="create-outline" size={22} color="#3b82f6" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onRemove} className="justify-center pl-2" hitSlop={8}>
+              <Ionicons name="trash-outline" size={22} color="#ef4444" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* 경로 안내 */}
@@ -285,6 +292,10 @@ export default function MyRouteScreen(): React.JSX.Element {
               item={item}
               onPressCard={() => setViewingCourseId(item.id)}
               onRemove={() => handleRemove(item)}
+              onEdit={() => {
+                if (isUserSavedRouteId(item.id)) openRouteCreateEdit(item.id, false);
+                else openRouteCreateFromMockCourse(item.id);
+              }}
             />
           )}
           contentContainerStyle={{ paddingTop: 8, paddingBottom: 100 }}
@@ -400,6 +411,7 @@ export default function MyRouteScreen(): React.JSX.Element {
                             longitude={mapCenter.lng}
                             level={mapLevel}
                             path={pathPts && pathPts.length >= 1 ? pathPts : undefined}
+                            stops={pathPts && pathPts.length >= 1 ? pathPts : undefined}
                             style={{ width: '100%', height: 200 }}
                           />
                         </View>
@@ -423,16 +435,29 @@ export default function MyRouteScreen(): React.JSX.Element {
                       >
                         <View className="flex-row items-center justify-between mb-4">
                           <Text className="text-xl font-bold text-gray-900">코스 상세</Text>
-                          <TouchableOpacity
-                            onPress={() => {
-                              setViewingCourseId(null);
-                              handleRemove(course);
-                            }}
-                            className="flex-row items-center gap-1 px-3 py-2 rounded-xl bg-red-50"
-                          >
-                            <Ionicons name="trash-outline" size={16} color="#ef4444" />
-                            <Text className="text-sm font-semibold text-red-500">저장 삭제</Text>
-                          </TouchableOpacity>
+                          <View className="flex-row items-center gap-2">
+                            <TouchableOpacity
+                              onPress={() => {
+                                setViewingCourseId(null);
+                                if (ur) openRouteCreateEdit(ur.id, ur.collaborative === true);
+                                else openRouteCreateFromMockCourse(course.id);
+                              }}
+                              className="flex-row items-center gap-1 rounded-xl bg-blue-50 px-3 py-2"
+                            >
+                              <Ionicons name="create-outline" size={16} color="#2563eb" />
+                              <Text className="text-sm font-semibold text-blue-600">수정</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => {
+                                setViewingCourseId(null);
+                                handleRemove(course);
+                              }}
+                              className="flex-row items-center gap-1 rounded-xl bg-red-50 px-3 py-2"
+                            >
+                              <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                              <Text className="text-sm font-semibold text-red-500">저장 삭제</Text>
+                            </TouchableOpacity>
+                          </View>
                         </View>
 
                         <Text className="mb-1 text-base font-semibold text-gray-900">
