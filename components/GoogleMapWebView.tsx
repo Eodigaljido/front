@@ -11,7 +11,10 @@ type Props = {
   latitude?: number;
   longitude?: number;
   level?: number;
+  /** 상세 경로(폴리라인). 마커는 기본적으로 찍지 않음 — stops가 없을 때만 제한적으로 표시 */
   path?: MapPathPoint[];
+  /** 정류장·출발/도착 등 마커만 찍을 좌표 (polyline과 분리) */
+  stops?: MapPathPoint[];
   style?: object;
 };
 
@@ -60,9 +63,19 @@ function buildGoogleBootstrapHtml(apiKey: string): string {
         if (!spec || !map) return;
         clearOverlays();
         var pathPts = spec.path || [];
+        var stopPts = spec.stops && spec.stops.length ? spec.stops : [];
         var linePath = pathPts.map(function (c) {
-          return { lat: c.lat, lng: c.lng };
+          return { lat: Number(c.lat), lng: Number(c.lng) };
         });
+        var markerPath = stopPts.length
+          ? stopPts.map(function (c) {
+              return { lat: Number(c.lat), lng: Number(c.lng) };
+            })
+          : linePath.length <= 24
+            ? linePath
+            : linePath.length >= 2
+              ? [linePath[0], linePath[linePath.length - 1]]
+              : linePath;
         var defaultCenter = { lat: spec.lat, lng: spec.lng };
         var gZoom = typeof spec.zoom === 'number' ? spec.zoom : 14;
         if (linePath.length >= 2) {
@@ -74,12 +87,15 @@ function buildGoogleBootstrapHtml(apiKey: string): string {
             strokeWeight: 5,
             map: map,
           });
-          linePath.forEach(function (pos) {
+          markerPath.forEach(function (pos) {
             var m = new google.maps.Marker({ position: pos, map: map });
             markers.push(m);
           });
           var bounds = new google.maps.LatLngBounds();
           linePath.forEach(function (p) {
+            bounds.extend(p);
+          });
+          markerPath.forEach(function (p) {
             bounds.extend(p);
           });
           map.fitBounds(bounds, 48);
@@ -125,21 +141,24 @@ function buildGoogleBootstrapHtml(apiKey: string): string {
 </html>`;
 }
 
+function toLatLngJson(points: MapPathPoint[] | undefined): { lat: number; lng: number }[] {
+  return (points ?? [])
+    .filter((p) => p && typeof p.latitude === 'number' && typeof p.longitude === 'number')
+    .map((p) => ({ lat: p.latitude, lng: p.longitude }));
+}
+
 export default function GoogleMapWebView({
   latitude = 37.5665,
   longitude = 126.978,
   level = 8,
   path,
+  stops,
   style,
 }: Props) {
   const apiKey = GOOGLE_MAPS_JS_API_KEY;
 
-  const pathJson = useMemo(() => {
-    const pts = (path ?? [])
-      .filter((p) => p && typeof p.latitude === 'number' && typeof p.longitude === 'number')
-      .map((p) => ({ lat: p.latitude, lng: p.longitude }));
-    return JSON.stringify(pts);
-  }, [path]);
+  const pathJson = useMemo(() => JSON.stringify(toLatLngJson(path)), [path]);
+  const stopsJson = useMemo(() => JSON.stringify(toLatLngJson(stops)), [stops]);
 
   const bootstrapHtml = useMemo(() => (apiKey ? buildGoogleBootstrapHtml(apiKey) : ''), [apiKey]);
 
@@ -157,20 +176,21 @@ export default function GoogleMapWebView({
     const lng = Number(longitude);
     const zoom = levelToGoogleZoom(level);
     const pathArr = JSON.parse(pathJson);
-    const payload = `{lat:${lat},lng:${lng},zoom:${zoom},path:${pathJson}}`;
-    const code = `(function(){var spec=${payload};if(window.__applyRoute)window.__applyRoute(spec);else window.__pendingSpec=spec;true;})();`;
+    const stopsArr = JSON.parse(stopsJson);
+    const spec = { lat, lng, zoom, path: pathArr, stops: stopsArr };
+    const embedded = JSON.stringify(JSON.stringify(spec));
+    const code = `(function(){try{var spec=JSON.parse(${embedded});if(window.__applyRoute)window.__applyRoute(spec);else window.__pendingSpec=spec;}catch(e){}true;})();`;
     if (Platform.OS === 'web') {
       try {
         const w = iframeRef.current?.contentWindow;
         if (!w) return;
-        const spec = { lat, lng, zoom, path: pathArr };
         if (typeof w.__applyRoute === 'function') w.__applyRoute(spec);
         else w.__pendingSpec = spec;
       } catch (_) {}
       return;
     }
     webRef.current?.injectJavaScript(code);
-  }, [latitude, longitude, level, pathJson]);
+  }, [latitude, longitude, level, pathJson, stopsJson]);
 
   useEffect(() => {
     if (!mapDomReadyRef.current && Platform.OS !== 'web') return;
