@@ -9,7 +9,7 @@ import { MockDataProvider } from "./context/MockDataContext";
 import HomeScreen from "./screens/HomeScreen";
 import SharedRouteScreen from "./screens/SharedRouteScreen";
 import MyRouteScreen from "./screens/MyRouteScreen";
-import ChatScreen from "./screens/ChatScreen";
+import ChatHomeScreen from "./screens/ChatHomeScreen";
 import AllScreen from "./screens/AllScreen";
 import OnBoardStart from "./screens/onboard/OnBoardStart";
 import AreaOnBoard from "./screens/onboard/AreaOnBoard";
@@ -17,6 +17,7 @@ import AgeOnBoard from "./screens/onboard/AgeOnBoard";
 import ActivityOnBoard from "./screens/onboard/ActivityOnBoard";
 import GenderOnBoard from "./screens/onboard/GenderOnBoard";
 import OnBoardEnd from "./screens/onboard/OnBoardEnd";
+import { ChatRoomScreen } from "./screens/ChatRoomScreen";
 
 export type RootTabParamList = {
   Home: undefined;
@@ -34,6 +35,9 @@ export type RootTabParamList = {
   ActivityOnBoard: undefined;
   GenderOnBoard: undefined;
   OnBoardEnd: undefined;
+
+  // 채팅 관련
+  ChatRoomScreen: undefined;
 };
 
 export type RootStackParamList = {
@@ -48,6 +52,9 @@ export type RootStackParamList = {
   ActivityOnBoard: undefined;
   GenderOnBoard: undefined;
   OnBoardEnd: undefined;
+
+  // 채팅 관련
+  ChatRoomScreen: undefined;
 };
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
@@ -70,6 +77,7 @@ function TabNavigator() {
             ActivityOnBoard: "activity onboard",
             GenderOnBoard: "gender onboard",
             OnBoardEnd: "onboard end",
+            ChatRoomScreen: "chatroom",
           };
           return (
             <Ionicons
@@ -132,7 +140,7 @@ function TabNavigator() {
       />
       <Tab.Screen
         name="Chat"
-        component={ChatScreen}
+        component={ChatHomeScreen}
         options={{ headerShown: false, title: "채팅", tabBarLabel: "채팅" }}
       />
       <Tab.Screen
@@ -158,6 +166,7 @@ export default function App(): React.JSX.Element {
           <Stack.Screen name="ActivityOnBoard" component={ActivityOnBoard} />
           <Stack.Screen name="GenderOnBoard" component={GenderOnBoard} />
           <Stack.Screen name="OnBoardEnd" component={OnBoardEnd} />
+          <Stack.Screen name="ChatRoomScreen" component={ChatRoomScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </MockDataProvider>
