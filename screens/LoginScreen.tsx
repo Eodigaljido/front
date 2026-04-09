@@ -1,12 +1,28 @@
-// @ts-nocheck
-import { View, Text, TextInput, TouchableOpacity, Image } from 'react-native';
+import { useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, Image, KeyboardAvoidingView, ScrollView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../App';
+import { usePasswordMask } from '../hooks/usePasswordMask';
+
+type LoginNavProp = NativeStackNavigationProp<RootStackParamList, 'Login'>;
 
 export default function LoginScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<LoginNavProp>();
+  const [email, setEmail] = useState('');
+  const { displayPassword, realPasswordRef, handleInput, maskAll } = usePasswordMask();
+
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1 }}
+          keyboardShouldPersistTaps="handled"
+        >
       <View className="items-center justify-center flex-1 px-10 bg-white">
         {/* 로고 */}
         <Image
@@ -26,15 +42,22 @@ export default function LoginScreen() {
         {/* 입력 */}
         <View className="w-full gap-6 mb-7">
           <TextInput
+            value={email}
+            onChangeText={setEmail}
             placeholder="이메일 또는 아이디 입력"
+            keyboardType="email-address"
+            autoCapitalize="none"
             className="w-full h-auto px-5 py-4 bg-gray-100 rounded-full"
           />
           <TextInput
+            value={displayPassword}
+            onChangeText={handleInput}
+            onBlur={maskAll}
             placeholder="비밀번호 입력"
-            secureTextEntry
             className="w-full h-auto px-5 py-4 bg-gray-100 rounded-full"
           />
         </View>
+
         {/* 버튼 */}
         <TouchableOpacity
           activeOpacity={0.7}
@@ -70,14 +93,14 @@ export default function LoginScreen() {
           >
             <Image
               style={{ width: '50%', height: '50%' }}
-              source={{
-                uri: 'https://e7.pngegg.com/pngimages/734/947/png-clipart-google-logo-google-g-logo-icons-logos-emojis-tech-companies-thumbnail.png',
-              }}
+              source={require('@/assets/Google_logo.png')}
               resizeMode="contain"
             />
           </TouchableOpacity>
         </View>
       </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

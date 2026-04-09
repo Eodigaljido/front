@@ -1,7 +1,6 @@
 import React from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { View } from 'react-native';
-import { NavigationContainer, getFocusedRouteNameFromRoute } from '@react-navigation/native';
+import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,39 +20,20 @@ import OnBoardEnd from './screens/onboard/OnBoardEnd';
 import LoginScreen from './screens/LoginScreen';
 import SignupScreen from './screens/SignupScreen';
 import StartScreen from './screens/StartScreen';
-// import MapScreen from './screens/MapScreen-Test';
 
 export type RootTabParamList = {
   Home: undefined;
   SharedRoute: { openFilter?: boolean; openAsPopular?: boolean; viewCourseId?: string } | undefined;
   MyRoute: undefined;
-  Map: undefined;
   Chat: undefined;
   All: undefined;
-  Start: undefined;
-  Login: undefined;
-  Signup: undefined;
-
-  // 온보드 관련
-  OnBoardStart: undefined;
-  AreaOnBoard: undefined;
-  AgeOnBoard: undefined;
-  ActivityOnBoard: undefined;
-  GenderOnBoard: undefined;
-  OnBoardEnd: undefined;
 };
 
 export type RootStackParamList = {
-  Home: undefined;
   Tabs: undefined;
-  HomeScreen: undefined;
   Start: undefined;
-
-  // Auth 관련
   Login: undefined;
   Signup: undefined;
-
-  // 온보드 관련
   OnBoardStart: undefined;
   AreaOnBoard: undefined;
   AgeOnBoard: undefined;
@@ -65,55 +45,24 @@ export type RootStackParamList = {
 const Tab = createBottomTabNavigator<RootTabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-// const TAB_BAR_STYLE = {
-//   position: 'absolute' as const,
-//   width: '88%' as const,
-//   alignSelf: 'center' as const,
-//   bottom: 24,
-//   marginHorizontal: '6%' as const,
-//   height: 74,
-//   paddingTop: 10,
-//   paddingBottom: 8,
-//   backgroundColor: '#fff',
-//   borderRadius: 28,
-//   borderTopWidth: 0,
-//   overflow: 'visible' as const,
-//   shadowColor: '#000',
-//   shadowOffset: { width: 0, height: 12 },
-//   shadowOpacity: 0.22,
-//   shadowRadius: 24,
-//   borderWidth: 1,
-//   borderColor: 'rgba(0,0,0,0.06)',
-//   elevation: 24,
-// };
+type TabIconName = 'home' | 'paper-plane' | 'map' | 'chatbubble' | 'menu';
+
+const TAB_ICONS: Record<keyof RootTabParamList, TabIconName> = {
+  Home: 'home',
+  SharedRoute: 'paper-plane',
+  MyRoute: 'map',
+  Chat: 'chatbubble',
+  All: 'menu',
+};
 
 function TabNavigator() {
   return (
     <Tab.Navigator
       initialRouteName="Home"
       screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused }) => {
-          const icons: Record<keyof RootTabParamList, string> = {
-            Home: 'home',
-            SharedRoute: 'paper-plane',
-            MyRoute: 'map',
-            Map: 'navigate-outline',
-            Chat: 'chatbubble',
-            All: 'menu',
-            OnBoardStart: 'onboard start',
-            AreaOnBoard: 'area onboard',
-            AgeOnBoard: 'age onboard',
-            ActivityOnBoard: 'activity onboard',
-            GenderOnBoard: 'gender onboard',
-            OnBoardEnd: 'onboard end',
-            Login: 'log-in',
-            Signup: 'person-add',
-            Start: 'rocket',
-          };
-          return (
-            <Ionicons name={icons[route.name]} size={24} color={focused ? '#007AFF' : '#000'} />
-          );
-        },
+        tabBarIcon: ({ focused }) => (
+          <Ionicons name={TAB_ICONS[route.name]} size={24} color={focused ? '#007AFF' : '#000'} />
+        ),
         tabBarActiveTintColor: '#007AFF',
         tabBarInactiveTintColor: '#000',
         tabBarStyle: {
@@ -149,59 +98,24 @@ function TabNavigator() {
       <Tab.Screen
         name="Home"
         component={HomeScreen}
-        options={{ headerShown: false, title: '홈', tabBarLabel: '홈' }}
+        options={{ headerShown: false, tabBarLabel: '홈' }}
       />
       <Tab.Screen
         name="SharedRoute"
         component={SharedRouteScreen}
-        options={{ headerShown: false, title: '공유 루트', tabBarLabel: '공유 루트' }}
+        options={{ headerShown: false, tabBarLabel: '공유 루트' }}
       />
       <Tab.Screen
         name="MyRoute"
         component={MyRouteScreen}
-        options={{ headerShown: false, title: '내 루트', tabBarLabel: '내 루트' }}
+        options={{ headerShown: false, tabBarLabel: '내 루트' }}
       />
-      {/* <Tab.Screen name="Map" component={MapScreen} options={{ headerShown: false, title: '지도', tabBarLabel: '지도' }} /> */}
       <Tab.Screen
         name="Chat"
         component={ChatScreen}
-        options={{ headerShown: false, title: '채팅', tabBarLabel: '채팅' }}
+        options={{ headerShown: false, tabBarLabel: '채팅' }}
       />
-      <Tab.Screen
-        name="All"
-        component={AllScreen}
-        options={{ title: '전체', tabBarLabel: '전체' }}
-      />
-      {/* <Tab.Screen
-        name="Login"
-        component={LoginScreen}
-        options={{
-          headerShown: false,
-          tabBarStyle: { display: 'none' },
-          title: '로그인',
-          tabBarLabel: '로그인',
-        }}
-      />
-      <Tab.Screen
-        name="Signup"
-        component={SignupScreen}
-        options={{
-          headerShown: false,
-          tabBarStyle: { display: 'none' },
-          title: '회원가입',
-          tabBarLabel: '회원가입',
-        }}
-      />
-      <Tab.Screen
-        name="Start"
-        component={StartScreen}
-        options={{
-          headerShown: false,
-          tabBarStyle: { display: 'none' },
-          title: '시작',
-          tabBarLabel: '시작',
-        }}
-      /> */}
+      <Tab.Screen name="All" component={AllScreen} options={{ tabBarLabel: '전체' }} />
     </Tab.Navigator>
   );
 }
@@ -211,18 +125,17 @@ export default function App(): React.JSX.Element {
     <MockDataProvider>
       <NavigationContainer>
         <StatusBar style="auto" />
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="Tabs" component={TabNavigator} />
-          <Stack.Screen name="Home" component={HomeScreen} />
+        <Stack.Navigator initialRouteName="Login" screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="Start" component={StartScreen} />
+          <Stack.Screen name="Login" component={LoginScreen} />
+          <Stack.Screen name="Signup" component={SignupScreen} />
           <Stack.Screen name="OnBoardStart" component={OnBoardStart} />
           <Stack.Screen name="AreaOnBoard" component={AreaOnBoard} />
           <Stack.Screen name="AgeOnBoard" component={AgeOnBoard} />
           <Stack.Screen name="ActivityOnBoard" component={ActivityOnBoard} />
           <Stack.Screen name="GenderOnBoard" component={GenderOnBoard} />
           <Stack.Screen name="OnBoardEnd" component={OnBoardEnd} />
-          <Stack.Screen name="Login" component={LoginScreen} />
-          <Stack.Screen name="Signup" component={SignupScreen} />
-          <Stack.Screen name="Start" component={StartScreen} />
+          <Stack.Screen name="Tabs" component={TabNavigator} />
         </Stack.Navigator>
       </NavigationContainer>
     </MockDataProvider>
