@@ -1,6 +1,7 @@
-import { TouchableOpacity, View, Text } from "react-native";
+import React from "react";
+import { TouchableOpacity, Text } from "react-native";
 
-export default function RadioButton({
+export default function AreaRadioButton({
   label,
   value,
   onPress,
@@ -11,15 +12,14 @@ export default function RadioButton({
 }): React.JSX.Element {
   return (
     <TouchableOpacity
-      className={`flex-row items-center mt-10 mb-2 rounded-full py-3 px-6 border-2 ${
+      className={`flex-1 items-center justify-center rounded-full py-3 px-6 border-2 ${
         value ? "border-blue-500 bg-blue-500" : "border-gray-300 bg-gray-200"
       }`}
       onPress={onPress}
       activeOpacity={1}
     >
-      <View className={`w-5 h-10 rounded-full`} />
       <Text
-        className={`text-base font-bold ${
+        className={`text-lg font-bold text-center ${
           value ? "text-white" : "text-gray-800"
         }`}
       >
