@@ -10,6 +10,7 @@ type Props = {
   longitude?: number;
   level?: number;
   path?: MapPathPoint[];
+  stops?: MapPathPoint[];
   style?: object;
 };
 
@@ -91,25 +92,44 @@ function AppMapViewExpoGoogleMapsImpl({
   longitude = 126.978,
   level = 8,
   path,
+  stops,
   style,
 }: Props): React.JSX.Element {
   const { GoogleMaps } = require('expo-maps');
 
   const pts = useMemo(() => validPoints(path), [path]);
+  const stopPts = useMemo(() => validPoints(stops), [stops]);
+  const cameraPath = useMemo(() => {
+    if (pts.length >= 1) return pts;
+    return stopPts;
+  }, [pts, stopPts]);
   const cameraPosition = useMemo(
-    () => cameraForPath(pts, latitude, longitude, level),
-    [pts, latitude, longitude, level],
+    () => cameraForPath(cameraPath, latitude, longitude, level),
+    [cameraPath, latitude, longitude, level],
   );
   const lineCoords = useMemo(() => toCoordinates(pts), [pts]);
 
-  const markers = useMemo(
-    () =>
-      lineCoords.map((c, i) => ({
+  const markers = useMemo(() => {
+    if (stopPts.length > 0) {
+      return stopPts.map((c, i) => ({
+        id: `stop-${i}`,
+        coordinates: { latitude: c.latitude, longitude: c.longitude },
+      }));
+    }
+    if (lineCoords.length <= 24) {
+      return lineCoords.map((c, i) => ({
         id: `stop-${i}`,
         coordinates: c,
-      })),
-    [lineCoords],
-  );
+      }));
+    }
+    if (lineCoords.length >= 2) {
+      return [
+        { id: 'stop-0', coordinates: lineCoords[0] },
+        { id: 'stop-last', coordinates: lineCoords[lineCoords.length - 1] },
+      ];
+    }
+    return [];
+  }, [stopPts, lineCoords]);
 
   const polylines = useMemo(() => {
     if (lineCoords.length < 2) return [];
