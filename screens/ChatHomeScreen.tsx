@@ -5,7 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Title from "../components/chat/Title";
 import RecentContacts from "../components/chat/RecentContacts";
 import ChatList from "../components/chat/ChatList";
-import { ProfileIcon } from "@/components/chat/ProfileIcon";
+import { ProfileList } from "@/components/chat/ProfileList";
 import { ChatRoom } from "@/components/chat/ChatRoom";
 import { SearchBar } from "@/components/chat/SearchBar";
 import { ChatCreatingButton } from "@/components/chat/ChatCreateButton";
@@ -30,7 +30,7 @@ export default function ChatHomeScreen(): React.JSX.Element {
               친구 목록
             </Text>
             <View className="-mx-4 mt-3">
-              <ProfileIcon />
+              <ProfileList />
             </View>
           </View>
           {/* 채팅 목록 */}
