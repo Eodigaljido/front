@@ -1,6 +1,6 @@
 import { View, Text, Image, ScrollView } from "react-native";
 
-export const ProfileIcon = ({ size = 60 }: { size?: number }) => {
+export const ProfileList = ({ size = 60 }: { size?: number }) => {
   const names = ["김태호", "송주영", "박건형", "박창연", "류지우", "김민수"];
   const imageUrls = [
     "https://avatars.githubusercontent.com/u/108007761?v=4",
