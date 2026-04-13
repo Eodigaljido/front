@@ -1,6 +1,11 @@
-import { View, Text } from "react-native";
+import { MessageInput } from "@/stories/chat/MessageInput";
+import { View } from "react-native";
 
-export function RoomFooter() {
+interface RoomFooterProps {
+  onSend?: (message: string) => void;
+}
+
+export function RoomFooter({ onSend }: RoomFooterProps) {
   return (
     <View
       className="w-full bg-gray-200 justify-center items-center"
@@ -11,6 +16,8 @@ export function RoomFooter() {
         left: 0,
         right: 0,
       }}
-    ></View>
+    >
+      <MessageInput onSend={onSend} />
+    </View>
   );
 }
