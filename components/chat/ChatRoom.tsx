@@ -5,7 +5,11 @@ type RootStackParamList = {
   ChatRoomScreen: undefined;
 };
 
-export const ChatRoom = () => {
+interface ChatRoomProps {
+  searchQuery?: string;
+}
+
+export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const chatRooms = [
     {
@@ -96,9 +100,15 @@ export const ChatRoom = () => {
     // },
   ];
 
+  const filteredRooms = searchQuery
+    ? chatRooms.filter((room) =>
+        room.name.includes(searchQuery) || room.message.includes(searchQuery)
+      )
+    : chatRooms;
+
   return (
     <View>
-      {chatRooms.map((room) => (
+      {filteredRooms.map((room) => (
         <TouchableOpacity
           key={room.id}
           className="flex-row items-center justify-between py-3 mb-2"
