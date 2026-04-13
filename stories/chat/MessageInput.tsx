@@ -1,3 +1,4 @@
+import { Send, Paperclip } from "lucide-react-native";
 import { useState } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 import {
@@ -35,13 +36,13 @@ export const MessageInput = ({
 
   return (
     <View style={[styles.container, style]}>
+      <Paperclip color={"#999"} />
       <TextInput
         style={styles.input}
         value={text}
         onChangeText={setText}
         placeholder={placeholder}
         placeholderTextColor="#999"
-        multiline
         editable={!disabled}
       />
       <TouchableOpacity
@@ -54,7 +55,7 @@ export const MessageInput = ({
         accessibilityRole="button"
         accessibilityLabel="전송"
       >
-        <Text style={styles.sendButtonText}>전송</Text>
+        <Send color={"#fff"} />
       </TouchableOpacity>
     </View>
   );
@@ -63,38 +64,36 @@ export const MessageInput = ({
 const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
-    alignItems: "flex-end",
-    paddingHorizontal: 4,
-    paddingVertical: 8,
-    backgroundColor: "#fff",
+    alignItems: "center",
     borderTopWidth: 1,
+    gap: 8,
     borderTopColor: "#e0e0e0",
   },
   input: {
-    flex: 1,
-    maxHeight: 80,
-    paddingHorizontal: 14,
+    height: 50,
+    width: "70%",
+    paddingHorizontal: 12,
     backgroundColor: "#f5f5f5",
-    borderRadius: 20,
-    fontSize: 14,
+    borderRadius: 30,
+    fontSize: 13,
     color: "#333",
-    marginRight: 8,
-    textAlignVertical: "center",
+    marginRight: 6,
   },
   sendButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: "#555ab9",
+    height: 50,
+    width: 50,
+    paddingHorizontal: 14,
+    borderRadius: 30,
+    backgroundColor: "#0088FF",
     justifyContent: "center",
     alignItems: "center",
   },
   sendButtonDisabled: {
-    backgroundColor: "#c0c0c0",
+    backgroundColor: "#0088FF",
   },
   sendButtonText: {
     color: "#fff",
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "600",
   },
 });
