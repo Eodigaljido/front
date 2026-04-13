@@ -9,7 +9,7 @@ import { MockDataProvider } from "./context/MockDataContext";
 import HomeScreen from "./screens/HomeScreen";
 import SharedRouteScreen from "./screens/SharedRouteScreen";
 import MyRouteScreen from "./screens/MyRouteScreen";
-import ChatHomeScreen from "./screens/ChatHomeScreen";
+import ChatHomeScreen from "./screens/chat/ChatHomeScreen";
 import AllScreen from "./screens/AllScreen";
 import OnBoardStart from "./screens/onboard/OnBoardStart";
 import AreaOnBoard from "./screens/onboard/AreaOnBoard";
@@ -17,7 +17,7 @@ import AgeOnBoard from "./screens/onboard/AgeOnBoard";
 import ActivityOnBoard from "./screens/onboard/ActivityOnBoard";
 import GenderOnBoard from "./screens/onboard/GenderOnBoard";
 import OnBoardEnd from "./screens/onboard/OnBoardEnd";
-import { ChatRoomScreen } from "./screens/ChatRoomScreen";
+import { ChatRoomScreen } from "./screens/chat/ChatRoomScreen";
 
 export type RootTabParamList = {
   Home: undefined;
