@@ -11,7 +11,14 @@ const config: StorybookConfig = {
     "@storybook/addon-a11y",
     "@storybook/addon-docs",
   ],
-  "framework": "@storybook/react-native-web-vite",
+  "framework": {
+    name: "@storybook/react-native-web-vite",
+    options: {
+      pluginReactOptions: {
+        jsxImportSource: "nativewind",
+      },
+    },
+  },
   viteFinal: async (config) => {
     // Remove react-docgen-plugin to prevent conflicts with React Native
     // babel.config.js presets (babel-preset-expo, reanimated, nativewind)
