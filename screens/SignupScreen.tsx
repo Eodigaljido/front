@@ -209,7 +209,7 @@ export default function SignupScreen() {
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [modalVisible, setModalVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [pendingAccessToken, setPendingAccessToken] = useState('');
+  const [isPhoneVerified, setIsPhoneVerified] = useState(false);
   const [otpExpiry, setOtpExpiry] = useState(TIMER_SECONDS);
   const registerStore = useAuthStore(s => s.register);
 
@@ -300,22 +300,20 @@ export default function SignupScreen() {
       focusFirstError(errs);
       return;
     }
+    if (!isPhoneVerified) {
+      Alert.alert('휴대전화 인증 필요', '인증 버튼을 눌러 휴대전화 인증을 완료해주세요.');
+      return;
+    }
     setIsLoading(true);
     try {
-      const token = await registerStore({
+      await registerStore({
         userId: userId.trim(),
         email: email.trim(),
         password: realPasswordRef.current,
         nickname: nickname.trim(),
       });
-      setPendingAccessToken(token);
-      const rawPhone = phone.replace(/\D/g, '');
-      const { expiresInSeconds } = await sendPhoneCode(
-        { phone: rawPhone, purpose: 'REGISTER' },
-        token,
-      );
-      setOtpExpiry(expiresInSeconds);
-      setModalVisible(true);
+      useAuthStore.getState().setPhoneVerified();
+      navigation.navigate('OnBoardStart');
     } catch (err: any) {
       const msg = err?.response?.data?.message ?? '회원가입에 실패했습니다.';
       Alert.alert('회원가입 실패', msg);
@@ -332,15 +330,12 @@ export default function SignupScreen() {
       phoneRef.current?.focus();
       return;
     }
-    if (!pendingAccessToken) return;
     const rawPhone = phone.replace(/\D/g, '');
     setIsLoading(true);
     try {
-      const { expiresInSeconds } = await sendPhoneCode(
-        { phone: rawPhone, purpose: 'REGISTER' },
-        pendingAccessToken,
-      );
+      const { expiresInSeconds } = await sendPhoneCode({ phone: rawPhone, purpose: 'REGISTER' });
       setOtpExpiry(expiresInSeconds);
+      setIsPhoneVerified(false);
       setModalVisible(true);
     } catch (err: any) {
       const msg = err?.response?.data?.message ?? '인증번호 발송에 실패했습니다.';
@@ -376,7 +371,7 @@ export default function SignupScreen() {
           </View>
 
           {/* 입력 필드 */}
-          <View className="gap-4">
+          <View className="gap-1">
             {/* 아이디 */}
             <View>
               <TextInput
@@ -480,9 +475,12 @@ export default function SignupScreen() {
                 <TouchableOpacity
                   activeOpacity={0.7}
                   onPress={handleVerifyPress}
-                  className="self-stretch justify-center bg-blue-500 rounded-full px-7"
+                  disabled={isPhoneVerified}
+                  className={`self-stretch justify-center rounded-full px-7 ${isPhoneVerified ? 'bg-green-500' : 'bg-blue-500'}`}
                 >
-                  <Text className="text-sm font-semibold text-white">인증</Text>
+                  <Text className="text-sm font-semibold text-white">
+                    {isPhoneVerified ? '완료' : '인증'}
+                  </Text>
                 </TouchableOpacity>
               </View>
               <Text className="mt-1 ml-2 text-sm text-red-400" style={{ minHeight: 20 }}>
@@ -544,13 +542,12 @@ export default function SignupScreen() {
       <OtpModal
         visible={modalVisible}
         phone={phone.replace(/\D/g, '')}
-        accessToken={pendingAccessToken}
+        accessToken=""
         initialSeconds={otpExpiry}
         onClose={() => setModalVisible(false)}
         onVerified={() => {
+          setIsPhoneVerified(true);
           setModalVisible(false);
-          useAuthStore.getState().setPhoneVerified();
-          navigation.navigate('OnBoardStart');
         }}
       />
     </SafeAreaView>
