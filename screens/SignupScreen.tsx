@@ -11,25 +11,31 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
 import { usePasswordMask } from '../hooks/usePasswordMask';
+import { sendPhoneCode, verifyPhoneCode } from '../api/auth';
+import { useAuthStore } from '../store/authStore';
 
 type SignupNavProp = NativeStackNavigationProp<RootStackParamList, 'Signup'>;
 
-const OTP_LENGTH = 5;
+const OTP_LENGTH = 6;
 const TIMER_SECONDS = 5 * 60;
 const DEBOUNCE_MS = 500;
 
 function validateField(field: string, value: string): string {
   switch (field) {
-    case 'email':
-      return value.length < 4 ? '4글자 이상이어야해요.' : '';
-    case 'name':
+    case 'userId':
       return !value.trim() ? '아이디를 입력해주세요.' : '';
+    case 'email':
+      return !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? '올바른 이메일 형식이 아니에요.' : '';
+    case 'nickname':
+      return value.trim().length < 2 ? '닉네임은 2자 이상이어야해요.' : '';
     case 'password':
       return !/[~!@#$%^&*]/.test(value)
         ? '특수문자(~,!,@,#,$,%,^,&,*) 중 하나를 포함해야해요.'
@@ -41,20 +47,37 @@ function validateField(field: string, value: string): string {
   }
 }
 
-function OtpModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+interface OtpModalProps {
+  visible: boolean;
+  phone: string;
+  accessToken: string;
+  initialSeconds: number;
+  onClose: () => void;
+  onVerified: () => void;
+}
+
+function OtpModal({
+  visible,
+  phone,
+  accessToken,
+  initialSeconds,
+  onClose,
+  onVerified,
+}: OtpModalProps) {
   const [otp, setOtp] = useState(Array(OTP_LENGTH).fill(''));
-  const [seconds, setSeconds] = useState(TIMER_SECONDS);
+  const [seconds, setSeconds] = useState(initialSeconds);
+  const [isLoading, setIsLoading] = useState(false);
   const inputRefs = useRef<(TextInput | null)[]>([]);
 
   useEffect(() => {
     if (!visible) return;
     setOtp(Array(OTP_LENGTH).fill(''));
-    setSeconds(TIMER_SECONDS);
+    setSeconds(initialSeconds);
     const interval = setInterval(() => {
       setSeconds(prev => (prev <= 1 ? (clearInterval(interval), 0) : prev - 1));
     }, 1000);
     return () => clearInterval(interval);
-  }, [visible]);
+  }, [visible, initialSeconds]);
 
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60);
@@ -78,10 +101,33 @@ function OtpModal({ visible, onClose }: { visible: boolean; onClose: () => void 
     }
   };
 
-  const handleResend = () => {
-    setOtp(Array(OTP_LENGTH).fill(''));
-    setSeconds(TIMER_SECONDS);
-    setTimeout(() => inputRefs.current[0]?.focus(), 100);
+  const handleResend = async () => {
+    try {
+      const res = await sendPhoneCode({ phone, purpose: 'REGISTER' }, accessToken);
+      setOtp(Array(OTP_LENGTH).fill(''));
+      setSeconds(res.expiresInSeconds);
+      setTimeout(() => inputRefs.current[0]?.focus(), 100);
+    } catch {
+      Alert.alert('오류', '인증번호 재발송에 실패했습니다.');
+    }
+  };
+
+  const handleVerify = async () => {
+    const code = otp.join('');
+    if (code.length < OTP_LENGTH) {
+      Alert.alert('입력 오류', `${OTP_LENGTH}자리 인증번호를 모두 입력해주세요.`);
+      return;
+    }
+    setIsLoading(true);
+    try {
+      await verifyPhoneCode({ phone, code, purpose: 'REGISTER' }, accessToken);
+      onVerified();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? '인증번호가 올바르지 않습니다.';
+      Alert.alert('인증 실패', msg);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -128,6 +174,20 @@ function OtpModal({ visible, onClose }: { visible: boolean; onClose: () => void 
           ))}
         </View>
 
+        {/* 확인 버튼 */}
+        <TouchableOpacity
+          activeOpacity={0.7}
+          disabled={isLoading}
+          onPress={handleVerify}
+          className="items-center justify-center w-full h-12 mb-4 bg-blue-500 rounded-full"
+        >
+          {isLoading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text className="font-bold text-white">확인</Text>
+          )}
+        </TouchableOpacity>
+
         {/* 재발급 */}
         <TouchableOpacity onPress={handleResend} className="items-center">
           <Text className="text-sm text-gray-500" style={{ textDecorationLine: 'underline' }}>
@@ -141,15 +201,21 @@ function OtpModal({ visible, onClose }: { visible: boolean; onClose: () => void 
 
 export default function SignupScreen() {
   const navigation = useNavigation<SignupNavProp>();
+  const [userId, setUserId] = useState('');
   const [email, setEmail] = useState('');
-  const [name, setName] = useState('');
+  const [nickname, setNickname] = useState('');
   const [phone, setPhone] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [modalVisible, setModalVisible] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [pendingAccessToken, setPendingAccessToken] = useState('');
+  const [otpExpiry, setOtpExpiry] = useState(TIMER_SECONDS);
+  const registerStore = useAuthStore(s => s.register);
 
+  const userIdRef = useRef<TextInput>(null);
   const emailRef = useRef<TextInput>(null);
-  const nameRef = useRef<TextInput>(null);
+  const nicknameRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
   const phoneRef = useRef<TextInput>(null);
   const debounceRefs = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -211,32 +277,54 @@ export default function SignupScreen() {
   );
 
   const validateAll = () => {
-    const values = { email, name, password: realPasswordRef.current, phone };
+    const values = { userId, email, nickname, password: realPasswordRef.current, phone };
     const newErrors = Object.fromEntries(
       Object.entries(values).map(([field, value]) => [field, validateField(field, value)]),
     );
     setErrors(newErrors);
-    setTouched({ email: true, name: true, password: true, phone: true });
+    setTouched({ userId: true, email: true, nickname: true, password: true, phone: true });
     return newErrors;
   };
 
   const focusFirstError = (errs: Record<string, string>) => {
-    if (errs.email) emailRef.current?.focus();
-    else if (errs.name) nameRef.current?.focus();
+    if (errs.userId) userIdRef.current?.focus();
+    else if (errs.email) emailRef.current?.focus();
+    else if (errs.nickname) nicknameRef.current?.focus();
     else if (errs.password) passwordRef.current?.focus();
     else if (errs.phone) phoneRef.current?.focus();
   };
 
-  const handleSignup = () => {
+  const handleSignup = async () => {
     const errs = validateAll();
     if (Object.values(errs).some(Boolean)) {
       focusFirstError(errs);
       return;
     }
-    setModalVisible(true);
+    setIsLoading(true);
+    try {
+      const token = await registerStore({
+        userId: userId.trim(),
+        email: email.trim(),
+        password: realPasswordRef.current,
+        nickname: nickname.trim(),
+      });
+      setPendingAccessToken(token);
+      const rawPhone = phone.replace(/\D/g, '');
+      const { expiresInSeconds } = await sendPhoneCode(
+        { phone: rawPhone, purpose: 'REGISTER' },
+        token,
+      );
+      setOtpExpiry(expiresInSeconds);
+      setModalVisible(true);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? '회원가입에 실패했습니다.';
+      Alert.alert('회원가입 실패', msg);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleVerifyPress = () => {
+  const handleVerifyPress = async () => {
     const err = validateField('phone', phone);
     if (err) {
       setErrors(prev => ({ ...prev, phone: err }));
@@ -244,7 +332,22 @@ export default function SignupScreen() {
       phoneRef.current?.focus();
       return;
     }
-    setModalVisible(true);
+    if (!pendingAccessToken) return;
+    const rawPhone = phone.replace(/\D/g, '');
+    setIsLoading(true);
+    try {
+      const { expiresInSeconds } = await sendPhoneCode(
+        { phone: rawPhone, purpose: 'REGISTER' },
+        pendingAccessToken,
+      );
+      setOtpExpiry(expiresInSeconds);
+      setModalVisible(true);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? '인증번호 발송에 실패했습니다.';
+      Alert.alert('오류', msg);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const inputClass = (field: string) =>
@@ -274,16 +377,39 @@ export default function SignupScreen() {
 
           {/* 입력 필드 */}
           <View className="gap-4">
-            {/* 이메일 혹은 아이디 */}
+            {/* 아이디 */}
+            <View>
+              <TextInput
+                ref={userIdRef}
+                value={userId}
+                onChangeText={text => handleChange('userId', text, setUserId)}
+                onBlur={() => handleBlur('userId', userId)}
+                placeholder="아이디"
+                autoCapitalize="none"
+                returnKeyType="next"
+                onSubmitEditing={() => emailRef.current?.focus()}
+                blurOnSubmit={false}
+                className={inputClass('userId')}
+                style={inputStyle('userId')}
+              />
+              <Text className="mt-1 ml-2 text-sm text-red-400" style={{ minHeight: 20 }}>
+                {errors.userId ?? ''}
+              </Text>
+            </View>
+
+            {/* 이메일 */}
             <View>
               <TextInput
                 ref={emailRef}
                 value={email}
                 onChangeText={text => handleChange('email', text, setEmail)}
                 onBlur={() => handleBlur('email', email)}
-                placeholder="이메일 혹은 아이디"
+                placeholder="이메일"
                 keyboardType="email-address"
                 autoCapitalize="none"
+                returnKeyType="next"
+                onSubmitEditing={() => nicknameRef.current?.focus()}
+                blurOnSubmit={false}
                 className={inputClass('email')}
                 style={inputStyle('email')}
               />
@@ -292,19 +418,22 @@ export default function SignupScreen() {
               </Text>
             </View>
 
-            {/* 이름 */}
+            {/* 닉네임 */}
             <View>
               <TextInput
-                ref={nameRef}
-                value={name}
-                onChangeText={text => handleChange('name', text, setName)}
-                onBlur={() => handleBlur('name', name)}
-                placeholder="아이디"
-                className={inputClass('name')}
-                style={inputStyle('name')}
+                ref={nicknameRef}
+                value={nickname}
+                onChangeText={text => handleChange('nickname', text, setNickname)}
+                onBlur={() => handleBlur('nickname', nickname)}
+                placeholder="닉네임"
+                returnKeyType="next"
+                onSubmitEditing={() => passwordRef.current?.focus()}
+                blurOnSubmit={false}
+                className={inputClass('nickname')}
+                style={inputStyle('nickname')}
               />
               <Text className="mt-1 ml-2 text-sm text-red-400" style={{ minHeight: 20 }}>
-                {errors.name ?? ''}
+                {errors.nickname ?? ''}
               </Text>
             </View>
 
@@ -321,6 +450,9 @@ export default function SignupScreen() {
                   setFieldError('password', realPasswordRef.current);
                 }}
                 placeholder="비밀번호"
+                returnKeyType="next"
+                onSubmitEditing={() => phoneRef.current?.focus()}
+                blurOnSubmit={false}
                 className={inputClass('password')}
                 style={inputStyle('password')}
               />
@@ -342,6 +474,7 @@ export default function SignupScreen() {
                   onBlur={() => handleBlur('phone', phone)}
                   placeholder="휴대전화(-제외)"
                   keyboardType="phone-pad"
+                  returnKeyType="done"
                   className="flex-1 py-4 pl-5 text-base"
                 />
                 <TouchableOpacity
@@ -361,10 +494,15 @@ export default function SignupScreen() {
           {/* 회원가입 버튼 */}
           <TouchableOpacity
             activeOpacity={0.7}
+            disabled={isLoading}
             onPress={handleSignup}
             className="items-center justify-center w-full mt-6 bg-blue-500 rounded-full h-14"
           >
-            <Text className="text-base font-bold text-white">회원가입</Text>
+            {isLoading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text className="text-base font-bold text-white">회원가입</Text>
+            )}
           </TouchableOpacity>
 
           {/* 로그인 링크 */}
@@ -403,7 +541,18 @@ export default function SignupScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <OtpModal visible={modalVisible} onClose={() => setModalVisible(false)} />
+      <OtpModal
+        visible={modalVisible}
+        phone={phone.replace(/\D/g, '')}
+        accessToken={pendingAccessToken}
+        initialSeconds={otpExpiry}
+        onClose={() => setModalVisible(false)}
+        onVerified={() => {
+          setModalVisible(false);
+          useAuthStore.getState().setPhoneVerified();
+          navigation.navigate('OnBoardStart');
+        }}
+      />
     </SafeAreaView>
   );
 }
