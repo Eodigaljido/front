@@ -36,7 +36,6 @@ export const MessageInput = ({
 
   return (
     <View style={[styles.container, style]}>
-      <Paperclip color={"#999"} />
       <TextInput
         style={styles.input}
         value={text}
