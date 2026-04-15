@@ -17,16 +17,21 @@ function formatTime(date: Date) {
   return `${displayHours}:${minutes} ${period}`;
 }
 
-export function BubbleChat({
-  text,
-  isMine,
-  sentAt,
-  style,
-}: BubbleChatProps) {
+export function BubbleChat({ text, isMine, sentAt, style }: BubbleChatProps) {
   return (
-    <View style={[styles.wrapper, isMine ? styles.wrapperMine : styles.wrapperOther, style]}>
-      <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther]}>
-        <Text style={[styles.text, isMine ? styles.textMine : styles.textOther]}>
+    <View
+      style={[
+        styles.wrapper,
+        isMine ? styles.wrapperMine : styles.wrapperOther,
+        style,
+      ]}
+    >
+      <View
+        style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther]}
+      >
+        <Text
+          style={[styles.text, isMine ? styles.textMine : styles.textOther]}
+        >
           {text}
         </Text>
       </View>
