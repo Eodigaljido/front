@@ -8,8 +8,9 @@ export const RoomHeader = () => {
       style={{ height: 64 }}
     >
       <BackButton />
-      <Text className="text-white text-lg font-bold flex-1 text-center">방 이름</Text>
-      {/* 오른쪽 여백 (BackButton 너비만큼) */}
+      <Text className="text-white text-lg font-bold flex-1 text-center">
+        방 이름
+      </Text>
       <View className="w-6" />
     </View>
   );
