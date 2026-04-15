@@ -1,3 +1,4 @@
+import "../global.css";
 import type { Preview } from '@storybook/react-native';
 
 const preview: Preview = {
