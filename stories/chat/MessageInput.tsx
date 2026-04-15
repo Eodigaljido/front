@@ -65,18 +65,17 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
     alignItems: "center",
-    borderTopWidth: 1,
     gap: 8,
     borderTopColor: "#e0e0e0",
   },
   input: {
     height: 50,
     width: "70%",
-    paddingHorizontal: 12,
-    backgroundColor: "#f5f5f5",
+    paddingHorizontal: 15,
+    backgroundColor: "#000",
     borderRadius: 30,
     fontSize: 13,
-    color: "#333",
+    color: "#fff",
     marginRight: 6,
   },
   sendButton: {
