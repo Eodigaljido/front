@@ -15,6 +15,7 @@ const NextButton = ({
       }`}
       disabled={disabled}
       onPress={onPress}
+      activeOpacity={0.7}
     >
       <Text className="text-white font-bold text-lg">다음</Text>
     </TouchableOpacity>
