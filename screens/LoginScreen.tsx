@@ -16,6 +16,7 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../App";
 import { usePasswordMask } from "../hooks/usePasswordMask";
 import { useAuthStore } from "../store/authStore";
+import { getOnboardingStatus } from "../api/onboard";
 
 type LoginNavProp = NativeStackNavigationProp<RootStackParamList, "Login">;
 
@@ -103,7 +104,16 @@ export default function LoginScreen() {
                     identifier: identifier.trim(),
                     password: realPasswordRef.current,
                   });
-                  navigation.reset({ index: 0, routes: [{ name: "Tabs" }] });
+                  const accessToken = useAuthStore.getState().accessToken!;
+                  const { status } = await getOnboardingStatus(accessToken);
+                  if (status === "NOT_STARTED") {
+                    navigation.reset({
+                      index: 0,
+                      routes: [{ name: "OnBoardStart" }],
+                    });
+                  } else {
+                    navigation.reset({ index: 0, routes: [{ name: "Tabs" }] });
+                  }
                 } catch {
                   setLoginError("아이디 혹은 비밀번호가 틀렸습니다.");
                 } finally {
