@@ -13,7 +13,7 @@ export const instance = axios.create({
 
 // 요청 로그
 instance.interceptors.request.use(config => {
-  console.log('[REQ]', config.method?.toUpperCase(), config.baseURL + config.url, config.data);
+  console.log('[REQ]', config.method?.toUpperCase(), config.baseURL + config.url, config.data, config.headers?.Authorization);
   return config;
 });
 
@@ -24,7 +24,7 @@ instance.interceptors.response.use(
     return res;
   },
   err => {
-    console.log('[ERR]', err.response?.status, err.config?.url, err.response?.data);
+    console.log('[ERR]', err.response?.status, err.config?.url, err.response?.data, err.code, err.message);
     return Promise.reject(err);
   },
 );
