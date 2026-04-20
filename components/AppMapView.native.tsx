@@ -1,35 +1,38 @@
-// @ts-nocheck — Expo Go는 expo-maps 네이티브 없음 → WebView 폴백
-import React, { useMemo } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
-import Constants, { ExecutionEnvironment } from 'expo-constants';
-import KakaoMapWebView from './KakaoMapWebView';
-import type { MapPathPoint } from './mapTypes';
+// @ts-nocheck
+import React, { useMemo } from "react";
+import { Platform } from "react-native";
+import Constants, { ExecutionEnvironment } from "expo-constants";
+import GoogleMapWebView from "./GoogleMapWebView";
+import type { MapMarkerPoint, MapPathPoint, MapRouteSegment } from "./mapTypes";
 
 type Props = {
   latitude?: number;
   longitude?: number;
   level?: number;
+  allowTap?: boolean;
+  avoidLineOverlap?: boolean;
   path?: MapPathPoint[];
+  segments?: MapRouteSegment[];
+  stops?: MapPathPoint[];
+  markers?: MapMarkerPoint[];
   style?: object;
 };
 
-/** expo-maps와 동일 형태 — Expo Go 경로에서 expo-maps 패키지를 로드하지 않기 위해 로컬 정의 */
-type Coordinates = { latitude?: number; longitude?: number };
-type CameraPosition = { coordinates?: Coordinates; zoom?: number };
+const ROUTE_COLOR = "#2563eb";
 
-const ROUTE_COLOR = '#2563eb';
-
-/** Expo Go(storeClient)에는 ExpoMaps 네이티브 모듈이 없음 — 개발 빌드에서만 Apple/Google Maps 사용 */
 function isExpoGoClient(): boolean {
   return Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 }
+
+type Coordinates = { latitude?: number; longitude?: number };
+type CameraPosition = { coordinates?: Coordinates; zoom?: number };
 
 function validPoints(path: MapPathPoint[] | undefined): MapPathPoint[] {
   return (path ?? []).filter(
     (p) =>
       p &&
-      typeof p.latitude === 'number' &&
-      typeof p.longitude === 'number' &&
+      typeof p.latitude === "number" &&
+      typeof p.longitude === "number" &&
       Number.isFinite(p.latitude) &&
       Number.isFinite(p.longitude),
   );
@@ -84,107 +87,143 @@ function cameraForPath(
   };
 }
 
-function AppMapViewExpoMapsImpl({
+/**
+ * Android 개발 빌드: expo-maps GoogleMaps.View
+ * iOS · Expo Go · 그 외: Google Maps JavaScript API(WebView) — expo-maps는 Android만 네이티브 Google 지원
+ */
+function AppMapViewExpoGoogleMapsImpl({
   latitude = 37.5665,
   longitude = 126.978,
   level = 8,
+  allowTap = true,
   path,
+  segments,
+  stops,
+  markers,
   style,
 }: Props): React.JSX.Element {
-  const { AppleMaps, GoogleMaps } = require('expo-maps');
+  const { GoogleMaps } = require("expo-maps");
 
   const pts = useMemo(() => validPoints(path), [path]);
+  const segs = useMemo(
+    () =>
+      (segments ?? [])
+        .map((s) => ({
+          ...s,
+          points: validPoints(s.points),
+        }))
+        .filter((s) => s.points.length >= 2),
+    [segments],
+  );
+  const stopPts = useMemo(() => validPoints(stops), [stops]);
+  const markerPts = useMemo(
+    () =>
+      (markers ?? []).filter(
+        (p) =>
+          p &&
+          typeof p.latitude === "number" &&
+          typeof p.longitude === "number" &&
+          Number.isFinite(p.latitude) &&
+          Number.isFinite(p.longitude),
+      ),
+    [markers],
+  );
+  const cameraPath = useMemo(() => {
+    if (segs.length >= 1) return segs.flatMap((s) => s.points);
+    if (pts.length >= 1) return pts;
+    if (markerPts.length >= 1)
+      return markerPts.map((m) => ({
+        latitude: m.latitude,
+        longitude: m.longitude,
+      }));
+    return stopPts;
+  }, [segs, pts, markerPts, stopPts]);
   const cameraPosition = useMemo(
-    () => cameraForPath(pts, latitude, longitude, level),
-    [pts, latitude, longitude, level],
+    () => cameraForPath(cameraPath, latitude, longitude, level),
+    [cameraPath, latitude, longitude, level],
   );
   const lineCoords = useMemo(() => toCoordinates(pts), [pts]);
 
-  const markers = useMemo(
-    () =>
-      lineCoords.map((c, i) => ({
+  const nativeMarkers = useMemo(() => {
+    if (markerPts.length > 0) {
+      return markerPts.map((c, i) => ({
+        id: `marker-${i}`,
+        coordinates: { latitude: c.latitude, longitude: c.longitude },
+        title: c.label ? `${c.label}` : undefined,
+        subtitle: c.label ? " " : undefined,
+        isTappable: allowTap,
+      }));
+    }
+    if (stopPts.length > 0) {
+      return stopPts.map((c, i) => ({
+        id: `stop-${i}`,
+        coordinates: { latitude: c.latitude, longitude: c.longitude },
+        title: `${i + 1}`,
+        isTappable: allowTap,
+      }));
+    }
+    if (lineCoords.length <= 24) {
+      return lineCoords.map((c, i) => ({
         id: `stop-${i}`,
         coordinates: c,
-      })),
-    [lineCoords],
-  );
+        isTappable: allowTap,
+      }));
+    }
+    if (lineCoords.length >= 2) {
+      return [
+        { id: "stop-0", coordinates: lineCoords[0], isTappable: allowTap },
+        {
+          id: "stop-last",
+          coordinates: lineCoords[lineCoords.length - 1],
+          isTappable: allowTap,
+        },
+      ];
+    }
+    return [];
+  }, [markerPts, stopPts, lineCoords, allowTap]);
 
-  const polylinesApple = useMemo(() => {
+  const polylines = useMemo(() => {
+    if (segs.length >= 1) {
+      return segs.map((s) => ({
+        id: s.id,
+        coordinates: toCoordinates(s.points),
+        color: s.color || ROUTE_COLOR,
+        width: s.width ?? 5,
+        geodesic: true,
+        lineDashPattern: s.dashed ? [8, 8] : undefined,
+      }));
+    }
     if (lineCoords.length < 2) return [];
     return [
       {
-        id: 'route',
-        coordinates: lineCoords,
-        color: ROUTE_COLOR,
-        width: 5,
-        contourStyle: 'GEODESIC' as const,
-      },
-    ];
-  }, [lineCoords]);
-
-  const polylinesGoogle = useMemo(() => {
-    if (lineCoords.length < 2) return [];
-    return [
-      {
-        id: 'route',
+        id: "route",
         coordinates: lineCoords,
         color: ROUTE_COLOR,
         width: 5,
         geodesic: true,
       },
     ];
-  }, [lineCoords]);
+  }, [segs, lineCoords]);
 
-  const baseStyle = [{ flex: 1, backgroundColor: '#e5e7eb' }, style];
-
-  if (Platform.OS === 'ios') {
-    return (
-      <AppleMaps.View
-        style={baseStyle}
-        cameraPosition={cameraPosition}
-        markers={markers}
-        polylines={polylinesApple}
-        uiSettings={{ compassEnabled: true, scaleBarEnabled: true, myLocationButtonEnabled: false }}
-      />
-    );
-  }
-
-  if (Platform.OS === 'android') {
-    return (
-      <GoogleMaps.View
-        style={baseStyle}
-        cameraPosition={cameraPosition}
-        markers={markers}
-        polylines={polylinesGoogle}
-        uiSettings={{ compassEnabled: true, myLocationButtonEnabled: false }}
-      />
-    );
-  }
+  const baseStyle = [{ flex: 1, backgroundColor: "#e5e7eb" }, style];
 
   return (
-    <View style={[styles.fallback, style]}>
-      <Text style={styles.fallbackText}>지도는 iOS·Android 앱에서 표시됩니다.</Text>
-    </View>
+    <GoogleMaps.View
+      style={baseStyle}
+      cameraPosition={cameraPosition}
+      markers={nativeMarkers}
+      polylines={polylines}
+      uiSettings={{ compassEnabled: true, myLocationButtonEnabled: false }}
+    />
   );
 }
 
-/**
- * 개발 빌드: expo-maps(Apple / Google). Expo Go: 카카오 WebView.
- */
 export default function AppMapView(props: Props): React.JSX.Element {
-  if (isExpoGoClient()) {
-    return <KakaoMapWebView {...props} />;
-  }
-  return <AppMapViewExpoMapsImpl {...props} />;
-}
+  const useNativeGoogle = Platform.OS === "android" && !isExpoGoClient();
 
-const styles = StyleSheet.create({
-  fallback: {
-    flex: 1,
-    backgroundColor: '#e5e7eb',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-  },
-  fallbackText: { fontSize: 14, color: '#4b5563', textAlign: 'center' },
-});
+  if (useNativeGoogle) {
+    return <AppMapViewExpoGoogleMapsImpl {...props} />;
+  }
+
+  return <GoogleMapWebView {...props} />;
+}

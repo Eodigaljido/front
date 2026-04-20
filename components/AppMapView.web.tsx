@@ -1,3 +1,1 @@
-import KakaoMapWebView from './KakaoMapWebView';
-
-export default KakaoMapWebView;
+import GoogleMapWebView from "./GoogleMapWebView";

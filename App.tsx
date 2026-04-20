@@ -2,7 +2,10 @@ import "./global.css";
 import React from "react";
 import { StatusBar } from "expo-status-bar";
 import { NavigationContainer } from "@react-navigation/native";
-import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import {
+  BottomTabBar,
+  createBottomTabNavigator,
+} from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -19,6 +22,9 @@ import GenderOnBoard from "./screens/onboard/GenderOnBoard";
 import OnBoardEnd from "./screens/onboard/OnBoardEnd";
 import { ChatRoomScreen } from "./screens/ChatRoomScreen";
 import ChatHomeScreen from "./screens/chat/ChatHomeScreen";
+import { View, StyleSheet } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Platform } from "react-native";
 
 export type RootTabParamList = {
   Home: undefined;
@@ -43,11 +49,21 @@ export type RootTabParamList = {
 };
 
 export type RootStackParamList = {
-  Home: undefined;
   Tabs: undefined;
-  HomeScreen: undefined;
+  Home: undefined;
+  Start: undefined;
+  RouteCreate:
+    | {
+        editRouteId?: string;
+        collaborative?: boolean;
+        seedMockCourseId?: string;
+      }
+    | undefined;
+  ProfileSettings: undefined;
 
-  // 온보드 관련
+  // Auth 관련
+  Login: undefined;
+  Signup: undefined;
   OnBoardStart: undefined;
   AreaOnBoard: undefined;
   AgeOnBoard: undefined;
@@ -62,11 +78,54 @@ export type RootStackParamList = {
 const Tab = createBottomTabNavigator<RootTabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+const TAB_ACCENT = "#f97316";
+const TAB_INACTIVE = "#64748b";
+const TAB_GLASS_BG = "rgba(255, 255, 255, 0.88)";
+const TAB_GLASS_BORDER = "rgba(148, 163, 184, 0.35)";
+
+function TabBarGlassBackground() {
+  return (
+    <View
+      pointerEvents="none"
+      style={[
+        StyleSheet.absoluteFill,
+        {
+          borderRadius: 22,
+          backgroundColor: TAB_GLASS_BG,
+          borderWidth: StyleSheet.hairlineWidth * 2,
+          borderColor: TAB_GLASS_BORDER,
+        },
+      ]}
+    />
+  );
+}
+
 function TabNavigator() {
+  const insets = useSafeAreaInsets();
+  const bottomPad = Math.max(insets.bottom, Platform.OS === "ios" ? 10 : 12);
+  const barVerticalPadding = 6;
+
   return (
     <Tab.Navigator
+      initialRouteName="Home"
+      tabBar={(props) => (
+        <View
+          pointerEvents="box-none"
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: bottomPad,
+            alignItems: "center",
+          }}
+        >
+          <View style={{ width: "88%" }}>
+            <BottomTabBar {...props} />
+          </View>
+        </View>
+      )}
       screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused }) => {
+        tabBarIcon: ({ focused, color }) => {
           const icons: Record<keyof RootTabParamList, string> = {
             Home: "home",
             SharedRoute: "paper-plane",
@@ -83,63 +142,69 @@ function TabNavigator() {
             Map: "Map",
           };
           return (
-            <Ionicons
-              name={icons[route.name]}
-              size={24}
-              color={focused ? "#007AFF" : "#000"}
-            />
+            <View
+              style={{
+                alignItems: "center",
+                justifyContent: "center",
+                paddingTop: 2,
+                minHeight: 28,
+              }}
+            >
+              <Ionicons
+                name={icons[route.name] as any}
+                size={22}
+                color={color}
+              />
+            </View>
           );
         },
-        tabBarActiveTintColor: "#007AFF",
-        tabBarInactiveTintColor: "#000",
+        tabBarActiveTintColor: TAB_ACCENT,
+        tabBarInactiveTintColor: TAB_INACTIVE,
+        tabBarBackground: TabBarGlassBackground,
         tabBarStyle: {
-          position: "absolute",
-          width: "88%",
-          alignSelf: "center",
-          bottom: 24,
-          marginHorizontal: "6%",
-          height: 72,
-          paddingTop: 8,
-          paddingBottom: 8,
-          backgroundColor: "#fff",
-          borderRadius: 28,
+          position: "relative",
+          height:
+            56 + barVerticalPadding * 2 + (Platform.OS === "android" ? 4 : 0),
+          paddingHorizontal: 4,
+          paddingTop: barVerticalPadding,
+          paddingBottom: barVerticalPadding,
+          backgroundColor: "transparent",
           borderTopWidth: 0,
-          shadowColor: "#000",
-          shadowOffset: { width: 0, height: 12 },
-          shadowOpacity: 0.22,
-          shadowRadius: 24,
-          borderWidth: 1,
-          borderColor: "rgba(0,0,0,0.06)",
-          elevation: 24,
+          elevation: Platform.OS === "android" ? 14 : 0,
+          shadowColor: "#0f172a",
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: Platform.OS === "ios" ? 0.12 : 0.18,
+          shadowRadius: 20,
+          borderRadius: 22,
         },
         tabBarLabelStyle: {
-          fontSize: 12,
+          fontSize: 10,
           fontWeight: "600",
-          marginTop: 4,
+          letterSpacing: -0.2,
+          marginTop: 0,
+          marginBottom: 0,
         },
         tabBarItemStyle: {
-          paddingVertical: 6,
+          paddingTop: 0,
+          paddingBottom: 0,
+          justifyContent: "center",
         },
       })}
     >
       <Tab.Screen
         name="Home"
         component={HomeScreen}
-        options={{ headerShown: false, title: "홈", tabBarLabel: "홈" }}
+        options={{ headerShown: false, tabBarLabel: "홈" }}
       />
       <Tab.Screen
         name="SharedRoute"
         component={SharedRouteScreen}
-        options={{
-          headerShown: false,
-          title: "공유 루트",
-          tabBarLabel: "공유 루트",
-        }}
+        options={{ headerShown: false, tabBarLabel: "공유 루트" }}
       />
       <Tab.Screen
         name="MyRoute"
         component={MyRouteScreen}
-        options={{ title: "내 루트", tabBarLabel: "내 루트" }}
+        options={{ headerShown: false, tabBarLabel: "내 루트" }}
       />
       <Tab.Screen
         name="Chat"
@@ -149,7 +214,7 @@ function TabNavigator() {
       <Tab.Screen
         name="All"
         component={AllScreen}
-        options={{ title: "전체", tabBarLabel: "전체" }}
+        options={{ headerShown: false, title: "전체", tabBarLabel: "전체" }}
       />
     </Tab.Navigator>
   );
