@@ -1,5 +1,5 @@
 import "./global.css";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import { NavigationContainer } from "@react-navigation/native";
 import {
@@ -27,6 +27,8 @@ import SignupScreen from "./screens/SignupScreen";
 import { View, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Platform } from "react-native";
+import { useAuthStore } from "./store/authStore";
+import { ActivityIndicator } from "react-native";
 
 export type RootTabParamList = {
   Login: undefined;
@@ -225,11 +227,30 @@ function TabNavigator() {
 }
 
 export default function App(): React.JSX.Element {
+  const [isReady, setIsReady] = useState(false);
+  const restoreSession = useAuthStore((s) => s.restoreSession);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
+  useEffect(() => {
+    restoreSession().finally(() => setIsReady(true));
+  }, []);
+
+  if (!isReady) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
   return (
     <MockDataProvider>
       <NavigationContainer>
         <StatusBar style="auto" />
-        <Stack.Navigator initialRouteName="Login" screenOptions={{ headerShown: false }}>
+        <Stack.Navigator
+          initialRouteName="Login"
+          screenOptions={{ headerShown: false }}
+        >
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Signup" component={SignupScreen} />
           <Stack.Screen name="Tabs" component={TabNavigator} />
