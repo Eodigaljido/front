@@ -14,13 +14,23 @@ import {
   Animated,
   Alert,
   Dimensions,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { MOCK_COURSES, getCourseMapCenter, getCourseStepMapPoint, type CourseItem } from '../data/mockData';
+import {
+  MOCK_COURSES,
+  getCourseMapCenter,
+  getCourseStepMapPoint,
+  type CourseItem,
+  type CourseReview,
+} from '../data/mockData';
 import { useMockData } from '../context/MockDataContext';
 import AppMapView from '../components/AppMapView';
+import { fetchMergedDirectionsPolyline } from '../data/googleDirectionsApi';
 import FilterBottomSheet, { CATEGORIES, REGIONS, SORT_OPTIONS } from '../components/FilterBottomSheet';
 
 type SharedRouteParams = {
@@ -46,53 +56,53 @@ const CARD_STYLE = {
   elevation: 3,
 };
 
-function CourseCard({
-  item,
-  isDropdownOpen,
-  onPressCard,
-  onAddToMyRoute,
-  onView,
-}: {
-  item: CourseItem;
-  isDropdownOpen: boolean;
-  onPressCard: () => void;
-  onAddToMyRoute: () => void;
-  onView: () => void;
-}) {
-  return (
-    <View className="mx-4 mb-3 overflow-hidden rounded-2xl bg-white" style={CARD_STYLE}>
-      <Pressable
-        onPress={onPressCard}
-        style={({ pressed }) => ({ opacity: pressed ? 0.96 : 1 })}
-      >
-        {/* 상단: 썸네일 + 제목/메타 + 드롭다운 아이콘 */}
-        <View className="flex-row border-b border-gray-100 p-3.5">
-          <View className="h-[80px] w-[80px] shrink-0 overflow-hidden rounded-xl bg-gray-100">
-            {item.thumbnail ? (
-              <Image source={{ uri: item.thumbnail }} className="h-full w-full" resizeMode="cover" />
-            ) : (
-              <View className="h-full w-full items-center justify-center bg-gray-100">
-                <Ionicons name="image-outline" size={28} color="#d1d5db" />
-              </View>
-            )}
-          </View>
-          <View className="ml-3 flex-1 min-w-0 justify-center">
-            <Text className="text-[15px] font-semibold leading-snug text-gray-900" numberOfLines={2}>
-              {item.title}
-            </Text>
-            <Text className="mt-1 text-xs text-gray-500">{item.meta}</Text>
-          </View>
-          <View className="justify-center pl-1">
-            <Ionicons
-              name={isDropdownOpen ? 'chevron-up' : 'chevron-down'}
-              size={22}
-              color="#1f2937"
-            />
-          </View>
-        </View>
+function mergeSharedCourseWithExtraReviews(
+  base: CourseItem,
+  extras: CourseReview[] | undefined,
+): CourseItem {
+  const add = extras ?? [];
+  const merged = [...base.reviews, ...add].sort((a, b) =>
+    String(b.date).localeCompare(String(a.date)),
+  );
+  const rating =
+    merged.length > 0 ? merged.reduce((s, r) => s + r.rating, 0) / merged.length : base.rating;
+  return {
+    ...base,
+    reviews: merged,
+    rating,
+    reviewCount: base.reviewCount + add.length,
+  };
+}
 
-        {/* 경로 안내: [출발] 장소명 | [도착] 장소명 */}
-        <View className="flex-row items-center border-b border-gray-100 px-3.5 py-2.5">
+function CourseCard({ item, onPress }: { item: CourseItem; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      className="mx-4 mb-3 overflow-hidden rounded-2xl bg-white active:opacity-95"
+      style={CARD_STYLE}
+    >
+      <View className="flex-row border-b border-gray-100 p-3.5">
+        <View className="h-[80px] w-[80px] shrink-0 overflow-hidden rounded-xl bg-gray-100">
+          {item.thumbnail ? (
+            <Image source={{ uri: item.thumbnail }} className="h-full w-full" resizeMode="cover" />
+          ) : (
+            <View className="h-full w-full items-center justify-center bg-gray-100">
+              <Ionicons name="image-outline" size={28} color="#d1d5db" />
+            </View>
+          )}
+        </View>
+        <View className="ml-3 flex-1 min-w-0 justify-center">
+          <Text className="text-[15px] font-semibold leading-snug text-gray-900" numberOfLines={2}>
+            {item.title}
+          </Text>
+          <Text className="mt-1 text-xs text-gray-500">{item.meta}</Text>
+        </View>
+        <View className="justify-center pl-1">
+          <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
+        </View>
+      </View>
+
+      <View className="flex-row items-center px-3.5 py-2.5">
         <View className="rounded-md bg-green-500 px-2 py-1">
           <Text className="text-[11px] font-semibold text-white">출발</Text>
         </View>
@@ -106,65 +116,35 @@ function CourseCard({
         <Text className="ml-2 flex-1 text-[13px] text-gray-900" numberOfLines={1}>
           {item.arrival}
         </Text>
-        </View>
-      </Pressable>
-
-      {/* 드롭다운: 가로 구분선 아래 두 개 버튼(회색 블록 스타일) */}
-      {isDropdownOpen && (
-        <View className="rounded-b-2xl bg-gray-50 px-3 py-3">
-          <View className="flex-row gap-2.5">
-            <Pressable
-              onPress={onAddToMyRoute}
-              className="flex-1 flex-row items-center justify-center rounded-xl py-3.5 active:opacity-90"
-              style={{
-                backgroundColor: '#059669',
-                shadowColor: '#059669',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.25,
-                shadowRadius: 4,
-                elevation: 2,
-              }}
-            >
-              <Ionicons name="add-circle-outline" size={20} color="#fff" />
-              <Text className="ml-2 text-sm font-semibold text-white">내 루트에 추가하기</Text>
-            </Pressable>
-            <Pressable
-              onPress={onView}
-              className="flex-1 flex-row items-center justify-center rounded-xl py-3.5 active:opacity-90"
-              style={{
-                backgroundColor: '#3b82f6',
-                shadowColor: '#3b82f6',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.2,
-                shadowRadius: 4,
-                elevation: 2,
-              }}
-            >
-              <Ionicons name="eye-outline" size={20} color="#fff" />
-              <Text className="ml-2 text-sm font-semibold text-white">보기</Text>
-            </Pressable>
-          </View>
-        </View>
-      )}
-    </View>
+      </View>
+    </Pressable>
   );
 }
 
 export default function SharedRouteScreen(): React.JSX.Element {
   const route = useRoute();
   const params = (route.params || {}) as SharedRouteParams;
-  const { addSavedCourse } = useMockData();
+  const { addSavedCourse, addSharedCourseReview, extraSharedCourseReviews } = useMockData();
 
   const [activeTab, setActiveTab] = useState<TabId>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterVisible, setFilterVisible] = useState(false);
-  const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
   const [selectedSort, setSelectedSort] = useState<string | null>(null);
   const [viewingCourseId, setViewingCourseId] = useState<string | null>(null);
   const [mapFocus, setMapFocus] = useState<{ lat: number; lng: number } | null>(null);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
+  const [courseDetailMergedPath, setCourseDetailMergedPath] = useState<
+    { latitude: number; longitude: number }[] | null
+  >(null);
+  const [courseDetailPathLoading, setCourseDetailPathLoading] = useState(false);
+
+  const [reviewCourseId, setReviewCourseId] = useState<string | null>(null);
+  const [reviewComposerOpen, setReviewComposerOpen] = useState(false);
+  const [reviewUserName, setReviewUserName] = useState('나');
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewBody, setReviewBody] = useState('');
   const [detailModalMounted, setDetailModalMounted] = useState(false);
   const detailBackdropOpacity = useRef(new Animated.Value(0)).current;
   const detailSheetTranslateY = useRef(new Animated.Value(500)).current;
@@ -203,6 +183,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
 
   const closeCourseDetail = () => {
     if (!viewingCourseIdRef.current) return;
+    setReviewComposerOpen(false);
     Animated.parallel([
       Animated.timing(detailBackdropOpacity, {
         toValue: 0,
@@ -232,10 +213,48 @@ export default function SharedRouteScreen(): React.JSX.Element {
     if (!viewingCourseId) {
       setMapFocus(null);
       setSelectedStepId(null);
+      setReviewComposerOpen(false);
+      setReviewCourseId(null);
       return;
     }
+    setReviewComposerOpen(false);
     setMapFocus(getCourseMapCenter(viewingCourseId));
     setSelectedStepId(null);
+  }, [viewingCourseId]);
+
+  useEffect(() => {
+    if (!viewingCourseId) {
+      setCourseDetailMergedPath(null);
+      setCourseDetailPathLoading(false);
+      return;
+    }
+    const course = MOCK_COURSES.find(c => c.id === viewingCourseId);
+    if (!course || course.routeSteps.length < 2) {
+      setCourseDetailMergedPath(null);
+      setCourseDetailPathLoading(false);
+      return;
+    }
+    const stepPoints = course.routeSteps.map((_, i) => {
+      const p = getCourseStepMapPoint(course.id, i);
+      return { latitude: p.lat, longitude: p.lng };
+    });
+    const ac = new AbortController();
+    setCourseDetailPathLoading(true);
+    setCourseDetailMergedPath(null);
+    fetchMergedDirectionsPolyline({
+      points: stepPoints,
+      mode: 'transit',
+      transitType: 'subway',
+      signal: ac.signal,
+    })
+      .then(path => {
+        if (!ac.signal.aborted && path.length >= 2) setCourseDetailMergedPath(path);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!ac.signal.aborted) setCourseDetailPathLoading(false);
+      });
+    return () => ac.abort();
   }, [viewingCourseId]);
 
   const filteredCourses = useMemo(() => {
@@ -380,22 +399,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
         data={filteredCourses}
         keyExtractor={(item: CourseItem) => item.id}
         renderItem={({ item }: { item: CourseItem }) => (
-          <CourseCard
-            item={item}
-            isDropdownOpen={expandedCardId === item.id}
-            onPressCard={() =>
-              setExpandedCardId((prev) => (prev === item.id ? null : item.id))
-            }
-            onAddToMyRoute={() => {
-              addSavedCourse(item.id);
-              setExpandedCardId(null);
-              Alert.alert('추가됨', '내 루트에 추가되었습니다.');
-            }}
-            onView={() => {
-              setExpandedCardId(null);
-              setViewingCourseId(item.id);
-            }}
-          />
+          <CourseCard item={item} onPress={() => setViewingCourseId(item.id)} />
         )}
         contentContainerStyle={{ paddingTop: 8, paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
@@ -425,7 +429,13 @@ export default function SharedRouteScreen(): React.JSX.Element {
         visible={detailModalMounted}
         transparent
         animationType="none"
-        onRequestClose={closeCourseDetail}
+        onRequestClose={() => {
+          if (reviewComposerOpen) {
+            setReviewComposerOpen(false);
+            return;
+          }
+          closeCourseDetail();
+        }}
       >
         <View style={{ flex: 1 }}>
           <Animated.View
@@ -441,7 +451,13 @@ export default function SharedRouteScreen(): React.JSX.Element {
                 StyleSheet.absoluteFillObject,
                 { backgroundColor: 'rgba(107,114,128,0.45)' },
               ]}
-              onPress={closeCourseDetail}
+              onPress={() => {
+                if (reviewComposerOpen) {
+                  setReviewComposerOpen(false);
+                  return;
+                }
+                closeCourseDetail();
+              }}
             />
           </Animated.View>
 
@@ -458,11 +474,39 @@ export default function SharedRouteScreen(): React.JSX.Element {
             style={{ maxHeight: '100%', backgroundColor: '#0f172a' }}
           >
             {viewingCourseId && (() => {
-              const course = MOCK_COURSES.find((c) => c.id === viewingCourseId);
-              if (!course) return null;
+              const courseBase = MOCK_COURSES.find((c) => c.id === viewingCourseId);
+              if (!courseBase) return null;
+              const course = mergeSharedCourseWithExtraReviews(
+                courseBase,
+                extraSharedCourseReviews[courseBase.id],
+              );
 
               const hours = (course.overallDurationMinutes / 60).toFixed(1);
               const mapCenter = mapFocus ?? getCourseMapCenter(course.id);
+
+              const pathPts: { latitude: number; longitude: number }[] | undefined =
+                course.routeSteps.length >= 1
+                  ? course.routeSteps.map((_, i) => {
+                      const p = getCourseStepMapPoint(course.id, i);
+                      return { latitude: p.lat, longitude: p.lng };
+                    })
+                  : undefined;
+              const polylinePath =
+                courseDetailMergedPath && courseDetailMergedPath.length >= 2
+                  ? courseDetailMergedPath
+                  : pathPts;
+                  const startStepName = course.routeSteps[0]?.name ?? course.departure;
+                  const endStepName =
+                    course.routeSteps[course.routeSteps.length - 1]?.name ?? course.arrival;
+              const mapMarkers =
+                pathPts && pathPts.length >= 1
+                  ? pathPts.map((pt, i) => ({
+                      latitude: pt.latitude,
+                      longitude: pt.longitude,
+                      label: `${i + 1}`,
+                    }))
+                  : undefined;
+              const mapLevel = polylinePath && polylinePath.length >= 2 ? 5 : 4;
 
               return (
                 <>
@@ -495,18 +539,47 @@ export default function SharedRouteScreen(): React.JSX.Element {
                         backgroundColor: '#0f172a',
                         borderWidth: 2,
                         borderColor: '#0f172a',
+                        position: 'relative',
                       }}
                     >
                       <AppMapView
-                        key={`${mapCenter.lat}-${mapCenter.lng}`}
+                        key={`${course.id}-${mapCenter.lat}-${mapCenter.lng}-${polylinePath?.length ?? 0}-${courseDetailMergedPath?.length ?? 0}`}
                         latitude={mapCenter.lat}
                         longitude={mapCenter.lng}
-                        level={4}
+                        level={mapLevel}
+                        allowTap={false}
+                        avoidLineOverlap
+                        path={polylinePath && polylinePath.length >= 1 ? polylinePath : undefined}
+                        stops={polylinePath && polylinePath.length >= 1 ? polylinePath : undefined}
+                        markers={mapMarkers}
                         style={{ width: '100%', height: 200 }}
                       />
+                      {courseDetailPathLoading ? (
+                        <View
+                          style={{
+                            position: 'absolute',
+                            right: 10,
+                            top: 10,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 6,
+                            paddingHorizontal: 10,
+                            paddingVertical: 6,
+                            borderRadius: 10,
+                            backgroundColor: 'rgba(15,23,42,0.82)',
+                          }}
+                        >
+                          <ActivityIndicator size="small" color="#e2e8f0" />
+                          <Text style={{ fontSize: 11, color: '#e2e8f0', fontWeight: '600' }}>
+                            경로 반영 중
+                          </Text>
+                        </View>
+                      ) : null}
                     </View>
-                    <Text className="mt-2 px-4 text-[11px] text-slate-400">
-                      대략적인 중심 위치입니다
+                    <Text className="mt-2 px-4 text-[11px] font-medium text-slate-300">
+                      {pathPts && pathPts.length >= 2
+                        ? `선 방향: 1번(${startStepName}) → ${pathPts.length}번(${endStepName})`
+                        : '선 방향: 출발 지점 기준'}
                     </Text>
                   </View>
 
@@ -515,9 +588,18 @@ export default function SharedRouteScreen(): React.JSX.Element {
                     className="bg-white"
                     contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 28 }}
                   >
-                  <View className="mb-4 flex-row items-center justify-between">
-                    <Text className="text-xl font-bold text-gray-900">코스 상세</Text>
-                    <View style={{ width: 28 }} />
+                  <View className="mb-4 flex-row items-center justify-between gap-2">
+                    <Text className="flex-1 text-xl font-bold text-gray-900">코스 상세</Text>
+                    <Pressable
+                      onPress={() => {
+                        addSavedCourse(course.id);
+                        Alert.alert('추가됨', '내 루트에 추가되었습니다.');
+                      }}
+                      className="flex-row items-center rounded-xl bg-emerald-600 px-3 py-2 active:opacity-90"
+                    >
+                      <Ionicons name="add-circle-outline" size={18} color="#fff" />
+                      <Text className="ml-1 text-xs font-bold text-white">내 루트 추가</Text>
+                    </Pressable>
                   </View>
 
                   <Text className="mb-1 text-base font-semibold text-gray-900">{course.title}</Text>
@@ -616,8 +698,22 @@ export default function SharedRouteScreen(): React.JSX.Element {
                     </View>
                   )}
 
+                  <Pressable
+                    onPress={() => {
+                      setReviewCourseId(course.id);
+                      setReviewUserName('나');
+                      setReviewRating(5);
+                      setReviewBody('');
+                      setReviewComposerOpen(true);
+                    }}
+                    className="mb-2 mt-2 flex-row items-center justify-center rounded-xl bg-amber-500 py-3.5 active:opacity-90"
+                  >
+                    <Ionicons name="create-outline" size={20} color="#fff" />
+                    <Text className="ml-2 text-sm font-bold text-white">리뷰 남기기</Text>
+                  </Pressable>
+
                   <Text className="mt-1 text-[11px] text-gray-400">
-                    추후에는 실제 이용자가 직접 후기를 남기고, 댓글로 소통할 수 있도록 확장될 예정입니다.
+                    작성한 후기는 앱(목 데이터)에만 저장되며, 서버 연동 시 동기화될 수 있어요.
                   </Text>
                 </ScrollView>
                 </>
@@ -626,6 +722,109 @@ export default function SharedRouteScreen(): React.JSX.Element {
           </View>
           </Animated.View>
           </View>
+
+          {reviewComposerOpen && reviewCourseId ? (
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              style={{
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                top: 0,
+                bottom: 0,
+                zIndex: 200,
+              }}
+              pointerEvents="box-none"
+            >
+              <Pressable
+                style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.55)' }]}
+                onPress={() => setReviewComposerOpen(false)}
+              />
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{
+                  flexGrow: 1,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  paddingHorizontal: 16,
+                  paddingVertical: 24,
+                }}
+                showsVerticalScrollIndicator={false}
+                style={{ flex: 1, width: '100%' }}
+              >
+                <View className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+                  <Text className="text-lg font-bold text-gray-900">리뷰 작성</Text>
+                  <Text className="mt-1 text-xs text-gray-500" numberOfLines={2}>
+                    {MOCK_COURSES.find((c) => c.id === reviewCourseId)?.title ?? ''}
+                  </Text>
+
+                  <Text className="mt-4 text-xs font-semibold text-gray-600">닉네임</Text>
+                  <TextInput
+                    value={reviewUserName}
+                    onChangeText={setReviewUserName}
+                    placeholder="표시될 이름"
+                    placeholderTextColor="#9ca3af"
+                    className="mt-1 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-base text-gray-900"
+                    maxLength={20}
+                  />
+
+                  <Text className="mt-3 text-xs font-semibold text-gray-600">별점</Text>
+                  <View className="mt-2 flex-row gap-2">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <Pressable key={n} onPress={() => setReviewRating(n)} hitSlop={6}>
+                        <Ionicons
+                          name={n <= reviewRating ? 'star' : 'star-outline'}
+                          size={28}
+                          color={n <= reviewRating ? '#f59e0b' : '#d1d5db'}
+                        />
+                      </Pressable>
+                    ))}
+                  </View>
+
+                  <Text className="mt-4 text-xs font-semibold text-gray-600">후기</Text>
+                  <TextInput
+                    value={reviewBody}
+                    onChangeText={setReviewBody}
+                    placeholder="코스 경험을 짧게 남겨 주세요"
+                    placeholderTextColor="#9ca3af"
+                    multiline
+                    className="mt-1 min-h-[100px] rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-base text-gray-900"
+                    textAlignVertical="top"
+                    maxLength={500}
+                  />
+
+                  <View className="mt-5 flex-row gap-2">
+                    <Pressable
+                      onPress={() => setReviewComposerOpen(false)}
+                      className="flex-1 items-center rounded-xl border border-gray-200 py-3 active:opacity-80"
+                    >
+                      <Text className="text-sm font-semibold text-gray-600">취소</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        if (!reviewCourseId) return;
+                        const t = reviewBody.trim();
+                        if (!t) {
+                          Alert.alert('알림', '후기 내용을 입력해 주세요.');
+                          return;
+                        }
+                        addSharedCourseReview(reviewCourseId, {
+                          userName: reviewUserName,
+                          rating: reviewRating,
+                          text: t,
+                        });
+                        setReviewComposerOpen(false);
+                        Alert.alert('등록됨', '리뷰가 등록되었습니다.');
+                      }}
+                      className="flex-1 items-center rounded-xl bg-amber-500 py-3 active:opacity-90"
+                    >
+                      <Text className="text-sm font-bold text-white">등록</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </ScrollView>
+            </KeyboardAvoidingView>
+          ) : null}
         </View>
       </Modal>
     </SafeAreaView>
