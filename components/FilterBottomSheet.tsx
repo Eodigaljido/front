@@ -1,6 +1,7 @@
 // @ts-nocheck
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { View, Text, Pressable, Modal, StyleSheet, Animated, Dimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // prettier-ignore
 export const CATEGORIES = ['데이트', '친구모임', '맛집', '카페', '자연', '액티비티'];
@@ -34,6 +35,7 @@ export default function FilterBottomSheet({
   onReset,
   onApply,
 }: FilterBottomSheetProps) {
+  const insets = useSafeAreaInsets();
   const sheetOffY = useMemo(() => Math.min(420, Dimensions.get('window').height * 0.5), []);
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const sheetTranslateY = useRef(new Animated.Value(sheetOffY)).current;
@@ -91,7 +93,7 @@ export default function FilterBottomSheet({
           <Pressable style={{ flex: 1 }} onPress={onClose} />
         </Animated.View>
         <Animated.View style={{ transform: [{ translateY: sheetTranslateY }] }}>
-          <View className="pt-5 pb-8 bg-gray-100 rounded-t-3xl" style={{ paddingHorizontal: 20 }}>
+          <View className="rounded-t-3xl bg-gray-100 pt-5 pb-8" style={{ paddingHorizontal: 20 }}>
             <Text className="mb-4 text-xl font-bold text-black">필터</Text>
 
             <Text className="mb-2 text-sm font-medium text-gray-600">카테고리</Text>
@@ -163,6 +165,7 @@ export default function FilterBottomSheet({
               </Pressable>
             </View>
           </View>
+          <View style={{ height: Math.max(insets.bottom, 0), backgroundColor: '#f3f4f6' }} />
         </Animated.View>
       </View>
     </Modal>
