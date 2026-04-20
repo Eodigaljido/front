@@ -19,6 +19,7 @@
     "expo-image-picker": "~17.0.10",
     "expo-location": "^55.1.8",
     "expo-maps": "^0.12.10",
+    "expo-secure-store": "~15.0.8",
     "expo-status-bar": "~2.0.0",
     "nativewind": "^4.0.1",
     "react": "19.1.0",
