@@ -1,6 +1,7 @@
 // @ts-nocheck
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import type { UserSavedRoute } from '../data/userSavedRoute';
+import type { CourseReview } from '../data/mockData';
 
 type MockDataContextValue = {
   savedCourseIds: string[];
@@ -13,6 +14,12 @@ type MockDataContextValue = {
   upsertUserRoute: (route: UserSavedRoute) => void;
   deleteUserRoute: (id: string) => void;
   getUserRoute: (id: string) => UserSavedRoute | undefined;
+  /** 공유 코스에 이용자가 추가한 후기 (세션·목 저장) */
+  extraSharedCourseReviews: Record<string, CourseReview[]>;
+  addSharedCourseReview: (
+    courseId: string,
+    payload: { userName: string; rating: number; text: string },
+  ) => void;
 };
 
 const MockDataContext = createContext<MockDataContextValue | null>(null);
@@ -22,6 +29,9 @@ const MOCK_PUBLIC_IDS = ['1', '2', '4', '5', '6'];
 export function MockDataProvider({ children }: { children: React.ReactNode }) {
   const [savedCourseIds, setSavedCourseIds] = useState<string[]>(['1', '3']);
   const [userSavedRoutes, setUserSavedRoutes] = useState<UserSavedRoute[]>([]);
+  const [extraSharedCourseReviews, setExtraSharedCourseReviews] = useState<
+    Record<string, CourseReview[]>
+  >({});
 
   const addSavedCourse = useCallback((id: string) => {
     setSavedCourseIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
@@ -52,6 +62,23 @@ export function MockDataProvider({ children }: { children: React.ReactNode }) {
     [userSavedRoutes],
   );
 
+  const addSharedCourseReview = useCallback(
+    (courseId: string, payload: { userName: string; rating: number; text: string }) => {
+      const name = payload.userName.trim() || '익명';
+      const text = payload.text.trim();
+      if (!text) return;
+      const rating = Math.min(5, Math.max(1, Number(payload.rating) || 5));
+      const id = `sr-${courseId}-${Date.now()}`;
+      const date = new Date().toISOString().slice(0, 10);
+      const review: CourseReview = { id, userName: name, rating, text, date };
+      setExtraSharedCourseReviews((prev) => ({
+        ...prev,
+        [courseId]: [...(prev[courseId] ?? []), review],
+      }));
+    },
+    [],
+  );
+
   const value: MockDataContextValue = {
     savedCourseIds,
     addSavedCourse,
@@ -61,6 +88,8 @@ export function MockDataProvider({ children }: { children: React.ReactNode }) {
     upsertUserRoute,
     deleteUserRoute,
     getUserRoute,
+    extraSharedCourseReviews,
+    addSharedCourseReview,
   };
 
   return (
