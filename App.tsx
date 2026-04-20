@@ -22,11 +22,14 @@ import GenderOnBoard from "./screens/onboard/GenderOnBoard";
 import OnBoardEnd from "./screens/onboard/OnBoardEnd";
 import { ChatRoomScreen } from "./screens/ChatRoomScreen";
 import ChatHomeScreen from "./screens/chat/ChatHomeScreen";
+import LoginScreen from "./screens/LoginScreen";
+import SignupScreen from "./screens/SignupScreen";
 import { View, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Platform } from "react-native";
 
 export type RootTabParamList = {
+  Login: undefined;
   Home: undefined;
   SharedRoute:
     | { openFilter?: boolean; openAsPopular?: boolean; viewCourseId?: string }
@@ -132,6 +135,7 @@ function TabNavigator() {
             MyRoute: "map",
             Chat: "chatbubble",
             All: "menu",
+            Login: "login",
             OnBoardStart: "onboard start",
             AreaOnBoard: "area onboard",
             AgeOnBoard: "age onboard",
@@ -225,7 +229,9 @@ export default function App(): React.JSX.Element {
     <MockDataProvider>
       <NavigationContainer>
         <StatusBar style="auto" />
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Navigator initialRouteName="Login" screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="Login" component={LoginScreen} />
+          <Stack.Screen name="Signup" component={SignupScreen} />
           <Stack.Screen name="Tabs" component={TabNavigator} />
           <Stack.Screen name="Home" component={HomeScreen} />
           <Stack.Screen name="OnBoardStart" component={OnBoardStart} />
