@@ -3,14 +3,18 @@ import React, { useMemo } from 'react';
 import { Platform } from 'react-native';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import GoogleMapWebView from './GoogleMapWebView';
-import type { MapPathPoint } from './mapTypes';
+import type { MapMarkerPoint, MapPathPoint, MapRouteSegment } from './mapTypes';
 
 type Props = {
   latitude?: number;
   longitude?: number;
   level?: number;
+  allowTap?: boolean;
+  avoidLineOverlap?: boolean;
   path?: MapPathPoint[];
+  segments?: MapRouteSegment[];
   stops?: MapPathPoint[];
+  markers?: MapMarkerPoint[];
   style?: object;
 };
 
@@ -91,47 +95,96 @@ function AppMapViewExpoGoogleMapsImpl({
   latitude = 37.5665,
   longitude = 126.978,
   level = 8,
+  allowTap = true,
   path,
+  segments,
   stops,
+  markers,
   style,
 }: Props): React.JSX.Element {
   const { GoogleMaps } = require('expo-maps');
 
   const pts = useMemo(() => validPoints(path), [path]);
+  const segs = useMemo(
+    () =>
+      (segments ?? [])
+        .map((s) => ({
+          ...s,
+          points: validPoints(s.points),
+        }))
+        .filter((s) => s.points.length >= 2),
+    [segments],
+  );
   const stopPts = useMemo(() => validPoints(stops), [stops]);
+  const markerPts = useMemo(
+    () =>
+      (markers ?? []).filter(
+        (p) =>
+          p &&
+          typeof p.latitude === 'number' &&
+          typeof p.longitude === 'number' &&
+          Number.isFinite(p.latitude) &&
+          Number.isFinite(p.longitude),
+      ),
+    [markers],
+  );
   const cameraPath = useMemo(() => {
+    if (segs.length >= 1) return segs.flatMap((s) => s.points);
     if (pts.length >= 1) return pts;
+    if (markerPts.length >= 1) return markerPts.map((m) => ({ latitude: m.latitude, longitude: m.longitude }));
     return stopPts;
-  }, [pts, stopPts]);
+  }, [segs, pts, markerPts, stopPts]);
   const cameraPosition = useMemo(
     () => cameraForPath(cameraPath, latitude, longitude, level),
     [cameraPath, latitude, longitude, level],
   );
   const lineCoords = useMemo(() => toCoordinates(pts), [pts]);
 
-  const markers = useMemo(() => {
+  const nativeMarkers = useMemo(() => {
+    if (markerPts.length > 0) {
+      return markerPts.map((c, i) => ({
+        id: `marker-${i}`,
+        coordinates: { latitude: c.latitude, longitude: c.longitude },
+        title: c.label ? `${c.label}` : undefined,
+        subtitle: c.label ? ' ' : undefined,
+        isTappable: allowTap,
+      }));
+    }
     if (stopPts.length > 0) {
       return stopPts.map((c, i) => ({
         id: `stop-${i}`,
         coordinates: { latitude: c.latitude, longitude: c.longitude },
+        title: `${i + 1}`,
+        isTappable: allowTap,
       }));
     }
     if (lineCoords.length <= 24) {
       return lineCoords.map((c, i) => ({
         id: `stop-${i}`,
         coordinates: c,
+        isTappable: allowTap,
       }));
     }
     if (lineCoords.length >= 2) {
       return [
-        { id: 'stop-0', coordinates: lineCoords[0] },
-        { id: 'stop-last', coordinates: lineCoords[lineCoords.length - 1] },
+        { id: 'stop-0', coordinates: lineCoords[0], isTappable: allowTap },
+        { id: 'stop-last', coordinates: lineCoords[lineCoords.length - 1], isTappable: allowTap },
       ];
     }
     return [];
-  }, [stopPts, lineCoords]);
+  }, [markerPts, stopPts, lineCoords, allowTap]);
 
   const polylines = useMemo(() => {
+    if (segs.length >= 1) {
+      return segs.map((s) => ({
+        id: s.id,
+        coordinates: toCoordinates(s.points),
+        color: s.color || ROUTE_COLOR,
+        width: s.width ?? 5,
+        geodesic: true,
+        lineDashPattern: s.dashed ? [8, 8] : undefined,
+      }));
+    }
     if (lineCoords.length < 2) return [];
     return [
       {
@@ -142,7 +195,7 @@ function AppMapViewExpoGoogleMapsImpl({
         geodesic: true,
       },
     ];
-  }, [lineCoords]);
+  }, [segs, lineCoords]);
 
   const baseStyle = [{ flex: 1, backgroundColor: '#e5e7eb' }, style];
 
@@ -150,7 +203,7 @@ function AppMapViewExpoGoogleMapsImpl({
     <GoogleMaps.View
       style={baseStyle}
       cameraPosition={cameraPosition}
-      markers={markers}
+      markers={nativeMarkers}
       polylines={polylines}
       uiSettings={{ compassEnabled: true, myLocationButtonEnabled: false }}
     />
