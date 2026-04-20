@@ -12,6 +12,7 @@ import {
   ImageBackground,
   StyleSheet,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,6 +32,7 @@ import {
 } from '../data/userSavedRoute';
 import AppMapView from '../components/AppMapView';
 import FilterBottomSheet from '../components/FilterBottomSheet';
+import { fetchMergedDirectionsPolyline } from '../data/googleDirectionsApi';
 
 const CARD_STYLE = {
   shadowColor: '#000',
@@ -133,6 +135,10 @@ export default function MyRouteScreen(): React.JSX.Element {
   const [viewingCourseId, setViewingCourseId] = useState<string | null>(null);
   const [mapFocus, setMapFocus] = useState<{ lat: number; lng: number } | null>(null);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
+  const [detailMergedPath, setDetailMergedPath] = useState<
+    { latitude: number; longitude: number }[] | null
+  >(null);
+  const [detailPathLoading, setDetailPathLoading] = useState(false);
 
   useEffect(() => {
     if (!viewingCourseId) {
@@ -140,9 +146,59 @@ export default function MyRouteScreen(): React.JSX.Element {
       setSelectedStepId(null);
       return;
     }
-    setMapFocus(getCourseMapCenter(viewingCourseId));
+    const ur = userSavedRoutes.find(r => r.id === viewingCourseId);
+    setMapFocus(ur ? userRouteMapCenter(ur) : getCourseMapCenter(viewingCourseId));
     setSelectedStepId(null);
-  }, [viewingCourseId]);
+  }, [viewingCourseId, userSavedRoutes]);
+
+  useEffect(() => {
+    if (!viewingCourseId) {
+      setDetailMergedPath(null);
+      setDetailPathLoading(false);
+      return;
+    }
+    const ur = userSavedRoutes.find(r => r.id === viewingCourseId);
+    const courseFromMock = MOCK_COURSES.find(c => c.id === viewingCourseId);
+    const course = courseFromMock ?? (ur ? userRouteToCourseItem(ur) : null);
+    if (!course) {
+      setDetailMergedPath(null);
+      setDetailPathLoading(false);
+      return;
+    }
+
+    let stepPoints: { latitude: number; longitude: number }[] = [];
+    if (ur && userRouteMapPath(ur).length >= 2) {
+      stepPoints = userRouteMapPath(ur);
+    } else if (course.routeSteps.length >= 2) {
+      stepPoints = course.routeSteps.map((_, i) => {
+        const p = getCourseStepMapPoint(course.id, i);
+        return { latitude: p.lat, longitude: p.lng };
+      });
+    } else {
+      setDetailMergedPath(null);
+      setDetailPathLoading(false);
+      return;
+    }
+
+    const ac = new AbortController();
+    setDetailPathLoading(true);
+    setDetailMergedPath(null);
+    fetchMergedDirectionsPolyline({
+      points: stepPoints,
+      mode: 'transit',
+      transitType: 'subway',
+      signal: ac.signal,
+    })
+      .then(path => {
+        if (!ac.signal.aborted && path.length >= 2) setDetailMergedPath(path);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!ac.signal.aborted) setDetailPathLoading(false);
+      });
+
+    return () => ac.abort();
+  }, [viewingCourseId, userSavedRoutes]);
 
   const mergedCourses = useMemo(() => {
     const fromUser = userSavedRoutes.map(userRouteToCourseItem);
@@ -364,11 +420,24 @@ export default function MyRouteScreen(): React.JSX.Element {
                   } else {
                     pathPts = undefined;
                   }
+                  const mapMarkers =
+                    pathPts && pathPts.length >= 1
+                      ? pathPts.map((pt, i) => ({
+                          latitude: pt.latitude,
+                          longitude: pt.longitude,
+                          label: `${i + 1}`,
+                        }))
+                      : undefined;
+                  const polylinePath =
+                    detailMergedPath && detailMergedPath.length >= 2 ? detailMergedPath : pathPts;
                   const fallbackCenter = ur
                     ? userRouteMapCenter(ur)
                     : getCourseMapCenter(course.id);
                   const mapCenter = mapFocus ?? fallbackCenter;
-                  const mapLevel = pathPts && pathPts.length >= 2 ? 5 : 4;
+                  const mapLevel = polylinePath && polylinePath.length >= 2 ? 5 : 4;
+                  const startStepName = course.routeSteps[0]?.name ?? course.departure;
+                  const endStepName =
+                    course.routeSteps[course.routeSteps.length - 1]?.name ?? course.arrival;
 
                   return (
                     <>
@@ -399,28 +468,50 @@ export default function MyRouteScreen(): React.JSX.Element {
                             backgroundColor: '#0f172a',
                             borderWidth: 2,
                             borderColor: '#0f172a',
+                            position: 'relative',
                           }}
                         >
                           <AppMapView
                             key={
                               ur
-                                ? `ur-${ur.id}-${mapCenter.lat}-${mapCenter.lng}-${pathPts?.length ?? 0}`
-                                : `mc-${course.id}-${mapCenter.lat}-${mapCenter.lng}-${pathPts?.length ?? 0}`
+                                ? `ur-${ur.id}-${mapCenter.lat}-${mapCenter.lng}-${polylinePath?.length ?? 0}-${detailMergedPath?.length ?? 0}`
+                                : `mc-${course.id}-${mapCenter.lat}-${mapCenter.lng}-${polylinePath?.length ?? 0}-${detailMergedPath?.length ?? 0}`
                             }
                             latitude={mapCenter.lat}
                             longitude={mapCenter.lng}
                             level={mapLevel}
-                            path={pathPts && pathPts.length >= 1 ? pathPts : undefined}
-                            stops={pathPts && pathPts.length >= 1 ? pathPts : undefined}
+                            avoidLineOverlap
+                            path={polylinePath && polylinePath.length >= 1 ? polylinePath : undefined}
+                            stops={polylinePath && polylinePath.length >= 1 ? polylinePath : undefined}
+                            markers={mapMarkers}
                             style={{ width: '100%', height: 200 }}
                           />
+                          {detailPathLoading ? (
+                            <View
+                              style={{
+                                position: 'absolute',
+                                right: 10,
+                                top: 10,
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                gap: 6,
+                                paddingHorizontal: 10,
+                                paddingVertical: 6,
+                                borderRadius: 10,
+                                backgroundColor: 'rgba(15,23,42,0.82)',
+                              }}
+                            >
+                              <ActivityIndicator size="small" color="#e2e8f0" />
+                              <Text style={{ fontSize: 11, color: '#e2e8f0', fontWeight: '600' }}>
+                                경로 반영 중
+                              </Text>
+                            </View>
+                          ) : null}
                         </View>
-                        <Text className="mt-2 px-4 text-[11px] text-slate-400">
+                        <Text className="mt-2 px-4 text-[11px] font-medium text-slate-300">
                           {pathPts && pathPts.length >= 2
-                            ? ur
-                              ? '저장된 경로(목 데이터)를 표시합니다'
-                              : '공유 코스 경로(목 좌표)를 표시합니다'
-                            : '대략적인 중심 위치입니다'}
+                            ? `선 방향: 1번(${startStepName}) → ${pathPts.length}번(${endStepName})`
+                            : '선 방향: 출발 지점 기준'}
                         </Text>
                       </View>
 
@@ -482,11 +573,6 @@ export default function MyRouteScreen(): React.JSX.Element {
                           </View>
                         </View>
 
-                        <Text className="mb-4 text-xs text-gray-400">
-                          이용자들이 실제로 코스를 다녀온 기록을 기반으로 한 대략적인 체류
-                          시간입니다.
-                        </Text>
-
                         <View className="p-3 mb-6 rounded-xl bg-gray-50">
                           <View className="flex-row items-center">
                             <View className="px-2 py-1 bg-green-100 rounded">
@@ -531,52 +617,10 @@ export default function MyRouteScreen(): React.JSX.Element {
                                 <Text className="text-sm font-medium text-gray-900">
                                   {step.name}
                                 </Text>
-                                <Text className="mt-0.5 text-xs text-gray-500">
-                                  {ur
-                                    ? '저장된 정류장 (목)'
-                                    : `평균 머문 시간 약 ${step.stayMinutes}분`}
-                                </Text>
                               </View>
                             </TouchableOpacity>
                           ))}
                         </View>
-
-                        <Text className="mb-2 text-sm font-semibold text-gray-900">
-                          이용자 후기
-                        </Text>
-                        {course.reviews.length === 0 ? (
-                          <View className="p-3 mb-2 rounded-xl bg-gray-50">
-                            <Text className="text-xs text-gray-500">
-                              {ur
-                                ? '직접 제작 루트에는 샘플 후기가 없습니다.'
-                                : '아직 등록된 후기가 없습니다. 코스를 다녀온 후 첫 후기를 남겨 보세요.'}
-                            </Text>
-                          </View>
-                        ) : (
-                          <View className="p-3 mb-2 rounded-xl bg-gray-50">
-                            {course.reviews.map(review => (
-                              <View key={review.id} className="mb-3 last:mb-0">
-                                <View className="flex-row items-center justify-between">
-                                  <Text className="text-sm font-semibold text-gray-900">
-                                    {review.userName}
-                                  </Text>
-                                  <Text className="text-xs text-yellow-600">
-                                    ★ {review.rating.toFixed(1)}
-                                  </Text>
-                                </View>
-                                <Text className="mt-1 text-xs text-gray-700">{review.text}</Text>
-                                <Text className="mt-0.5 text-[11px] text-gray-400">
-                                  {review.date}
-                                </Text>
-                              </View>
-                            ))}
-                          </View>
-                        )}
-
-                        <Text className="mt-1 text-[11px] text-gray-400">
-                          추후에는 실제 이용자가 직접 후기를 남기고, 댓글로 소통할 수 있도록 확장될
-                          예정입니다.
-                        </Text>
                       </ScrollView>
                     </>
                   );
