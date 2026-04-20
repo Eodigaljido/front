@@ -1,30 +1,44 @@
 // api/axios.ts
 // @ts-nocheck
-import axios from 'axios';
+import axios from "axios";
+import { tokenStorage } from "../utils/tokenStorage";
 
 export const instance = axios.create({
   baseURL: process.env.EXPO_PUBLIC_API_BASE_URL,
-  headers: { 'Content-Type': 'application/json' },
+  headers: { "Content-Type": "application/json" },
   withCredentials: true,
 });
 
-// 하단은 요청/응답 로그를 출력
-// 개발 환경에서만 사용할 것
-
-// 요청 로그
-instance.interceptors.request.use(config => {
-  console.log('[REQ]', config.method?.toUpperCase(), config.baseURL + config.url, config.data, config.headers?.Authorization);
+// 요청마다 SecureStore에서 토큰을 읽어 Authorization 헤더 주입
+instance.interceptors.request.use(async (config) => {
+  const token = await tokenStorage.getAccessToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  console.log(
+    "[REQ]",
+    config.method?.toUpperCase(),
+    config.baseURL + config.url,
+    config.data,
+  );
   return config;
 });
 
 // 응답 로그
 instance.interceptors.response.use(
-  res => {
-    console.log('[RES]', res.status, res.config.url, res.data);
+  (res) => {
+    console.log("[RES]", res.status, res.config.url, res.data);
     return res;
   },
-  err => {
-    console.log('[ERR]', err.response?.status, err.config?.url, err.response?.data, err.code, err.message);
+  (err) => {
+    console.log(
+      "[ERR]",
+      err.response?.status,
+      err.config?.url,
+      err.response?.data,
+      err.code,
+      err.message,
+    );
     return Promise.reject(err);
   },
 );
