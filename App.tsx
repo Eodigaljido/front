@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
-import { Platform, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
+import { useAuthStore } from './store/authStore';
 import { NavigationContainer } from '@react-navigation/native';
 import { BottomTabBar, createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -186,13 +187,32 @@ function TabNavigator() {
 }
 
 export default function App(): React.JSX.Element {
+  const [isReady, setIsReady] = useState(false);
+  const restoreSession = useAuthStore(s => s.restoreSession);
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated);
+
+  useEffect(() => {
+    restoreSession().finally(() => setIsReady(true));
+  }, []);
+
+  if (!isReady) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
   return (
     <SafeAreaProvider>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <MockDataProvider>
           <NavigationContainer>
             <StatusBar style="auto" />
-            <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName='Login'>
+            <Stack.Navigator
+              screenOptions={{ headerShown: false }}
+              initialRouteName={isAuthenticated ? 'Tabs' : 'Login'}
+            >
               <Stack.Screen name="Tabs" component={TabNavigator} />
               <Stack.Screen name="RouteCreate" component={RouteCreateScreen} />
               <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />

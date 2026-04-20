@@ -5,6 +5,7 @@
  */
 module.exports = ({ config }) => ({
   ...config,
+  plugins: [...(config.plugins ?? []), 'expo-secure-store'],
   android: {
     ...config.android,
     config: {
