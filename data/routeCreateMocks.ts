@@ -14,6 +14,8 @@ export type MockPlace = {
   address: string;
   latitude: number;
   longitude: number;
+  /** 카카오 place_category_name 등 */
+  category?: string;
 };
 
 export const MOCK_RECENT_PLACES: MockPlace[] = [
