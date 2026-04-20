@@ -8,28 +8,14 @@ const BubbleChatMock = () => {
   return (
     <View style={{ justifyContent: "flex-end" }}>
       <BubbleChat
-        isMine={true}
-        sended={true}
-        message="안녕하세요!!!!"
-        timestamp="오후 3:45"
-      />
-      <BubbleChat
+        text="안녕하세요! 오늘 여행 계획에 대해 이야기해볼까요?"
         isMine={false}
-        message="안녕하세요! 반갑습니다."
-        timestamp="오후 3:46"
-        sended={true}
+        sentAt={new Date()}
       />
       <BubbleChat
+        text="네, 좋아요! 어떤 장소를 가보고 싶으세요?"
         isMine={true}
-        sended={true}
-        message="반갑습니다잉"
-        timestamp="오후 3:47"
-      />
-      <BubbleChat
-        isMine={true}
-        sended={true}
-        message="동해물과 백두산이 마르고 닳도록 하느님이 보우하사 우리나라 만세 무궁화 삼천리 화려 강산 대한 사람 대한으로 길이 보전하세 동해물과 백두산이 마르고 닳도록 하느님이 보우하사 우리나라 만세 무궁화 삼천리 화려 강산 대한 사람 대한으로 길이 보전하세 동해물과 백두산이 마르고 닳도록 하느님이 보우하사 우리나라 만세 무궁화 삼천리 화려 강산 대한 사람 대한으로 길이 보전하세"
-        timestamp="오후 3:47"
+        sentAt={new Date()}
       />
     </View>
   );
