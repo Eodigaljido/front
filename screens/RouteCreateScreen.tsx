@@ -18,17 +18,22 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
+import * as Location from 'expo-location';
 import AppMapView from '../components/AppMapView';
+import type { MapMarkerPoint, MapRouteSegment } from '../components/mapTypes';
 import { useMockData } from '../context/MockDataContext';
 import {
   TRANSPORT_LABELS,
   type TransportMode,
-  MOCK_RECENT_PLACES,
   type MockPlace,
   estimateMinutes,
   MOCK_COLLABORATORS,
 } from '../data/routeCreateMocks';
-import { searchKakaoPlacesByKeyword } from '../data/kakaoLocalApi';
+import {
+  searchKakaoPlacesByKeyword,
+  KAKAO_KEYWORD_CATEGORY_OPTIONS,
+  type KakaoKeywordSort,
+} from '../data/kakaoLocalApi';
 import { fetchGoogleDirectionsLeg, type DirectionsMode } from '../data/googleDirectionsApi';
 import type { CourseItem } from '../data/mockData';
 import { MOCK_COURSES, getCourseStepMapPoint } from '../data/mockData';
@@ -51,6 +56,9 @@ type RouteLeg = {
   directionsDetail?: string;
   distanceMeters?: number;
 };
+
+const WALK_SEGMENT_COLOR = '#f59e0b';
+const RIDE_SEGMENT_COLOR = '#2563eb';
 
 const ROUTE_CREATE_EMPTY_STOPS: RouteStop[] = [
   {
@@ -261,6 +269,31 @@ function snapPolylineToEndpoints(
   return next;
 }
 
+function offsetPolylineForLegSeparation(
+  points: { latitude: number; longitude: number }[],
+  legIndex: number,
+  segIndex: number,
+) {
+  if (points.length < 3) return points;
+  const pattern = ((legIndex + segIndex) % 5) - 2; // -2,-1,0,1,2
+  if (pattern === 0) return points;
+  const amount = pattern * 0.00003;
+  const a = points[0];
+  const b = points[points.length - 1];
+  const dx = b.longitude - a.longitude;
+  const dy = b.latitude - a.latitude;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len;
+  const ny = dx / len;
+  return points.map((p, idx) => {
+    if (idx === 0 || idx === points.length - 1) return p;
+    return {
+      latitude: p.latitude + ny * amount,
+      longitude: p.longitude + nx * amount,
+    };
+  });
+}
+
 function buildModeAwareMapPath(stops: RouteStop[], legs: RouteLeg[]) {
   const validStops = stops.filter((s) => s.lat != null && s.lng != null);
   if (validStops.length < 2) return buildMapPath(stops);
@@ -325,9 +358,15 @@ function buildModeAwareMapPath(stops: RouteStop[], legs: RouteLeg[]) {
 
 const MAP_DEFAULT_LAT = 35.1796;
 const MAP_DEFAULT_LNG = 129.0756;
-
-const SEARCH_HINT_MODAL =
-  '① 아래에서 이동 수단을 고른 뒤 ② 장소를 선택하면 경로에 반영됩니다.';
+const SEARCH_RADIUS_OPTIONS: Array<{ meters: number | null; label: string }> = [
+  { meters: 5000, label: '5km' },
+  { meters: 10000, label: '10km' },
+  { meters: 15000, label: '15km' },
+  { meters: 20000, label: '20km' },
+  { meters: 30000, label: '30km' },
+  { meters: 50000, label: '50km' },
+  { meters: null, label: '무제한' },
+];
 
 const VIA_LIFT_MS = 420;
 const VIA_CANCEL_MOVE_BEFORE_LIFT_PX = 16;
@@ -399,6 +438,14 @@ function clampViaGhostLayout(d: {
     width: gw,
     minHeight: gh,
   };
+}
+
+function parseDistanceLabelToMeters(distanceLabel: string): number {
+  const raw = String(distanceLabel ?? '').trim().toLowerCase();
+  const n = Number(raw.replace(/[^0-9.]/g, ''));
+  if (!Number.isFinite(n) || n <= 0) return Number.POSITIVE_INFINITY;
+  if (raw.includes('km')) return Math.round(n * 1000);
+  return Math.round(n);
 }
 
 type ViaDragHandleProps = {
@@ -570,11 +617,19 @@ export default function RouteCreateScreen(): React.JSX.Element {
   const [searchResults, setSearchResults] = useState<MockPlace[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [selectedMode, setSelectedMode] = useState<TransportMode | null>(null);
   const [selectedTransitType, setSelectedTransitType] = useState<TransitType>('subway');
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
   const [searchTargetStopId, setSearchTargetStopId] = useState<string | null>(null);
+  const [searchSort, setSearchSort] = useState<KakaoKeywordSort>('accuracy');
+  const [searchCategoryCode, setSearchCategoryCode] = useState('');
+  const [searchRadiusMeters, setSearchRadiusMeters] = useState<number | null>(15000);
+  const [currentSearchCenter, setCurrentSearchCenter] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const [searchCenterSource, setSearchCenterSource] = useState<'user' | 'route' | null>(null);
   const [mapRoutePath, setMapRoutePath] = useState<{ latitude: number; longitude: number }[]>([]);
+  const [mapRouteSegments, setMapRouteSegments] = useState<MapRouteSegment[]>([]);
 
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
@@ -665,19 +720,37 @@ export default function RouteCreateScreen(): React.JSX.Element {
     ]),
   );
 
-  const selectablePlaces = useMemo(() => {
-    const m = new Map<string, MockPlace>();
-    for (const p of MOCK_RECENT_PLACES) m.set(p.id, p);
-    for (const p of searchResults) m.set(p.id, p);
-    return Array.from(m.values());
-  }, [searchResults]);
+  /** 거리순 정렬 기준: 현재 루트에 찍힌 정류장들의 무게중심 (없으면 거리순 비활성) */
+  const searchMapCenter = useMemo(() => {
+    const coords = stops
+      .filter((s) => s.lat != null && s.lng != null)
+      .map((s) => ({ lat: s.lat as number, lng: s.lng as number }));
+    if (coords.length === 0) return null;
+    const lat = coords.reduce((a, c) => a + c.lat, 0) / coords.length;
+    const lng = coords.reduce((a, c) => a + c.lng, 0) / coords.length;
+    return { latitude: lat, longitude: lng };
+  }, [stops]);
+
+  const effectiveSearchCenter = currentSearchCenter ?? searchMapCenter;
+  const canUseDistanceSort = effectiveSearchCenter != null;
 
   const selectedPlace = selectedPlaceId
-    ? selectablePlaces.find((p) => p.id === selectedPlaceId) ?? null
+    ? searchResults.find((p) => p.id === selectedPlaceId) ?? null
     : null;
 
   const mapPath = useMemo(() => buildModeAwareMapPath(stops, legs), [stops, legs]);
   const pathStopsForMap = useMemo(() => buildMapPath(stops), [stops]);
+  const mapMarkers = useMemo<MapMarkerPoint[]>(
+    () =>
+      stops
+        .filter((s) => s.lat != null && s.lng != null)
+        .map((s, i) => ({
+          latitude: s.lat as number,
+          longitude: s.lng as number,
+          label: `${i + 1}`,
+        })),
+    [stops],
+  );
 
   /** 좌표·이동수단이 바뀔 때만 Directions 재호출 (응답으로 갱신되는 minutes/summary는 제외) */
   const directionsRouteKey = useMemo(
@@ -689,7 +762,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
   const viaStops = useMemo(() => stops.filter((s) => s.kind === 'via'), [stops]);
   const totalMinutes = useMemo(() => legs.reduce((sum, l) => sum + l.minutes, 0), [legs]);
 
-  const showAddButton = Boolean(selectedPlace && selectedMode);
+  const showAddButton = Boolean(selectedPlace);
 
   const openSearch = useCallback((targetStopId?: string) => {
     setSearchOpen(true);
@@ -698,9 +771,13 @@ export default function RouteCreateScreen(): React.JSX.Element {
     setSearchError(null);
     setSearchLoading(false);
     setSelectedPlaceId(null);
-    setSelectedMode(null);
     setSelectedTransitType('subway');
     setSearchTargetStopId(typeof targetStopId === 'string' ? targetStopId : null);
+    setSearchSort('accuracy');
+    setSearchCategoryCode('');
+    setSearchRadiusMeters(15000);
+    setCurrentSearchCenter(null);
+    setSearchCenterSource(null);
   }, []);
 
   const closeSearch = useCallback(() => {
@@ -710,15 +787,62 @@ export default function RouteCreateScreen(): React.JSX.Element {
     setSearchError(null);
     setSearchLoading(false);
     setSelectedPlaceId(null);
-    setSelectedMode(null);
     setSelectedTransitType('subway');
     setSearchTargetStopId(null);
+    setSearchSort('accuracy');
+    setSearchCategoryCode('');
+    setSearchRadiusMeters(15000);
+    setCurrentSearchCenter(null);
+    setSearchCenterSource(null);
   }, []);
 
   useEffect(() => {
     if (!searchOpen) return;
+    let cancelled = false;
+    const loadCurrentLocation = async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (cancelled || status !== 'granted') return;
+        const pos = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+          maximumAge: 60_000,
+        });
+        if (cancelled) return;
+        setCurrentSearchCenter({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        });
+      } catch {
+        if (!cancelled) setCurrentSearchCenter(null);
+      }
+    };
+    loadCurrentLocation();
+    return () => {
+      cancelled = true;
+    };
+  }, [searchOpen]);
+
+  useEffect(() => {
+    if (currentSearchCenter) {
+      setSearchCenterSource('user');
+      return;
+    }
+    if (searchMapCenter) {
+      setSearchCenterSource('route');
+      return;
+    }
+    setSearchCenterSource(null);
+  }, [currentSearchCenter, searchMapCenter]);
+
+  useEffect(() => {
+    if (!searchOpen) return;
     const q = searchQuery.trim();
-    if (!q) {
+    const categoryFallbackQuery =
+      searchCategoryCode && !q
+        ? KAKAO_KEYWORD_CATEGORY_OPTIONS.find((x) => x.code === searchCategoryCode)?.label ?? ''
+        : '';
+    const effectiveQuery = q || categoryFallbackQuery;
+    if (!effectiveQuery) {
       setSearchResults([]);
       setSearchError(null);
       setSearchLoading(false);
@@ -730,7 +854,15 @@ export default function RouteCreateScreen(): React.JSX.Element {
     setSearchError(null);
     const t = setTimeout(async () => {
       try {
-        const rows = await searchKakaoPlacesByKeyword(q, controller.signal);
+        const effectiveSort =
+          searchSort === 'distance' && !canUseDistanceSort ? 'accuracy' : searchSort;
+        const rows = await searchKakaoPlacesByKeyword(effectiveQuery, {
+          signal: controller.signal,
+          sort: effectiveSort,
+          center: effectiveSort === 'distance' ? effectiveSearchCenter ?? undefined : undefined,
+          radiusMeters: searchRadiusMeters == null ? undefined : Math.min(searchRadiusMeters, 20000),
+          categoryGroupCode: searchCategoryCode || undefined,
+        });
         setSearchResults(rows);
       } catch (e: any) {
         if (controller.signal.aborted) return;
@@ -745,7 +877,15 @@ export default function RouteCreateScreen(): React.JSX.Element {
       clearTimeout(t);
       controller.abort();
     };
-  }, [searchOpen, searchQuery]);
+  }, [
+    searchOpen,
+    searchQuery,
+    searchCategoryCode,
+    searchSort,
+    searchRadiusMeters,
+    effectiveSearchCenter,
+    canUseDistanceSort,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -759,6 +899,13 @@ export default function RouteCreateScreen(): React.JSX.Element {
       const canUseRealRoute = stopsSnap.length >= 2 && legsSnap.length >= 1;
       if (!canUseRealRoute) {
         if (!cancelled) setMapRoutePath(fallbackPath);
+        if (!cancelled) {
+          setMapRouteSegments(
+            fallbackPath.length >= 2
+              ? [{ id: 'fallback-all', points: fallbackPath, color: RIDE_SEGMENT_COLOR, width: 5 }]
+              : [],
+          );
+        }
         return;
       }
 
@@ -766,7 +913,8 @@ export default function RouteCreateScreen(): React.JSX.Element {
         const results = await Promise.all(
           stopsSnap.slice(0, -1).map(async (s, i) => {
             const e = stopsSnap[i + 1];
-            const leg = legsSnap[i];
+            /** 정류장보다 leg가 짧으면 마지막 구간 모드로 채움 (없으면 Directions 스킵되어 직선만 남음) */
+            const leg = legsSnap[i] ?? legsSnap[legsSnap.length - 1];
             if (!s || !e || !leg || s.lat == null || s.lng == null || e.lat == null || e.lng == null) {
               return null;
             }
@@ -789,20 +937,73 @@ export default function RouteCreateScreen(): React.JSX.Element {
                 { lat: s.lat, lng: s.lng },
                 { lat: e.lat, lng: e.lng },
               );
+              const rawSegs = Array.isArray(r.segments) && r.segments.length >= 1
+                ? r.segments
+                : [{ mode: leg.mode === 'walk' ? 'walk' : 'ride', points: path }];
+              const segs = rawSegs
+                .map((seg, segIdx) => {
+                  const basePts = seg.points?.length >= 2 ? seg.points : path;
+                  if (!basePts || basePts.length < 2) return null;
+                  const pts = basePts.map((p) => ({ latitude: p.latitude, longitude: p.longitude }));
+                  if (segIdx === 0) pts[0] = { latitude: s.lat as number, longitude: s.lng as number };
+                  if (segIdx === rawSegs.length - 1)
+                    pts[pts.length - 1] = { latitude: e.lat as number, longitude: e.lng as number };
+                  const isTransitInnerWalk = leg.mode === 'transit' && seg.mode === 'walk';
+                  const walkVisual = isTransitInnerWalk;
+                  const shiftedPts = offsetPolylineForLegSeparation(pts, i, segIdx);
+                  return {
+                    id: `leg-${i}-seg-${segIdx}`,
+                    points: shiftedPts,
+                    color: walkVisual ? WALK_SEGMENT_COLOR : RIDE_SEGMENT_COLOR,
+                    width: walkVisual ? 4 : 5,
+                    dashed: walkVisual,
+                  } as MapRouteSegment;
+                })
+                .filter(Boolean) as MapRouteSegment[];
+              const transitChain = rawSegs
+                .filter((x) => x.mode === 'ride' && typeof x.lineLabel === 'string' && x.lineLabel.trim() !== '')
+                .map((x) => String(x.lineLabel).trim());
+              const summaryCore = transitChain.length > 0 ? transitChain.join(' => ') : r.summary;
+              const providerPrefix =
+                r.source === 'tmap' ? 'Tmap · ' : r.source === 'kakao' ? 'Kakao · ' : '';
+              const summary =
+                providerPrefix && !summaryCore.startsWith(providerPrefix)
+                  ? `${providerPrefix}${summaryCore}`
+                  : summaryCore;
+              if (__DEV__) {
+                console.log(
+                  `[Directions] leg ${i} OK mode=${leg.mode} provider=${r.source ?? 'google'} pathPoints=${path.length} mapSegs=${segs.length}`,
+                );
+              }
+              if (leg.mode === 'walk' && path.length <= 2) {
+                console.warn(
+                  `[Directions] leg ${i} 도보: 서버 폴리라인이 거의 없어 직선에 가깝게 보일 수 있음 (pathPoints=${path.length})`,
+                );
+              }
               return {
                 path,
+                segments: segs,
                 durationMinutes: r.durationMinutes,
-                summary: r.summary,
+                summary,
                 detail: r.detail,
                 distanceMeters: r.distanceMeters,
               };
-            } catch {
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              const aborted =
+                (e instanceof Error && e.name === 'AbortError') ||
+                msg === 'Aborted' ||
+                /abort/i.test(msg);
+              if (!aborted) {
+                console.warn(`[Directions] leg ${i} (${leg.mode}) 실패:`, msg);
+              }
               return null;
             }
           }),
         );
 
         const merged: { latitude: number; longitude: number }[] = [];
+        const mergedSegments: MapRouteSegment[] = [];
         for (let i = 0; i < results.length; i++) {
           const r = results[i];
           const s = stopsSnap[i];
@@ -824,11 +1025,21 @@ export default function RouteCreateScreen(): React.JSX.Element {
           if (seg.length < 2) continue;
           if (merged.length === 0) merged.push(...seg);
           else merged.push(...seg.slice(1));
+          if (r?.segments && r.segments.length >= 1) mergedSegments.push(...r.segments);
+          else {
+            mergedSegments.push({
+              id: `fallback-${i}`,
+              points: offsetPolylineForLegSeparation(seg, i, 0),
+              color: RIDE_SEGMENT_COLOR,
+              width: 5,
+            });
+          }
         }
         const cleaned = dedupePathPoints(merged);
 
         if (cancelled) return;
         setMapRoutePath(cleaned.length > 0 ? cleaned : fallbackPath);
+        setMapRouteSegments(mergedSegments);
         setLegs((prev) => {
           if (prev.length !== results.length) return prev;
           return prev.map((leg, i) => {
@@ -844,7 +1055,13 @@ export default function RouteCreateScreen(): React.JSX.Element {
           });
         });
       } catch {
-        if (!cancelled) setMapRoutePath(buildModeAwareMapPath(stopsRef.current, legsRef.current));
+        if (!cancelled) {
+          const fb = buildModeAwareMapPath(stopsRef.current, legsRef.current);
+          setMapRoutePath(fb);
+          setMapRouteSegments(
+            fb.length >= 2 ? [{ id: 'fallback-catch', points: fb, color: RIDE_SEGMENT_COLOR, width: 5 }] : [],
+          );
+        }
       }
     };
 
@@ -995,7 +1212,8 @@ export default function RouteCreateScreen(): React.JSX.Element {
   }, [pushActivity]);
 
   const addStopToRoute = useCallback(() => {
-    if (!selectedPlace || !selectedMode) return;
+    if (!selectedPlace) return;
+    const selectedMode: TransportMode = 'transit';
     const m = estimateMinutes(selectedMode, selectedPlace.id);
 
     if (searchTargetStopId) {
@@ -1005,12 +1223,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
         return;
       }
       const targetTitle = target.kind === 'start' ? '출발지' : target.kind === 'end' ? '도착지' : '경유지';
-      const timeLine =
-        target.kind === 'start'
-          ? `${legTransportLabel(selectedMode, selectedMode === 'transit' ? selectedTransitType : undefined)} · 약 ${m}분 · 출발`
-          : target.kind === 'end'
-            ? `${legTransportLabel(selectedMode, selectedMode === 'transit' ? selectedTransitType : undefined)} · 약 ${m}분 · 도착 예정`
-            : `${legTransportLabel(selectedMode, selectedMode === 'transit' ? selectedTransitType : undefined)} · 약 ${m}분`;
+      const timeLine = target.kind === 'via' ? '경유지' : '';
 
       setStops((prev) =>
         prev.map((s) =>
@@ -1069,7 +1282,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
         const newStart: RouteStop = {
           ...prev[0],
           title: selectedPlace.name,
-          timeLine: `${legTransportLabel(selectedMode, selectedMode === 'transit' ? selectedTransitType : undefined)} · 약 ${m}분 · 출발`,
+          timeLine: '',
           lat: selectedPlace.latitude,
           lng: selectedPlace.longitude,
         };
@@ -1090,7 +1303,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
           {
             ...end,
             title: selectedPlace.name,
-            timeLine: `${legTransportLabel(selectedMode, selectedMode === 'transit' ? selectedTransitType : undefined)} · 약 ${m}분 · 도착 예정`,
+            timeLine: '',
             lat: selectedPlace.latitude,
             lng: selectedPlace.longitude,
           },
@@ -1117,7 +1330,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
         id: uid(),
         kind: 'via',
         title: selectedPlace.name,
-        timeLine: `${legTransportLabel(selectedMode, selectedMode === 'transit' ? selectedTransitType : undefined)} · 약 ${estimateMinutes(selectedMode, selectedPlace.id)}분`,
+        timeLine: '경유지',
         lat: selectedPlace.latitude,
         lng: selectedPlace.longitude,
       };
@@ -1155,16 +1368,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
         : `경유지 "${selectedPlace.name}"을(를) 추가했습니다.`,
     );
     closeSearch();
-  }, [
-    selectedPlace,
-    selectedMode,
-    searchTargetStopId,
-    selectedTransitType,
-    closeSearch,
-    pushActivity,
-    stops,
-    isCollaborative,
-  ]);
+  }, [selectedPlace, searchTargetStopId, selectedTransitType, closeSearch, pushActivity, stops, isCollaborative]);
 
   const removeStop = (id: string) => {
     const idx = stops.findIndex((s) => s.id === id);
@@ -1387,7 +1591,9 @@ export default function RouteCreateScreen(): React.JSX.Element {
           longitude={mapRoutePath[0]?.longitude ?? mapPath[0]?.longitude ?? MAP_DEFAULT_LNG}
           level={mapRoutePath.length >= 2 ? 6 : 8}
           path={mapPathProp}
+          segments={mapRouteSegments}
           stops={pathStopsForMap.length >= 1 ? pathStopsForMap : undefined}
+          markers={mapMarkers}
         />
       </View>
 
@@ -1395,10 +1601,10 @@ export default function RouteCreateScreen(): React.JSX.Element {
         edges={['top']}
         style={{ flex: 1, zIndex: 1, pointerEvents: 'box-none' }}
       >
-        <View className="px-3 pt-1" pointerEvents="box-none">
+        <View className="flex-row items-center gap-2 px-3 pt-1" pointerEvents="box-none">
           <Pressable
             onPress={() => navigation.goBack()}
-            className="absolute left-3 top-1 z-10 h-11 w-11 items-center justify-center rounded-full bg-white shadow-md active:opacity-90"
+            className="z-10 h-11 w-11 items-center justify-center rounded-full bg-white shadow-md active:opacity-90"
             style={{
               shadowColor: '#000',
               shadowOffset: { width: 0, height: 2 },
@@ -1412,14 +1618,16 @@ export default function RouteCreateScreen(): React.JSX.Element {
 
           <Pressable
             onPress={() => openSearch()}
-            className="ml-14 flex-row items-center rounded-2xl bg-white px-4 py-3 shadow-md active:opacity-95"
+            className="flex-1 flex-row items-center rounded-2xl bg-white px-4 py-3 shadow-md active:opacity-95"
             style={{
               shadowColor: '#000',
               shadowOffset: { width: 0, height: 2 },
               shadowOpacity: 0.1,
               shadowRadius: 8,
               elevation: 4,
+              minHeight: 50,
             }}
+            hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
           >
             <Text className="flex-1 text-[15px] text-gray-400">
               주소나 카테고리를 검색해보세요!
@@ -1482,7 +1690,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                 ))}
               </View>
             ) : (
-              <Text className="text-xs font-medium text-gray-500">개인 루트 · 공동 수정 아님</Text>
+              <Text className="text-xs font-medium text-gray-500">개인 루트</Text>
             )}
           </View>
           <View className="flex-row gap-2">
@@ -1601,7 +1809,13 @@ export default function RouteCreateScreen(): React.JSX.Element {
                         )}
                       </View>
                     </View>
-                    <Text className="mt-1 text-xs text-gray-500">{stop.timeLine}</Text>
+                    {stop.kind === 'end' ? (
+                      <Text className="mt-1 text-xs font-semibold text-blue-800">
+                        총 예상 소요 {totalMinutes}분
+                      </Text>
+                    ) : stop.kind === 'via' ? (
+                      <Text className="mt-1 text-xs text-gray-500">{stop.timeLine}</Text>
+                    ) : null}
                   </View>
                 </View>
 
@@ -1618,13 +1832,12 @@ export default function RouteCreateScreen(): React.JSX.Element {
                         color="#2563eb"
                       />
                       <Text className="ml-2 flex-1 text-xs font-medium text-blue-900/80">
-                        {legTransportLabel(legs[index].mode, legs[index].transitType)} · 약{' '}
-                        {legs[index].minutes}분
+                        {legTransportLabel(legs[index].mode, legs[index].transitType)} 수정
                       </Text>
                       <Ionicons name="chevron-forward" size={12} color="#94a3b8" style={{ marginLeft: 4 }} />
                     </View>
                     {legs[index].directionsSummary ? (
-                      <Text className="mt-0.5 pl-7 text-[11px] leading-4 text-slate-600" numberOfLines={3}>
+                      <Text className="mt-0.5 pl-7 text-[11px] leading-4 text-slate-600" numberOfLines={2}>
                         {legs[index].directionsSummary}
                       </Text>
                     ) : null}
@@ -1702,7 +1915,10 @@ export default function RouteCreateScreen(): React.JSX.Element {
             className="flex-1"
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           >
-            <View className="flex-row items-center gap-2 border-b border-gray-200 px-3 py-2">
+            <View
+              className="flex-row items-center gap-2 border-b border-gray-200 px-3 py-2"
+              style={{ marginTop: 14 }}
+            >
               <Pressable
                 onPress={closeSearch}
                 className="h-10 w-10 items-center justify-center rounded-full bg-white active:opacity-80"
@@ -1726,134 +1942,113 @@ export default function RouteCreateScreen(): React.JSX.Element {
               </View>
             </View>
 
-            <View className="px-3 pb-2 pt-1">
-              <Text className="text-[11px] leading-4 text-gray-600">{SEARCH_HINT_MODAL}</Text>
-              {selectedPlaceId && !selectedMode ? (
-                <Text className="mt-1 text-[11px] font-medium text-amber-800">
-                  교통수단을 먼저 선택한 뒤 장소를 확정해 주세요.
-                </Text>
-              ) : null}
-              {selectedMode && !selectedPlaceId ? (
-                <Text className="mt-1 text-[11px] font-medium text-amber-800">
-                  검색·최근 목록에서 이동할 장소를 선택해 주세요.
-                </Text>
-              ) : null}
-              {searchTargetStopId ? (
-                <Text className="mt-1 text-[11px] font-medium text-sky-800">
-                  현재 선택된 출발지/도착지를 새 장소로 교체합니다.
-                </Text>
-              ) : null}
-            </View>
-
-            <View className="flex-row gap-2 px-3 py-3">
-              {(Object.keys(TRANSPORT_LABELS) as TransportMode[]).map((mode) => {
-                const on = selectedMode === mode;
-                return (
-                  <Pressable
-                    key={mode}
-                    onPress={() => setSelectedMode(mode)}
-                    className={`flex-1 items-center rounded-xl border-2 py-2.5 ${
-                      on ? 'border-sky-500 bg-sky-50' : 'border-gray-200 bg-gray-100'
-                    }`}
+            <View className="border-b border-gray-100 bg-white px-3 py-2.5">
+              <Text className="mb-1 text-[11px] font-bold text-gray-800">검색 옵션</Text>
+              <Text className="mb-2 text-[10px] leading-4 text-gray-500">
+                카카오 키워드 검색 기준입니다. 정렬·반경·업종을 바꾸면 자동으로 다시 검색합니다.
+              </Text>
+              <Text className="mb-1 text-[10px] font-semibold text-gray-600">정렬</Text>
+              <View className="mb-2 flex-row gap-2">
+                <Pressable
+                  onPress={() => setSearchSort('accuracy')}
+                  className={`rounded-lg border px-3 py-1.5 ${
+                    searchSort === 'accuracy' ? 'border-sky-500 bg-sky-50' : 'border-gray-200 bg-gray-50'
+                  }`}
+                >
+                  <Text
+                    className={`text-[11px] font-bold ${searchSort === 'accuracy' ? 'text-sky-800' : 'text-gray-700'}`}
                   >
-                    <Text
-                      className={`text-center text-[11px] font-bold ${
-                        on ? 'text-sky-700' : 'text-gray-700'
-                      }`}
-                    >
-                      {TRANSPORT_LABELS[mode]}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-            {selectedMode === 'transit' ? (
-              <View className="px-3 pb-2">
-                <Text className="mb-1 text-[11px] font-medium text-gray-600">
-                  대중교통 종류를 선택하세요
-                </Text>
-                <View className="flex-row gap-2">
-                  {(Object.keys(TRANSIT_TYPE_LABELS) as TransitType[]).map((tt) => {
-                    const on = selectedTransitType === tt;
-                    return (
+                    정확도순
+                  </Text>
+                </Pressable>
+                <Pressable
+                  disabled={!canUseDistanceSort}
+                  onPress={() => setSearchSort('distance')}
+                  className={`rounded-lg border px-3 py-1.5 ${
+                    searchSort === 'distance' ? 'border-sky-500 bg-sky-50' : 'border-gray-200 bg-gray-50'
+                  } ${!canUseDistanceSort ? 'opacity-40' : ''}`}
+                >
+                  <Text
+                    className={`text-[11px] font-bold ${searchSort === 'distance' ? 'text-sky-800' : 'text-gray-700'}`}
+                  >
+                    거리순
+                  </Text>
+                </Pressable>
+              </View>
+              {searchSort === 'distance' && canUseDistanceSort ? (
+                <View className="mb-2">
+                  <Text className="mb-1 text-[10px] font-semibold text-gray-600">기준점 주변 반경</Text>
+                  <View className="flex-row flex-wrap gap-2">
+                    {SEARCH_RADIUS_OPTIONS.map(({ meters, label }) => (
                       <Pressable
-                        key={tt}
-                        onPress={() => setSelectedTransitType(tt)}
-                        className={`flex-1 items-center rounded-xl border py-2 ${
-                          on ? 'border-sky-500 bg-sky-50' : 'border-gray-200 bg-gray-100'
+                        key={label}
+                        onPress={() => setSearchRadiusMeters(meters)}
+                        className={`rounded-lg border px-2.5 py-1 ${
+                          searchRadiusMeters === meters
+                            ? 'border-amber-500 bg-amber-50'
+                            : 'border-gray-200 bg-gray-50'
                         }`}
                       >
-                        <Text className={`text-[11px] font-bold ${on ? 'text-sky-700' : 'text-gray-700'}`}>
-                          {TRANSIT_TYPE_LABELS[tt]}
+                        <Text
+                          className={`text-[11px] font-bold ${
+                            searchRadiusMeters === meters ? 'text-amber-900' : 'text-gray-700'
+                          }`}
+                        >
+                          {label}
                         </Text>
                       </Pressable>
-                    );
-                  })}
+                    ))}
+                  </View>
+                  <Text className="mt-1 text-[10px] text-gray-500">
+                    30km 이상/무제한은 카카오 API 특성상 넓은 범위 정확도 기반으로 결과가 반환될 수 있어요.
+                  </Text>
                 </View>
-              </View>
-            ) : null}
+              ) : null}
+              <Text className="mb-1 text-[10px] font-semibold text-gray-600">업종 필터</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 4 }}>
+                {KAKAO_KEYWORD_CATEGORY_OPTIONS.map((opt) => {
+                  const on = searchCategoryCode === opt.code;
+                  return (
+                    <Pressable
+                      key={opt.code || 'all'}
+                      onPress={() => setSearchCategoryCode(opt.code)}
+                      className={`rounded-full border px-3 py-1.5 ${
+                        on ? 'border-sky-500 bg-sky-50' : 'border-gray-200 bg-gray-100'
+                      }`}
+                    >
+                      <Text className={`text-[11px] font-semibold ${on ? 'text-sky-800' : 'text-gray-700'}`}>
+                        {opt.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+              {!canUseDistanceSort ? (
+                <Text className="mt-2 text-[10px] leading-4 text-amber-900">
+                  거리순은 현재 위치 권한 허용 또는 루트 좌표(출발/도착) 설정 후 사용할 수 있습니다.
+                </Text>
+              ) : null}
+              {canUseDistanceSort ? (
+                <Text className="mt-2 text-[10px] leading-4 text-slate-600">
+                  기준점: {searchCenterSource === 'user' ? '현재 사용자 위치' : '루트 정류장 중심점'}
+                </Text>
+              ) : null}
+            </View>
 
             <ScrollView className="flex-1 px-3" keyboardShouldPersistTaps="handled">
-              {searchQuery.trim() === '' ? (
-                <>
-                  <View className="mb-2 flex-row items-center justify-between px-1">
-                    <Text className="text-sm font-bold text-gray-800">최근 검색</Text>
-                    <Pressable onPress={() => Alert.alert('최근 검색', '전체 목록은 추후 제공됩니다.')}>
-                      <Text className="text-xs font-semibold text-sky-600">모두보기</Text>
-                    </Pressable>
-                  </View>
-                  {MOCK_RECENT_PLACES.map((p) => {
-                    const expanded = selectedPlaceId === p.id;
-                    return (
-                      <Pressable
-                        key={p.id}
-                        onPress={() => setSelectedPlaceId(p.id)}
-                        className={`mb-2 overflow-hidden rounded-xl border bg-white active:opacity-95 ${
-                          expanded ? 'border-sky-500' : 'border-gray-200'
-                        }`}
-                      >
-                        <View className="flex-row items-center p-3">
-                          <View className="flex-1">
-                            <Text className="text-base font-semibold text-gray-900">{p.name}</Text>
-                            <Text className="text-xs text-gray-500">{p.distance}</Text>
-                            <Text className="text-xs text-gray-400" numberOfLines={2}>
-                              {p.address}
-                            </Text>
-                          </View>
-                          <Ionicons name="add-circle-outline" size={26} color="#3b82f6" />
-                        </View>
-                        {expanded && selectedMode && (
-                          <View className="border-t border-gray-100 bg-gray-50 px-3 py-3">
-                            <Text className="text-center text-sm text-gray-700">
-                              선택하신 {TRANSPORT_LABELS[selectedMode]}(으)로 이동 시 약{' '}
-                              {estimateMinutes(selectedMode, p.id)}분
-                            </Text>
-                          </View>
-                        )}
-                        {expanded && showAddButton && selectedPlaceId === p.id && (
-                          <Pressable
-                            onPress={addStopToRoute}
-                            className="items-center border-t border-gray-200 bg-white py-3.5 active:bg-gray-50"
-                          >
-                            <Text className="text-base font-bold text-gray-900">
-                              {searchTargetStopId ? '이 위치로 변경' : '경로에 추가'}
-                            </Text>
-                          </Pressable>
-                        )}
-                      </Pressable>
-                    );
-                  })}
-                </>
-              ) : (
-                <>
-                  <Text className="mb-2 px-1 text-sm font-bold text-gray-800">검색결과</Text>
+              <>
+                  <Text className="mb-2 px-1 text-sm font-bold text-gray-800">
+                    검색결과
+                  </Text>
                   {searchLoading ? (
                     <Text className="py-8 text-center text-sm text-gray-500">검색 중...</Text>
                   ) : searchError ? (
                     <Text className="py-8 text-center text-sm text-rose-500">{searchError}</Text>
                   ) : searchResults.length === 0 ? (
                     <Text className="py-8 text-center text-sm text-gray-500">
-                      검색 결과가 없습니다. 다른 키워드를 입력해 보세요.
+                      {searchQuery.trim() === ''
+                        ? '필터나 검색을 통해 찾아보세요!'
+                        : '검색 결과가 없습니다. 필터나 다른 키워드로 찾아보세요!'}
                     </Text>
                   ) : (
                     searchResults.map((p) => {
@@ -1869,6 +2064,11 @@ export default function RouteCreateScreen(): React.JSX.Element {
                           <View className="flex-row items-center p-3">
                             <View className="flex-1">
                               <Text className="text-base font-semibold text-gray-900">{p.name}</Text>
+                              {p.category ? (
+                                <Text className="text-[10px] font-medium text-sky-700" numberOfLines={1}>
+                                  {p.category}
+                                </Text>
+                              ) : null}
                               <Text className="text-xs text-gray-500">{p.distance}</Text>
                               <Text className="text-xs text-gray-400" numberOfLines={2}>
                                 {p.address}
@@ -1876,11 +2076,11 @@ export default function RouteCreateScreen(): React.JSX.Element {
                             </View>
                             <Ionicons name="add-circle-outline" size={26} color="#3b82f6" />
                           </View>
-                          {expanded && selectedMode && (
+                          {expanded && (
                             <View className="border-t border-gray-100 bg-gray-50 px-3 py-3">
                               <Text className="text-center text-sm text-gray-700">
-                                선택하신 {TRANSPORT_LABELS[selectedMode]}(으)로 이동 시 약{' '}
-                                {estimateMinutes(selectedMode, p.id)}분
+                                선택하신 {TRANSPORT_LABELS.transit}(으)로 이동 시 약{' '}
+                                {estimateMinutes('transit', p.id)}분
                               </Text>
                             </View>
                           )}
@@ -1899,7 +2099,6 @@ export default function RouteCreateScreen(): React.JSX.Element {
                     })
                   )}
                 </>
-              )}
             </ScrollView>
           </KeyboardAvoidingView>
         </SafeAreaView>
