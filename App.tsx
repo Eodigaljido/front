@@ -30,26 +30,12 @@ export type RootTabParamList = {
   Home: undefined;
   SharedRoute: { openFilter?: boolean; openAsPopular?: boolean; viewCourseId?: string } | undefined;
   MyRoute: undefined;
-  Map: undefined;
   Chat: undefined;
   All: undefined;
-  Start: undefined;
-  Login: undefined;
-  Signup: undefined;
-
-  // 온보드 관련
-  OnBoardStart: undefined;
-  AreaOnBoard: undefined;
-  AgeOnBoard: undefined;
-  ActivityOnBoard: undefined;
-  GenderOnBoard: undefined;
-  OnBoardEnd: undefined;
 };
 
 export type RootStackParamList = {
-  Home: undefined;
   Tabs: undefined;
-  HomeScreen: undefined;
   Start: undefined;
   RouteCreate:
     | { editRouteId?: string; collaborative?: boolean; seedMockCourseId?: string }
@@ -59,8 +45,6 @@ export type RootStackParamList = {
   // Auth 관련
   Login: undefined;
   Signup: undefined;
-
-  // 온보드 관련
   OnBoardStart: undefined;
   AreaOnBoard: undefined;
   AgeOnBoard: undefined;
@@ -124,18 +108,8 @@ function TabNavigator() {
             Home: 'home',
             SharedRoute: 'paper-plane',
             MyRoute: 'map',
-            Map: 'navigate-outline',
             Chat: 'chatbubble',
             All: 'menu',
-            OnBoardStart: 'onboard start',
-            AreaOnBoard: 'area onboard',
-            AgeOnBoard: 'age onboard',
-            ActivityOnBoard: 'activity onboard',
-            GenderOnBoard: 'gender onboard',
-            OnBoardEnd: 'onboard end',
-            Login: 'log-in',
-            Signup: 'person-add',
-            Start: 'rocket',
           };
           return (
             <View
@@ -185,22 +159,22 @@ function TabNavigator() {
       <Tab.Screen
         name="Home"
         component={HomeScreen}
-        options={{ headerShown: false, title: '홈', tabBarLabel: '홈' }}
+        options={{ headerShown: false, tabBarLabel: '홈' }}
       />
       <Tab.Screen
         name="SharedRoute"
         component={SharedRouteScreen}
-        options={{ headerShown: false, title: '공유 루트', tabBarLabel: '공유 루트' }}
+        options={{ headerShown: false, tabBarLabel: '공유 루트' }}
       />
       <Tab.Screen
         name="MyRoute"
         component={MyRouteScreen}
-        options={{ headerShown: false, title: '내 루트', tabBarLabel: '내 루트' }}
+        options={{ headerShown: false, tabBarLabel: '내 루트' }}
       />
       <Tab.Screen
         name="Chat"
         component={ChatScreen}
-        options={{ headerShown: false, title: '채팅', tabBarLabel: '채팅' }}
+        options={{ headerShown: false, tabBarLabel: '채팅' }}
       />
       <Tab.Screen
         name="All"
@@ -218,11 +192,10 @@ export default function App(): React.JSX.Element {
         <MockDataProvider>
           <NavigationContainer>
             <StatusBar style="auto" />
-            <Stack.Navigator screenOptions={{ headerShown: false }}>
+            <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName='Login'>
               <Stack.Screen name="Tabs" component={TabNavigator} />
               <Stack.Screen name="RouteCreate" component={RouteCreateScreen} />
               <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
-              <Stack.Screen name="Home" component={HomeScreen} />
               <Stack.Screen name="OnBoardStart" component={OnBoardStart} />
               <Stack.Screen name="AreaOnBoard" component={AreaOnBoard} />
               <Stack.Screen name="AgeOnBoard" component={AgeOnBoard} />
