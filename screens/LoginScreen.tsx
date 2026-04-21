@@ -105,8 +105,8 @@ export default function LoginScreen() {
                     password: realPasswordRef.current,
                   });
                   const accessToken = useAuthStore.getState().accessToken!;
-                  const { status } = await getOnboardingStatus(accessToken);
-                  if (status === "NOT_STARTED") {
+                  const { completed } = await getOnboardingStatus(accessToken);
+                  if (!completed) {
                     navigation.reset({
                       index: 0,
                       routes: [{ name: "OnBoardStart" }],
