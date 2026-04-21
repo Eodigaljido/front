@@ -87,7 +87,7 @@ function TabNavigator() {
   return (
     <Tab.Navigator
       initialRouteName="Home"
-      tabBar={(props) => (
+      tabBar={props => (
         <View
           pointerEvents="box-none"
           style={{
