@@ -92,11 +92,29 @@ function OtpModal({
   };
 
   const handleChange = (text: string, index: number) => {
-    const digit = text.replace(/[^0-9]/g, "").slice(-1);
+    const digits = text.replace(/[^0-9]/g, "");
+
+    // 붙여넣기: 2자리 이상이면 첫 칸부터 순서대로 채움
+    if (digits.length > 1) {
+      const next = Array(OTP_LENGTH).fill("");
+      digits
+        .slice(0, OTP_LENGTH)
+        .split("")
+        .forEach((d, i) => {
+          next[i] = d;
+        });
+      setOtp(next);
+      inputRefs.current[Math.min(digits.length, OTP_LENGTH) - 1]?.focus();
+      return;
+    }
+
+    // 이미 값 있는 칸은 입력 무시
+    if (otp[index]) return;
+
     const next = [...otp];
-    next[index] = digit;
+    next[index] = digits;
     setOtp(next);
-    if (digit && index < OTP_LENGTH - 1) {
+    if (digits && index < OTP_LENGTH - 1) {
       inputRefs.current[index + 1]?.focus();
     }
   };
@@ -105,8 +123,17 @@ function OtpModal({
     e: { nativeEvent: { key: string } },
     index: number,
   ) => {
-    if (e.nativeEvent.key === "Backspace" && !otp[index] && index > 0) {
-      inputRefs.current[index - 1]?.focus();
+    if (e.nativeEvent.key === "Backspace") {
+      const next = [...otp];
+      if (!otp[index] && index > 0) {
+        next[index - 1] = "";
+        setOtp(next);
+        inputRefs.current[index - 1]?.focus();
+      } else {
+        next[index] = "";
+        setOtp(next);
+        if (index > 0) inputRefs.current[index - 1]?.focus();
+      }
     }
   };
 
@@ -181,12 +208,13 @@ function OtpModal({
           {otp.map((digit, i) => (
             <View key={i} className="items-center">
               <TextInput
-                // ref={ref => (inputRefs.current[i] = ref)}
+                ref={(ref) => {
+                  inputRefs.current[i] = ref;
+                }}
                 value={digit}
                 onChangeText={(text) => handleChange(text, i)}
                 onKeyPress={(e) => handleKeyPress(e, i)}
                 keyboardType="number-pad"
-                maxLength={1}
                 style={{
                   width: 40,
                   fontSize: 26,
