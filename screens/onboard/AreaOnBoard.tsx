@@ -35,7 +35,7 @@ const REGIONS = [
 
 export default function AreaOnBoard(): React.JSX.Element {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
-  const [selectedArea, setSelectedArea] = React.useState("");
+  const [selectedArea, setSelectedArea] = React.useState<string>("");
   const accessToken = useAuthStore((s) => s.accessToken);
 
   const handleNext = async () => {
@@ -67,10 +67,7 @@ export default function AreaOnBoard(): React.JSX.Element {
             ))}
           </View>
           <View className="flex-row items-center justify-end px-4 m-0">
-            <NextButton
-              disabled={!selectedArea}
-              onPress={handleNext}
-            />
+            <NextButton disabled={!selectedArea} onPress={handleNext} />
           </View>
         </ScrollView>
       </View>
