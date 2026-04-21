@@ -10,12 +10,18 @@ import Description from "@/components/onboard/Description";
 import RadioButton from "@/components/onboard/RadioButton";
 import PreviousButton from "@/components/onboard/PreviousButton";
 import NextButton from "@/components/onboard/NextButton";
+import { useAuthStore } from "@/store/authStore";
+import { completeOnboardingStep } from "@/api/onboard/step";
 
 export default function ActivityOnBoard(): React.JSX.Element {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
-  const [selectedActivities, setSelectedActivities] = React.useState<string[]>(
-    [],
-  );
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const [selectedActivities, setSelectedActivities] = React.useState<string[]>([]);
+
+  const handleNext = async () => {
+    await completeOnboardingStep(accessToken!, 3, selectedActivities);
+    navigation.navigate("GenderOnBoard");
+  };
 
   const toggle = (item: string) => {
     setSelectedActivities((prev) =>
@@ -69,7 +75,7 @@ export default function ActivityOnBoard(): React.JSX.Element {
         <PreviousButton onPress={() => navigation.navigate("AgeOnBoard")} />
         <NextButton
           disabled={selectedActivities.length === 0}
-          onPress={() => navigation.navigate("GenderOnBoard")}
+          onPress={handleNext}
         />
       </View>
     </SafeAreaView>
