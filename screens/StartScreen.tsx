@@ -1,5 +1,5 @@
-import { View, Text, Image } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, Image } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function StartScreen() {
   return (
@@ -14,7 +14,11 @@ export default function StartScreen() {
         </Text>
 
         {/* 로고 */}
-        <Image source={require('@/assets/logo.png')} className="w-56 h-56" resizeMode="contain" />
+        <Image
+          source={require("@/assets/logo.png")}
+          className="w-56 h-56"
+          resizeMode="contain"
+        />
 
         {/* 서브타이틀 */}
         <Text className="text-base font-semibold text-gray-800">

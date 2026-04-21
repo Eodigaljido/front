@@ -1,27 +1,12 @@
-// @ts-nocheck
-import React from 'react';
-import { View, Text, Pressable, FlatList } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { MOCK_CHAT_ROOMS } from '../data/mockData';
-
-const CARD_STYLE = {
-  backgroundColor: '#fff',
-  borderRadius: 12,
-  padding: 16,
-  marginHorizontal: 16,
-  marginBottom: 8,
-  shadowColor: '#000',
-  shadowOffset: { width: 0, height: 1 },
-  shadowOpacity: 0.04,
-  shadowRadius: 4,
-  elevation: 2,
-};
+// @ts-nocheck - NativeWind(className) 타입이 @types/react-native와 병합되지 않아 일시 비활성화
+import React from "react";
+import { View, Text } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function ChatScreen(): React.JSX.Element {
   if (MOCK_CHAT_ROOMS.length === 0) {
     return (
-      <SafeAreaView className="flex-1 bg-white" edges={['top']}>
+      <SafeAreaView className="flex-1 bg-white" edges={["top"]}>
         <View className="items-center justify-center flex-1 px-8">
           <View className="p-6 bg-gray-100 rounded-full">
             <Ionicons name="chatbubbles-outline" size={48} color="#9ca3af" />
@@ -38,10 +23,10 @@ export default function ChatScreen(): React.JSX.Element {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-white" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-white" edges={["top"]}>
       <FlatList
         data={MOCK_CHAT_ROOMS}
-        keyExtractor={item => item.id}
+        keyExtractor={(item) => item.id}
         contentContainerStyle={{ paddingTop: 12, paddingBottom: 100 }}
         renderItem={({ item }) => (
           <Pressable style={CARD_STYLE}>
@@ -49,7 +34,9 @@ export default function ChatScreen(): React.JSX.Element {
               <Text className="font-semibold text-gray-900">{item.name}</Text>
               {item.unread > 0 && (
                 <View className="rounded-full bg-blue-500 px-2 py-0.5">
-                  <Text className="text-xs font-medium text-white">{item.unread}</Text>
+                  <Text className="text-xs font-medium text-white">
+                    {item.unread}
+                  </Text>
                 </View>
               )}
             </View>
