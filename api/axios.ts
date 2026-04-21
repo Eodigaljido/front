@@ -15,18 +15,24 @@ instance.interceptors.request.use(async config => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
-  console.log('[REQ]', config.method?.toUpperCase(), config.baseURL + config.url, config.data);
+  if (__DEV__) {
+    console.log('[REQ]', config.method?.toUpperCase(), config.baseURL + config.url, config.data);
+  }
   return config;
 });
 
-// 응답 로그
+// 응답 로그 (개발 환경에서만 출력 — 프로덕션 console은 JS 스레드 부하)
 instance.interceptors.response.use(
   res => {
-    console.log('[RES]', res.status, res.config.url, res.data);
+    if (__DEV__) {
+      console.log('[RES]', res.status, res.config.url, res.data);
+    }
     return res;
   },
   err => {
-    console.log('[ERR]', err.response?.status, err.config?.url, err.response?.data);
+    if (__DEV__) {
+      console.log('[ERR]', err.response?.status, err.config?.url, err.response?.data);
+    }
     return Promise.reject(err);
   },
 );
