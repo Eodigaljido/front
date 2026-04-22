@@ -1,11 +1,11 @@
 import { instance } from "../axios";
 
 export interface ChatRoom {
-  uuid: number;
+  uuid: string;
   name: string;
   memberCount: string;
-  memeberUuids: string;
-  memberUserIds: string;
+  memberUuids: string[];
+  memberUserIds: string[];
   lastMessage: string;
   lastMessageAt: string;
   unreadCount: number;
