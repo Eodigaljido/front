@@ -581,16 +581,6 @@ export default function HomeScreen(): React.JSX.Element {
                     °
                   </Text>
                 </View>
-                <View className="rounded-full bg-gray-100 px-2.5 py-1">
-                  <Text className="text-[11px] font-semibold text-gray-700">
-                    기준{" "}
-                    {weatherSource === "current"
-                      ? "현재 위치"
-                      : weatherSource === "custom"
-                        ? "선택 위치"
-                        : "기본 위치"}
-                  </Text>
-                </View>
               </View>
               {weatherError ? (
                 <Text className="mt-2 text-xs text-rose-500">
