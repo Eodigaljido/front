@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
@@ -8,6 +8,7 @@ import { BottomTabBar, createBottomTabNavigator } from '@react-navigation/bottom
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { TEXT_STYLE } from './styles/textStyles';
 
 import { MockDataProvider } from './context/MockDataContext';
 import HomeScreen from './screens/HomeScreen';
@@ -57,11 +58,21 @@ export type RootStackParamList = {
 const Tab = createBottomTabNavigator<RootTabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-const TAB_ACCENT = '#f97316';
-const TAB_INACTIVE = '#64748b';
+const TAB_ACCENT = '#2563eb';
+const TAB_INACTIVE = '#9ca3af';
 const TAB_GLASS_BG = 'rgba(255, 255, 255, 0.88)';
 const TAB_GLASS_BORDER = 'rgba(148, 163, 184, 0.35)';
 
+// 탭 아이콘 맵을 모듈 스코프에 고정 — tabBarIcon 내부에서 매 렌더마다 생성하는 낭비 제거
+const TAB_ICONS: Record<keyof RootTabParamList, string> = {
+  Home: 'home',
+  SharedRoute: 'paper-plane',
+  MyRoute: 'map',
+  Chat: 'chatbubble',
+  All: 'menu',
+};
+
+// 모듈 스코프에 정의해 참조를 안정화 — tabBarBackground는 함수로 호출되어야 함
 function TabBarGlassBackground() {
   return (
     <View
@@ -82,58 +93,53 @@ function TabBarGlassBackground() {
 function TabNavigator() {
   const insets = useSafeAreaInsets();
   const bottomPad = Math.max(insets.bottom, Platform.OS === 'ios' ? 10 : 12);
-  const barVerticalPadding = 6;
 
-  return (
-    <Tab.Navigator
-      initialRouteName="Home"
-      tabBar={(props) => (
-        <View
-          pointerEvents="box-none"
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            bottom: bottomPad,
-            alignItems: 'center',
-          }}
-        >
-          <View style={{ width: '88%' }}>
-            <BottomTabBar {...props} />
-          </View>
+  // tabBar 콜백을 useCallback으로 안정화 — bottomPad가 바뀔 때만 재생성
+  const renderTabBar = useCallback(
+    (props: any) => (
+      <View
+        pointerEvents="box-none"
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: bottomPad,
+          alignItems: 'center',
+        }}
+      >
+        <View style={{ width: '88%' }}>
+          <BottomTabBar {...props} />
         </View>
-      )}
-      screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused, color }) => {
-          const icons: Record<keyof RootTabParamList, string> = {
-            Home: 'home',
-            SharedRoute: 'paper-plane',
-            MyRoute: 'map',
-            Chat: 'chatbubble',
-            All: 'menu',
-          };
-          return (
-            <View
-              style={{
-                alignItems: 'center',
-                justifyContent: 'center',
-                paddingTop: 2,
-                minHeight: 28,
-              }}
-            >
-              <Ionicons name={icons[route.name] as any} size={22} color={color} />
-            </View>
-          );
-        },
+      </View>
+    ),
+    [bottomPad],
+  );
+
+  // screenOptions를 useMemo로 안정화
+  const screenOptions = useMemo(
+    () =>
+      ({ route }: { route: any }) => ({
+        tabBarIcon: ({ color }: { focused: boolean; color: string }) => (
+          <View
+            style={{
+              alignItems: 'center',
+              justifyContent: 'center',
+              paddingTop: 2,
+              minHeight: 28,
+            }}
+          >
+            <Ionicons name={TAB_ICONS[route.name as keyof RootTabParamList] as any} size={24} color={color} />
+          </View>
+        ),
         tabBarActiveTintColor: TAB_ACCENT,
         tabBarInactiveTintColor: TAB_INACTIVE,
         tabBarBackground: TabBarGlassBackground,
         tabBarStyle: {
-          position: 'relative',
-          height: 56 + barVerticalPadding * 2 + (Platform.OS === 'android' ? 4 : 0),
+          position: 'relative' as const,
+          height: 56 + insets.bottom,
           paddingHorizontal: 4,
-          paddingTop: barVerticalPadding,
-          paddingBottom: barVerticalPadding,
+          paddingTop: 6,
+          paddingBottom: Math.max(insets.bottom, 6),
           backgroundColor: 'transparent',
           borderTopWidth: 0,
           elevation: Platform.OS === 'android' ? 14 : 0,
@@ -144,18 +150,27 @@ function TabNavigator() {
           borderRadius: 22,
         },
         tabBarLabelStyle: {
-          fontSize: 10,
-          fontWeight: '600',
-          letterSpacing: -0.2,
-          marginTop: 0,
+          ...TEXT_STYLE.tabLabelInactive,
+          marginTop: 1,
           marginBottom: 0,
+        },
+        tabBarActiveLabelStyle: {
+          ...TEXT_STYLE.tabLabelActive,
         },
         tabBarItemStyle: {
           paddingTop: 0,
           paddingBottom: 0,
-          justifyContent: 'center',
+          justifyContent: 'center' as const,
         },
-      })}
+      }),
+    [bottomPad, insets.bottom],
+  );
+
+  return (
+    <Tab.Navigator
+      initialRouteName="Home"
+      tabBar={renderTabBar}
+      screenOptions={screenOptions}
     >
       <Tab.Screen
         name="Home"
