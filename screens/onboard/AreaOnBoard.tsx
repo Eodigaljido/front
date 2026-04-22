@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from "react";
-import { View, Text, ScrollView, Dimensions } from "react-native";
+import { View, Text, ScrollView, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
@@ -33,17 +33,14 @@ const REGIONS = [
   "제주도",
 ];
 
-const SCREEN_WIDTH = Dimensions.get("window").width;
 const SCREEN_PADDING = 24; // px-6
 const COLUMNS_VISIBLE = 3;
 const COLUMN_GAP = 8;
-const COLUMN_WIDTH =
-  (SCREEN_WIDTH - SCREEN_PADDING * 2 - COLUMN_GAP * (COLUMNS_VISIBLE - 1)) /
-  COLUMNS_VISIBLE;
+const ITEMS_PER_COLUMN = 6;
 
-// 2행씩 묶어 세로 컬럼 구성
+// ITEMS_PER_COLUMN개씩 묶어 세로 컬럼 구성
 const REGION_COLUMNS = REGIONS.reduce<string[][]>((acc, region, i) => {
-  const colIdx = Math.floor(i / 6);
+  const colIdx = Math.floor(i / ITEMS_PER_COLUMN);
   if (!acc[colIdx]) acc[colIdx] = [];
   acc[colIdx].push(region);
   return acc;
@@ -53,6 +50,10 @@ export default function AreaOnBoard(): React.JSX.Element {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const [selectedArea, setSelectedArea] = React.useState<string>("");
   const accessToken = useAuthStore((s) => s.accessToken);
+  const { width: screenWidth } = useWindowDimensions();
+  const columnWidth =
+    (screenWidth - SCREEN_PADDING * 2 - COLUMN_GAP * (COLUMNS_VISIBLE - 1)) /
+    COLUMNS_VISIBLE;
 
   const handleNext = async () => {
     await completeOnboardingStep(accessToken!, 1, selectedArea);
@@ -78,7 +79,7 @@ export default function AreaOnBoard(): React.JSX.Element {
           contentContainerStyle={{ gap: COLUMN_GAP }}
         >
           {REGION_COLUMNS.map((col, colIdx) => (
-            <View key={colIdx} style={{ width: COLUMN_WIDTH, gap: COLUMN_GAP }}>
+            <View key={colIdx} style={{ width: columnWidth, gap: COLUMN_GAP }}>
               {col.map((region) => (
                 <View key={region} style={{ flexDirection: "row" }}>
                   <AreaRadioButton
