@@ -88,6 +88,16 @@ const TAB_INACTIVE = "#64748b";
 const TAB_GLASS_BG = "rgba(255, 255, 255, 0.88)";
 const TAB_GLASS_BORDER = "rgba(148, 163, 184, 0.35)";
 
+// 탭 아이콘 맵을 모듈 스코프에 고정 — tabBarIcon 내부에서 매 렌더마다 생성하는 낭비 제거
+const TAB_ICONS: Record<keyof RootTabParamList, string> = {
+  Home: 'home',
+  SharedRoute: 'paper-plane',
+  MyRoute: 'map',
+  Chat: 'chatbubble',
+  All: 'menu',
+};
+
+// 모듈 스코프에 정의해 참조를 안정화 — tabBarBackground는 함수로 호출되어야 함
 function TabBarGlassBackground() {
   return (
     <View
@@ -190,12 +200,23 @@ function TabNavigator() {
           marginTop: 0,
           marginBottom: 0,
         },
+        tabBarActiveLabelStyle: {
+          ...TEXT_STYLE.tabLabelActive,
+        },
         tabBarItemStyle: {
           paddingTop: 0,
           paddingBottom: 0,
           justifyContent: "center",
         },
-      })}
+      }),
+    [bottomPad, insets.bottom],
+  );
+
+  return (
+    <Tab.Navigator
+      initialRouteName="Home"
+      tabBar={renderTabBar}
+      screenOptions={screenOptions}
     >
       <Tab.Screen
         name="Home"
