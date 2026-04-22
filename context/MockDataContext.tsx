@@ -24,10 +24,10 @@ type MockDataContextValue = {
 
 const MockDataContext = createContext<MockDataContextValue | null>(null);
 
-const MOCK_PUBLIC_IDS = ['1', '2', '4', '5', '6'];
+const MOCK_PUBLIC_IDS = ["1", "2", "4", "5", "6"];
 
 export function MockDataProvider({ children }: { children: React.ReactNode }) {
-  const [savedCourseIds, setSavedCourseIds] = useState<string[]>(['1', '3']);
+  const [savedCourseIds, setSavedCourseIds] = useState<string[]>(["1", "3"]);
   const [userSavedRoutes, setUserSavedRoutes] = useState<UserSavedRoute[]>([]);
   const [extraSharedCourseReviews, setExtraSharedCourseReviews] = useState<
     Record<string, CourseReview[]>
@@ -63,8 +63,11 @@ export function MockDataProvider({ children }: { children: React.ReactNode }) {
   );
 
   const addSharedCourseReview = useCallback(
-    (courseId: string, payload: { userName: string; rating: number; text: string }) => {
-      const name = payload.userName.trim() || '익명';
+    (
+      courseId: string,
+      payload: { userName: string; rating: number; text: string },
+    ) => {
+      const name = payload.userName.trim() || "익명";
       const text = payload.text.trim();
       if (!text) return;
       const rating = Math.min(5, Math.max(1, Number(payload.rating) || 5));
@@ -105,6 +108,6 @@ export function MockDataProvider({ children }: { children: React.ReactNode }) {
 
 export function useMockData() {
   const ctx = useContext(MockDataContext);
-  if (!ctx) throw new Error('useMockData must be used within MockDataProvider');
+  if (!ctx) throw new Error("useMockData must be used within MockDataProvider");
   return ctx;
 }

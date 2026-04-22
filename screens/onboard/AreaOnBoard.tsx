@@ -10,6 +10,8 @@ import Description from "@/components/onboard/Description";
 import AreaRadioButton from "@/components/onboard/AreaRadioButton";
 import PreviousButton from "@/components/onboard/PreviousButton";
 import NextButton from "@/components/onboard/NextButton";
+import { useAuthStore } from "@/store/authStore";
+import { completeOnboardingStep } from "@/api/onboard/step";
 
 const REGIONS = [
   "서울",
@@ -33,7 +35,13 @@ const REGIONS = [
 
 export default function AreaOnBoard(): React.JSX.Element {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
-  const [selectedArea, setSelectedArea] = React.useState("");
+  const [selectedArea, setSelectedArea] = React.useState<string>("");
+  const accessToken = useAuthStore((s) => s.accessToken);
+
+  const handleNext = async () => {
+    await completeOnboardingStep(accessToken!, 1, selectedArea);
+    navigation.navigate("AgeOnBoard");
+  };
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={["top"]}>
@@ -58,11 +66,8 @@ export default function AreaOnBoard(): React.JSX.Element {
               </View>
             ))}
           </View>
-          <View className="flex-row items-center justify-end px-4 pt-5 pb-4">
-            <NextButton
-              disabled={!selectedArea}
-              onPress={() => navigation.navigate("AgeOnBoard")}
-            />
+          <View className="flex-row items-center justify-end px-4 m-0">
+            <NextButton disabled={!selectedArea} onPress={handleNext} />
           </View>
         </ScrollView>
       </View>

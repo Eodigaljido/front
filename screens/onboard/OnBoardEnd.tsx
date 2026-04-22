@@ -1,16 +1,20 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
   Image,
   TouchableOpacity,
   Dimensions,
-  BackHandler, // 뒤로가기 방지
+  BackHandler,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
 import type { RootStackParamList } from "../../App";
+import { getOnboardingAnswers } from "../../api/onboard/answer";
+import { submitOnboarding } from "../../api/onboard/submit";
 
 import rooti_run_onboard from "../../assets/onboard/rooti_run_onboard.png";
 
@@ -19,6 +23,27 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 export default function OnBoardEnd(): React.JSX.Element {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async () => {
+    setLoading(true);
+    try {
+      const answers = await getOnboardingAnswers();
+
+      await submitOnboarding({
+        region: answers.region ?? "",
+        age: answers.age ?? "",
+        activity: answers.activity ?? [],
+        gender: answers.gender ?? "",
+      });
+
+      navigation.navigate("Home");
+    } catch (e) {
+      Alert.alert("오류", "제출 중 문제가 발생했어요. 다시 시도해주세요.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // 뒤로가기 방지
   useEffect(() => {
@@ -58,11 +83,16 @@ export default function OnBoardEnd(): React.JSX.Element {
 
           <TouchableOpacity
             className="bg-blue-500 rounded-full py-3 px-6 w-[275px]"
-            onPress={() => navigation.navigate("Tabs")}
+            onPress={handleSubmit}
+            disabled={loading}
           >
-            <Text className="text-white font-bold text-center">
-              서비스 시작하기
-            </Text>
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text className="text-white font-bold text-center">
+                서비스 시작하기
+              </Text>
+            )}
           </TouchableOpacity>
         </View>
       </View>

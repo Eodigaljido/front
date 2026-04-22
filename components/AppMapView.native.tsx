@@ -1,9 +1,9 @@
 // @ts-nocheck
-import React, { useMemo } from 'react';
-import { Platform } from 'react-native';
-import Constants, { ExecutionEnvironment } from 'expo-constants';
-import GoogleMapWebView from './GoogleMapWebView';
-import type { MapMarkerPoint, MapPathPoint, MapRouteSegment } from './mapTypes';
+import React, { useMemo } from "react";
+import { Platform } from "react-native";
+import Constants, { ExecutionEnvironment } from "expo-constants";
+import GoogleMapWebView from "./GoogleMapWebView";
+import type { MapMarkerPoint, MapPathPoint, MapRouteSegment } from "./mapTypes";
 
 type Props = {
   latitude?: number;
@@ -18,7 +18,7 @@ type Props = {
   style?: object;
 };
 
-const ROUTE_COLOR = '#2563eb';
+const ROUTE_COLOR = "#2563eb";
 
 function isExpoGoClient(): boolean {
   return Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
@@ -31,8 +31,8 @@ function validPoints(path: MapPathPoint[] | undefined): MapPathPoint[] {
   return (path ?? []).filter(
     (p) =>
       p &&
-      typeof p.latitude === 'number' &&
-      typeof p.longitude === 'number' &&
+      typeof p.latitude === "number" &&
+      typeof p.longitude === "number" &&
       Number.isFinite(p.latitude) &&
       Number.isFinite(p.longitude),
   );
@@ -102,7 +102,7 @@ function AppMapViewExpoGoogleMapsImpl({
   markers,
   style,
 }: Props): React.JSX.Element {
-  const { GoogleMaps } = require('expo-maps');
+  const { GoogleMaps } = require("expo-maps");
 
   const pts = useMemo(() => validPoints(path), [path]);
   const segs = useMemo(
@@ -121,8 +121,8 @@ function AppMapViewExpoGoogleMapsImpl({
       (markers ?? []).filter(
         (p) =>
           p &&
-          typeof p.latitude === 'number' &&
-          typeof p.longitude === 'number' &&
+          typeof p.latitude === "number" &&
+          typeof p.longitude === "number" &&
           Number.isFinite(p.latitude) &&
           Number.isFinite(p.longitude),
       ),
@@ -131,7 +131,11 @@ function AppMapViewExpoGoogleMapsImpl({
   const cameraPath = useMemo(() => {
     if (segs.length >= 1) return segs.flatMap((s) => s.points);
     if (pts.length >= 1) return pts;
-    if (markerPts.length >= 1) return markerPts.map((m) => ({ latitude: m.latitude, longitude: m.longitude }));
+    if (markerPts.length >= 1)
+      return markerPts.map((m) => ({
+        latitude: m.latitude,
+        longitude: m.longitude,
+      }));
     return stopPts;
   }, [segs, pts, markerPts, stopPts]);
   const cameraPosition = useMemo(
@@ -146,7 +150,7 @@ function AppMapViewExpoGoogleMapsImpl({
         id: `marker-${i}`,
         coordinates: { latitude: c.latitude, longitude: c.longitude },
         title: c.label ? `${c.label}` : undefined,
-        subtitle: c.label ? ' ' : undefined,
+        subtitle: c.label ? " " : undefined,
         isTappable: allowTap,
       }));
     }
@@ -167,8 +171,12 @@ function AppMapViewExpoGoogleMapsImpl({
     }
     if (lineCoords.length >= 2) {
       return [
-        { id: 'stop-0', coordinates: lineCoords[0], isTappable: allowTap },
-        { id: 'stop-last', coordinates: lineCoords[lineCoords.length - 1], isTappable: allowTap },
+        { id: "stop-0", coordinates: lineCoords[0], isTappable: allowTap },
+        {
+          id: "stop-last",
+          coordinates: lineCoords[lineCoords.length - 1],
+          isTappable: allowTap,
+        },
       ];
     }
     return [];
@@ -188,7 +196,7 @@ function AppMapViewExpoGoogleMapsImpl({
     if (lineCoords.length < 2) return [];
     return [
       {
-        id: 'route',
+        id: "route",
         coordinates: lineCoords,
         color: ROUTE_COLOR,
         width: 5,
@@ -197,7 +205,7 @@ function AppMapViewExpoGoogleMapsImpl({
     ];
   }, [segs, lineCoords]);
 
-  const baseStyle = [{ flex: 1, backgroundColor: '#e5e7eb' }, style];
+  const baseStyle = [{ flex: 1, backgroundColor: "#e5e7eb" }, style];
 
   return (
     <GoogleMaps.View
@@ -211,8 +219,7 @@ function AppMapViewExpoGoogleMapsImpl({
 }
 
 export default function AppMapView(props: Props): React.JSX.Element {
-  const useNativeGoogle =
-    Platform.OS === 'android' && !isExpoGoClient();
+  const useNativeGoogle = Platform.OS === "android" && !isExpoGoClient();
 
   if (useNativeGoogle) {
     return <AppMapViewExpoGoogleMapsImpl {...props} />;
