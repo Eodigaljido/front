@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import type { UserSavedRoute } from '../data/userSavedRoute';
 import type { CourseReview } from '../data/mockData';
 
@@ -79,18 +79,22 @@ export function MockDataProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
-  const value: MockDataContextValue = {
-    savedCourseIds,
-    addSavedCourse,
-    removeSavedCourse,
-    publicCourseIds: MOCK_PUBLIC_IDS,
-    userSavedRoutes,
-    upsertUserRoute,
-    deleteUserRoute,
-    getUserRoute,
-    extraSharedCourseReviews,
-    addSharedCourseReview,
-  };
+  // value 객체를 useMemo로 안정화 — 실제로 변한 state만 소비자 리렌더를 유발
+  const value = useMemo<MockDataContextValue>(
+    () => ({
+      savedCourseIds,
+      addSavedCourse,
+      removeSavedCourse,
+      publicCourseIds: MOCK_PUBLIC_IDS,
+      userSavedRoutes,
+      upsertUserRoute,
+      deleteUserRoute,
+      getUserRoute,
+      extraSharedCourseReviews,
+      addSharedCourseReview,
+    }),
+    [savedCourseIds, userSavedRoutes, extraSharedCourseReviews, getUserRoute],
+  );
 
   return (
     <MockDataContext.Provider value={value}>
