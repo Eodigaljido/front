@@ -11,8 +11,8 @@ export default function RadioButton({
 }): React.JSX.Element {
   return (
     <TouchableOpacity
-      className={`flex-row items-center mt-10 mb-2 rounded-full py-3 px-6 border-2 ${
-        value ? "border-blue-500 bg-blue-500" : "border-gray-300 bg-gray-200"
+      className={`flex-row items-center mt-5 mb-2 rounded-full py-3 px-6 border-2 ${
+        value ? "border-white bg-blue-500" : "border-gray-300 bg-gray-200"
       }`}
       onPress={onPress}
       activeOpacity={1}

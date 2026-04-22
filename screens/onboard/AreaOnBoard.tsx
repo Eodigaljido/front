@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from "react";
-import { View, Text, ScrollView } from "react-native";
+import { View, Text, ScrollView, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
@@ -33,10 +33,27 @@ const REGIONS = [
   "제주도",
 ];
 
+const SCREEN_PADDING = 24; // px-6
+const COLUMNS_VISIBLE = 3;
+const COLUMN_GAP = 8;
+const ITEMS_PER_COLUMN = 6;
+
+// ITEMS_PER_COLUMN개씩 묶어 세로 컬럼 구성
+const REGION_COLUMNS = REGIONS.reduce<string[][]>((acc, region, i) => {
+  const colIdx = Math.floor(i / ITEMS_PER_COLUMN);
+  if (!acc[colIdx]) acc[colIdx] = [];
+  acc[colIdx].push(region);
+  return acc;
+}, []);
+
 export default function AreaOnBoard(): React.JSX.Element {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const [selectedArea, setSelectedArea] = React.useState<string>("");
   const accessToken = useAuthStore((s) => s.accessToken);
+  const { width: screenWidth } = useWindowDimensions();
+  const columnWidth =
+    (screenWidth - SCREEN_PADDING * 2 - COLUMN_GAP * (COLUMNS_VISIBLE - 1)) /
+    COLUMNS_VISIBLE;
 
   const handleNext = async () => {
     await completeOnboardingStep(accessToken!, 1, selectedArea);
@@ -54,22 +71,30 @@ export default function AreaOnBoard(): React.JSX.Element {
           어디인가요?
         </Title>
         <Description desc={`거주 지역에 따라서 추천하는 장소가 달라져요!`} />
-        <ScrollView className="mt-6" showsVerticalScrollIndicator={false}>
-          <View className="flex-row flex-wrap">
-            {REGIONS.map((region) => (
-              <View key={region} className="w-1/2 p-2">
-                <AreaRadioButton
-                  label={region}
-                  value={selectedArea === region}
-                  onPress={() => setSelectedArea(region)}
-                />
-              </View>
-            ))}
-          </View>
-          <View className="flex-row items-center justify-end px-4 m-0">
-            <NextButton disabled={!selectedArea} onPress={handleNext} />
-          </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          className="mt-6"
+          style={{ flexGrow: 0 }}
+          contentContainerStyle={{ gap: COLUMN_GAP }}
+        >
+          {REGION_COLUMNS.map((col, colIdx) => (
+            <View key={colIdx} style={{ width: columnWidth, gap: COLUMN_GAP }}>
+              {col.map((region) => (
+                <View key={region} style={{ flexDirection: "row" }}>
+                  <AreaRadioButton
+                    label={region}
+                    value={selectedArea === region}
+                    onPress={() => setSelectedArea(region)}
+                  />
+                </View>
+              ))}
+            </View>
+          ))}
         </ScrollView>
+        <View className="items-end mt-6">
+          <NextButton disabled={!selectedArea} onPress={handleNext} />
+        </View>
       </View>
     </SafeAreaView>
   );

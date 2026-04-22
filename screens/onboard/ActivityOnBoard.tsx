@@ -16,7 +16,9 @@ import { completeOnboardingStep } from "@/api/onboard/step";
 export default function ActivityOnBoard(): React.JSX.Element {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const accessToken = useAuthStore((s) => s.accessToken);
-  const [selectedActivities, setSelectedActivities] = React.useState<string[]>([]);
+  const [selectedActivities, setSelectedActivities] = React.useState<string[]>(
+    [],
+  );
 
   const handleNext = async () => {
     await completeOnboardingStep(accessToken!, 3, selectedActivities);
@@ -40,7 +42,7 @@ export default function ActivityOnBoard(): React.JSX.Element {
           무엇인가요?
         </Title>
         <Description desc={`취미 활동에 따라서 추천하는 장소가 달라져요!`} />
-        <View className="mt-6">
+        <View className="mt-3">
           <RadioButton
             label="운동/건강"
             value={selectedActivities.includes("운동/건강")}
@@ -71,7 +73,7 @@ export default function ActivityOnBoard(): React.JSX.Element {
           />
         </View>
       </View>
-      <View className="flex-row items-center justify-between px-10 mt-20">
+      <View className="flex-row items-center justify-between px-10 mt-10">
         <PreviousButton onPress={() => navigation.navigate("AgeOnBoard")} />
         <NextButton
           disabled={selectedActivities.length === 0}
