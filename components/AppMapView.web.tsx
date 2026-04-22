@@ -1,3 +1,1 @@
-import GoogleMapWebView from './GoogleMapWebView';
-
-export default GoogleMapWebView;
+import GoogleMapWebView from "./GoogleMapWebView";
