@@ -37,7 +37,7 @@ export default function OnBoardEnd(): React.JSX.Element {
         gender: answers.gender ?? "",
       });
 
-      navigation.navigate("Home");
+      navigation.reset({ index: 0, routes: [{ name: "Tabs" }] });
     } catch (e) {
       Alert.alert("오류", "제출 중 문제가 발생했어요. 다시 시도해주세요.");
     } finally {

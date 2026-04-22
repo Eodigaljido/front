@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { View, Text, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Title from "../components/chat/Title";
@@ -9,9 +9,31 @@ import { ProfileList } from "@/components/chat/ProfileList";
 import { ChatRoom } from "@/components/chat/ChatRoom";
 import { SearchBar } from "@/components/chat/SearchBar";
 import { ChatCreatingButton } from "@/components/chat/ChatCreateButton";
+import { getChatRooms, ChatRoom as ChatRoomType } from "@/api/chat/chat";
+import { useAuthStore } from "@/store/authStore";
 
 export default function ChatHomeScreen(): React.JSX.Element {
+  const [chatRooms, setChatRooms] = useState<ChatRoomType[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const accessToken = useAuthStore((s) => s.accessToken);
+
+  useEffect(() => {
+    const fetchChatRooms = async () => {
+      if (!accessToken) return;
+      try {
+        const response = await fetch("/api/chat/rooms");
+        const data = await response.json();
+        console.log("Fetched chat rooms:", data);
+        setChatRooms(data.rooms);
+        const rooms = await getChatRooms(accessToken);
+        setChatRooms(rooms);
+      } catch (error) {
+        console.error("Failed to fetch chat rooms:", error);
+      }
+    };
+
+    fetchChatRooms();
+  }, [accessToken]);
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={["top"]}>
