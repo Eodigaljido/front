@@ -60,7 +60,7 @@ export default function AgeOnBoard(): React.JSX.Element {
           />
         </View>
       </View>
-      <View className="flex-row items-center justify-between px-10 mt-20">
+      <View className="flex-row items-center justify-between px-10 mt-10">
         <PreviousButton onPress={() => navigation.navigate("AreaOnBoard")} />
         <NextButton disabled={!selectedAge} onPress={handleNext} />
       </View>
