@@ -1,13 +1,14 @@
-import "./global.css";
-import React, { useEffect, useState } from "react";
-import { StatusBar } from "expo-status-bar";
-import { NavigationContainer } from "@react-navigation/native";
-import {
-  BottomTabBar,
-  createBottomTabNavigator,
-} from "@react-navigation/bottom-tabs";
-import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { Ionicons } from "@expo/vector-icons";
+import React, { useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { StatusBar } from 'expo-status-bar';
+import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
+import { useAuthStore } from './store/authStore';
+import { NavigationContainer } from '@react-navigation/native';
+import { BottomTabBar, createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { TEXT_STYLE } from './styles/textStyles';
 
 import { MockDataProvider } from "./context/MockDataContext";
 import HomeScreen from "./screens/HomeScreen";
@@ -24,39 +25,21 @@ import { ChatRoomScreen } from "./screens/ChatRoomScreen";
 import ChatHomeScreen from "./screens/chat/ChatHomeScreen";
 import LoginScreen from "./screens/LoginScreen";
 import SignupScreen from "./screens/SignupScreen";
-import { View, StyleSheet } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Platform } from "react-native";
-import { useAuthStore } from "./store/authStore";
-import { ActivityIndicator } from "react-native";
+import RouteCreateScreen from "./screens/RouteCreateScreen";
+import ProfileSettingsScreen from "./screens/ProfileSettingsScreen";
 
 export type RootTabParamList = {
-  Login: undefined;
   Home: undefined;
   SharedRoute:
     | { openFilter?: boolean; openAsPopular?: boolean; viewCourseId?: string }
     | undefined;
   MyRoute: undefined;
-  Map: undefined;
   Chat: undefined;
   All: undefined;
-
-  // 온보드 관련
-  OnBoardStart: undefined;
-  AreaOnBoard: undefined;
-  AgeOnBoard: undefined;
-  ActivityOnBoard: undefined;
-  GenderOnBoard: undefined;
-  OnBoardEnd: undefined;
-
-  // 채팅 관련
-  ChatRoomScreen: undefined;
 };
 
 export type RootStackParamList = {
   Tabs: undefined;
-  Home: undefined;
-  Start: undefined;
   RouteCreate:
     | {
         editRouteId?: string;
@@ -83,17 +66,19 @@ export type RootStackParamList = {
 const Tab = createBottomTabNavigator<RootTabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-const TAB_ACCENT = "#f97316";
-const TAB_INACTIVE = "#64748b";
-const TAB_GLASS_BG = "rgba(255, 255, 255, 0.88)";
-const TAB_GLASS_BORDER = "rgba(148, 163, 184, 0.35)";
+const TAB_ACCENT = '#2563eb';
+const TAB_INACTIVE = '#9ca3af';
+const TAB_GLASS_BG = 'rgba(255, 255, 255, 0.88)';
+const TAB_GLASS_BORDER = 'rgba(148, 163, 184, 0.35)';
 
-const TAB_ICONS: Partial<Record<keyof RootTabParamList, string>> = {
-  Home: "home",
-  SharedRoute: "paper-plane",
-  MyRoute: "map",
-  Chat: "chatbubble",
-  All: "menu",
+type IonIconName = NonNullable<ComponentProps<typeof Ionicons>['name']>;
+
+const TAB_ICONS: Record<keyof RootTabParamList, IonIconName> = {
+  Home: 'home',
+  SharedRoute: 'paper-plane',
+  MyRoute: 'map',
+  Chat: 'chatbubble',
+  All: 'menu',
 };
 
 // 모듈 스코프에 정의해 참조를 안정화 — tabBarBackground는 함수로 호출되어야 함
@@ -116,59 +101,57 @@ function TabBarGlassBackground() {
 
 function TabNavigator() {
   const insets = useSafeAreaInsets();
-  const bottomPad = Math.max(insets.bottom, Platform.OS === "ios" ? 10 : 12);
-  const barVerticalPadding = 6;
+  const bottomPad = Math.max(insets.bottom, Platform.OS === 'ios' ? 10 : 12);
 
-  return (
-    <Tab.Navigator
-      initialRouteName="Home"
-      tabBar={(props) => (
-        <View
-          pointerEvents="box-none"
-          style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            bottom: bottomPad,
-            alignItems: "center",
-          }}
-        >
-          <View style={{ width: "88%" }}>
-            <BottomTabBar {...props} />
-          </View>
+  // tabBar 콜백을 useCallback으로 안정화 — bottomPad가 바뀔 때만 재생성
+  const renderTabBar = useCallback(
+    (props: any) => (
+      <View
+        pointerEvents="box-none"
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: bottomPad,
+          alignItems: 'center',
+          zIndex: 100,
+          elevation: 100,
+        }}
+      >
+        <View style={{ width: '88%' }}>
+          <BottomTabBar {...props} />
         </View>
-      )}
-      screenOptions={({ route }) => ({
-        tabBarIcon: ({ color }) => (
+      </View>
+    ),
+    [bottomPad],
+  );
+
+  // screenOptions를 useMemo로 안정화
+  const screenOptions = useMemo(
+    () =>
+      ({ route }: { route: any }) => ({
+        tabBarIcon: ({ color }: { focused: boolean; color: string }) => (
           <View
             style={{
-              alignItems: "center",
-              justifyContent: "center",
+              alignItems: 'center',
+              justifyContent: 'center',
               paddingTop: 2,
               minHeight: 28,
             }}
           >
-            <Ionicons
-              name={
-                (TAB_ICONS[route.name as keyof RootTabParamList] ??
-                  "help-circle") as any
-              }
-              size={22}
-              color={color}
-            />
+            <Ionicons name={TAB_ICONS[route.name as keyof RootTabParamList]} size={24} color={color} />
           </View>
         ),
         tabBarActiveTintColor: TAB_ACCENT,
         tabBarInactiveTintColor: TAB_INACTIVE,
         tabBarBackground: TabBarGlassBackground,
         tabBarStyle: {
-          position: "relative",
-          height:
-            56 + barVerticalPadding * 2 + (Platform.OS === "android" ? 4 : 0),
+          position: 'relative' as const,
+          height: 56 + insets.bottom,
           paddingHorizontal: 4,
-          paddingTop: barVerticalPadding,
-          paddingBottom: barVerticalPadding,
-          backgroundColor: "transparent",
+          paddingTop: 6,
+          paddingBottom: Math.max(insets.bottom, 6),
+          backgroundColor: 'transparent',
           borderTopWidth: 0,
           elevation: Platform.OS === "android" ? 14 : 0,
           shadowColor: "#0f172a",
@@ -178,44 +161,37 @@ function TabNavigator() {
           borderRadius: 22,
         },
         tabBarLabelStyle: {
-          fontSize: 10,
-          fontWeight: "600",
-          letterSpacing: -0.2,
-          marginTop: 0,
+          ...TEXT_STYLE.tabLabelInactive,
+          marginTop: 1,
           marginBottom: 0,
+        },
+        tabBarActiveLabelStyle: {
+          ...TEXT_STYLE.tabLabelActive,
         },
         tabBarItemStyle: {
           paddingTop: 0,
           paddingBottom: 0,
-          justifyContent: "center",
+          justifyContent: 'center' as const,
         },
-      })}
-    >
-      <Tab.Screen
-        name="Home"
-        component={HomeScreen}
-        options={{ headerShown: false, tabBarLabel: "홈" }}
-      />
+      }),
+    [insets.bottom],
+  );
+
+  return (
+    <Tab.Navigator initialRouteName="Home" tabBar={renderTabBar} screenOptions={screenOptions}>
+      <Tab.Screen name="Home" component={HomeScreen} options={{ headerShown: false, tabBarLabel: '홈' }} />
       <Tab.Screen
         name="SharedRoute"
         component={SharedRouteScreen}
-        options={{ headerShown: false, tabBarLabel: "공유 루트" }}
+        options={{ headerShown: false, tabBarLabel: '공유 루트' }}
       />
-      <Tab.Screen
-        name="MyRoute"
-        component={MyRouteScreen}
-        options={{ headerShown: false, tabBarLabel: "내 루트" }}
-      />
+      <Tab.Screen name="MyRoute" component={MyRouteScreen} options={{ headerShown: false, tabBarLabel: '내 루트' }} />
       <Tab.Screen
         name="Chat"
         component={ChatHomeScreen}
-        options={{ headerShown: false, title: "채팅", tabBarLabel: "채팅" }}
+        options={{ headerShown: false, title: '채팅', tabBarLabel: '채팅' }}
       />
-      <Tab.Screen
-        name="All"
-        component={AllScreen}
-        options={{ headerShown: false, title: "전체", tabBarLabel: "전체" }}
-      />
+      <Tab.Screen name="All" component={AllScreen} options={{ headerShown: false, title: '전체', tabBarLabel: '전체' }} />
     </Tab.Navigator>
   );
 }
@@ -223,8 +199,6 @@ function TabNavigator() {
 export default function App(): React.JSX.Element {
   const [isReady, setIsReady] = useState(false);
   const restoreSession = useAuthStore((s) => s.restoreSession);
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-
   useEffect(() => {
     restoreSession().finally(() => setIsReady(true));
   }, []);
@@ -238,26 +212,31 @@ export default function App(): React.JSX.Element {
   }
 
   return (
-    <MockDataProvider>
-      <NavigationContainer>
-        <StatusBar style="auto" />
-        <Stack.Navigator
-          initialRouteName="Login"
-          screenOptions={{ headerShown: false }}
-        >
-          <Stack.Screen name="Login" component={LoginScreen} />
-          <Stack.Screen name="Signup" component={SignupScreen} />
-          <Stack.Screen name="Tabs" component={TabNavigator} />
-          <Stack.Screen name="Home" component={HomeScreen} />
-          <Stack.Screen name="OnBoardStart" component={OnBoardStart} />
-          <Stack.Screen name="AreaOnBoard" component={AreaOnBoard} />
-          <Stack.Screen name="AgeOnBoard" component={AgeOnBoard} />
-          <Stack.Screen name="ActivityOnBoard" component={ActivityOnBoard} />
-          <Stack.Screen name="GenderOnBoard" component={GenderOnBoard} />
-          <Stack.Screen name="OnBoardEnd" component={OnBoardEnd} />
-          <Stack.Screen name="ChatRoomScreen" component={ChatRoomScreen} />
-        </Stack.Navigator>
-      </NavigationContainer>
-    </MockDataProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <MockDataProvider>
+          <NavigationContainer>
+            <StatusBar style="auto" />
+            <Stack.Navigator
+              initialRouteName="Login"
+              screenOptions={{ headerShown: false }}
+            >
+              <Stack.Screen name="Login" component={LoginScreen} />
+              <Stack.Screen name="Signup" component={SignupScreen} />
+              <Stack.Screen name="Tabs" component={TabNavigator} />
+              <Stack.Screen name="RouteCreate" component={RouteCreateScreen} />
+              <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
+              <Stack.Screen name="OnBoardStart" component={OnBoardStart} />
+              <Stack.Screen name="AreaOnBoard" component={AreaOnBoard} />
+              <Stack.Screen name="AgeOnBoard" component={AgeOnBoard} />
+              <Stack.Screen name="ActivityOnBoard" component={ActivityOnBoard} />
+              <Stack.Screen name="GenderOnBoard" component={GenderOnBoard} />
+              <Stack.Screen name="OnBoardEnd" component={OnBoardEnd} />
+              <Stack.Screen name="ChatRoomScreen" component={ChatRoomScreen} />
+            </Stack.Navigator>
+          </NavigationContainer>
+        </MockDataProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
