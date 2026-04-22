@@ -88,13 +88,12 @@ const TAB_INACTIVE = "#64748b";
 const TAB_GLASS_BG = "rgba(255, 255, 255, 0.88)";
 const TAB_GLASS_BORDER = "rgba(148, 163, 184, 0.35)";
 
-// 탭 아이콘 맵을 모듈 스코프에 고정 — tabBarIcon 내부에서 매 렌더마다 생성하는 낭비 제거
-const TAB_ICONS: Record<keyof RootTabParamList, string> = {
-  Home: 'home',
-  SharedRoute: 'paper-plane',
-  MyRoute: 'map',
-  Chat: 'chatbubble',
-  All: 'menu',
+const TAB_ICONS: Partial<Record<keyof RootTabParamList, string>> = {
+  Home: "home",
+  SharedRoute: "paper-plane",
+  MyRoute: "map",
+  Chat: "chatbubble",
+  All: "menu",
 };
 
 // 모듈 스코프에 정의해 참조를 안정화 — tabBarBackground는 함수로 호출되어야 함
@@ -123,7 +122,7 @@ function TabNavigator() {
   return (
     <Tab.Navigator
       initialRouteName="Home"
-      tabBar={props => (
+      tabBar={(props) => (
         <View
           pointerEvents="box-none"
           style={{
@@ -140,40 +139,25 @@ function TabNavigator() {
         </View>
       )}
       screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused, color }) => {
-          const icons: Record<keyof RootTabParamList, string> = {
-            Home: "home",
-            SharedRoute: "paper-plane",
-            MyRoute: "map",
-            Chat: "chatbubble",
-            All: "menu",
-            Login: "login",
-            OnBoardStart: "onboard start",
-            AreaOnBoard: "area onboard",
-            AgeOnBoard: "age onboard",
-            ActivityOnBoard: "activity onboard",
-            GenderOnBoard: "gender onboard",
-            OnBoardEnd: "onboard end",
-            ChatRoomScreen: "chatroom",
-            Map: "Map",
-          };
-          return (
-            <View
-              style={{
-                alignItems: "center",
-                justifyContent: "center",
-                paddingTop: 2,
-                minHeight: 28,
-              }}
-            >
-              <Ionicons
-                name={icons[route.name] as any}
-                size={22}
-                color={color}
-              />
-            </View>
-          );
-        },
+        tabBarIcon: ({ color }) => (
+          <View
+            style={{
+              alignItems: "center",
+              justifyContent: "center",
+              paddingTop: 2,
+              minHeight: 28,
+            }}
+          >
+            <Ionicons
+              name={
+                (TAB_ICONS[route.name as keyof RootTabParamList] ??
+                  "help-circle") as any
+              }
+              size={22}
+              color={color}
+            />
+          </View>
+        ),
         tabBarActiveTintColor: TAB_ACCENT,
         tabBarInactiveTintColor: TAB_INACTIVE,
         tabBarBackground: TabBarGlassBackground,
@@ -200,23 +184,12 @@ function TabNavigator() {
           marginTop: 0,
           marginBottom: 0,
         },
-        tabBarActiveLabelStyle: {
-          ...TEXT_STYLE.tabLabelActive,
-        },
         tabBarItemStyle: {
           paddingTop: 0,
           paddingBottom: 0,
           justifyContent: "center",
         },
-      }),
-    [bottomPad, insets.bottom],
-  );
-
-  return (
-    <Tab.Navigator
-      initialRouteName="Home"
-      tabBar={renderTabBar}
-      screenOptions={screenOptions}
+      })}
     >
       <Tab.Screen
         name="Home"
