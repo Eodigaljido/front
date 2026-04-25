@@ -1,108 +1,78 @@
-import { View, Text, Image, TouchableOpacity } from "react-native";
+import { View, Text, TouchableOpacity, Image } from "react-native";
 import { useNavigation, NavigationProp } from "@react-navigation/native";
+import { getChatRooms, ChatRoom as ChatRoomType } from "@/api/chat/chat";
+import { useEffect, useState } from "react";
+import { useAuthStore } from "@/store/authStore";
+import { useChatSocket, ChatSocketEvent } from "@/hooks/useChatSocket";
 
 type RootStackParamList = {
-  ChatRoomScreen: undefined;
+  ChatRoomScreen: { roomUuid: string; roomName: string };
 };
 
 interface ChatRoomProps {
   searchQuery?: string;
 }
 
+// 시간 포맷 함수
+// TODO: 1분전, 2시간전, 3일전 등으로 포맷하기
+function formatTime(dateStr: string): string {
+  if (!dateStr) return "";
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) {
+    return date.toLocaleTimeString("ko-KR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  } else if (diffDays === 1) {
+    return "어제";
+  } else if (diffDays < 7) {
+    return `${diffDays}일 전`;
+  } else {
+    return date.toLocaleDateString("ko-KR", {
+      month: "numeric",
+      day: "numeric",
+    });
+  }
+}
+
 export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
-  const chatRooms = [
-    {
-      id: "1",
-      name: "김태호",
-      message: "오늘 저녁 운동 같이 하실래요?",
-      imageUrl: "https://avatars.githubusercontent.com/u/108007761?v=4",
-      unreadCount: 3,
-      time: "14:30",
+  const [chatRooms, setChatRooms] = useState<ChatRoomType[]>([]);
+  const accessToken = useAuthStore((s) => s.accessToken);
+
+  // 방 목록이 로드된 후 모든 방을 구독해 실시간 업데이트 수신
+  useChatSocket(
+    chatRooms.map((r) => r.uuid),
+    (event: ChatSocketEvent) => {
+      if (event.eventType === "MESSAGE_CREATED") {
+        getChatRooms(accessToken!).then(setChatRooms).catch(console.error);
+      }
     },
-    {
-      id: "2",
-      name: "송주영",
-      message: "안녕하세요!!#!#!@#!#!#!",
-      imageUrl: "https://avatars.githubusercontent.com/u/162583068?v=4",
-      unreadCount: 12,
-      time: "12:45",
-    },
-    {
-      id: "3",
-      name: "박건형",
-      message: "코스 추천 감사합니다!",
-      imageUrl: "https://avatars.githubusercontent.com/u/162693556?v=4",
-      unreadCount: 0,
-      time: "10:20",
-    },
-    {
-      id: "4",
-      name: "박창연",
-      message: "내일은 강변 코스로 갈게요.",
-      imageUrl: "https://avatars.githubusercontent.com/u/140193710?v=4",
-      unreadCount: 1,
-      time: "09:15",
-    },
-    {
-      id: "5",
-      name: "류지우",
-      message: "지금 출발해도 될까요?",
-      imageUrl: "https://avatars.githubusercontent.com/u/126925788?v=4",
-      unreadCount: 0,
-      time: "08:00",
-    },
-    {
-      id: "6",
-      name: "송주영",
-      message: "안녕하세요!!#!#!@#!#!#!",
-      imageUrl: "https://avatars.githubusercontent.com/u/162583068?v=4",
-      unreadCount: 9,
-      time: "어제",
-    },
-    {
-      id: "7",
-      name: "송주영",
-      message: "안녕하세요!!#!#!@#!#!#!",
-      imageUrl: "https://avatars.githubusercontent.com/u/162583068?v=4",
-      unreadCount: 5,
-      time: "3일 전",
-    },
-    // {
-    //   id: "8",
-    //   name: "송주영",
-    //   message: "안녕하세요!!#!#!@#!#!#!",
-    //   imageUrl: "https://avatars.githubusercontent.com/u/162583068?v=4",
-    // },
-    // {
-    //   id: "9",
-    //   name: "송주영",
-    //   message: "안녕하세요!!#!#!@#!#!#!",
-    //   imageUrl: "https://avatars.githubusercontent.com/u/162583068?v=4",
-    // },
-    // {
-    //   id: "10",
-    //   name: "송주영",
-    //   message: "안녕하세요!!#!#!@#!#!#!",
-    //   imageUrl: "https://avatars.githubusercontent.com/u/162583068?v=4",
-    // },
-    // {
-    //   id: "11",
-    //   name: "송주영",
-    //   message: "안녕하세요!!#!#!@#!#!#!",
-    //   imageUrl: "https://avatars.githubusercontent.com/u/162583068?v=4",
-    // },
-    // {
-    //   id: "12",
-    //   name: "송주영",
-    //   message: "안녕하세요!!#!#!@#!#!#!",
-    //   imageUrl: "https://avatars.githubusercontent.com/u/162583068?v=4",
-    // },
-  ];
+  );
+
+  const fetchChatRooms = () => {
+    if (!accessToken) return;
+    getChatRooms(accessToken)
+      .then(setChatRooms)
+      .catch((err) => {
+        console.error("채팅방 목록 불러오기 실패:", err);
+      });
+  };
+
+  useEffect(() => {
+    fetchChatRooms();
+  }, [accessToken]);
 
   const filteredRooms = searchQuery
-    ? chatRooms.filter((room) =>
-        room.name.includes(searchQuery) || room.message.includes(searchQuery)
+    ? chatRooms.filter(
+        (room) =>
+          room.name.includes(searchQuery) ||
+          room.lastMessage?.includes(searchQuery),
       )
     : chatRooms;
 
@@ -110,20 +80,27 @@ export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
     <View>
       {filteredRooms.map((room) => (
         <TouchableOpacity
-          key={room.id}
+          key={room.uuid}
           className="flex-row items-center justify-between py-3 mb-2"
           activeOpacity={0.5}
-          onPress={() => navigation.navigate("ChatRoomScreen")}
+          onPress={() =>
+            navigation.navigate("ChatRoomScreen", {
+              roomUuid: room.uuid,
+              roomName: room.name,
+            })
+          }
         >
           <View className="flex-row items-center flex-1">
             <View style={{ position: "relative" }}>
-              <Image
-                source={{
-                  uri: room.imageUrl,
-                }}
-                className="rounded-full"
+              <View
+                className="rounded-full bg-blue-100 items-center justify-center"
                 style={{ width: 50, height: 50 }}
-              />
+              >
+                <Image
+                  source={{ uri: room.profileImageUrl }}
+                  className="w-full h-full rounded-full"
+                />
+              </View>
               {room.unreadCount > 0 && (
                 <View
                   style={{
@@ -155,15 +132,18 @@ export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
               <Text
                 className={`text-sm ${
                   room.unreadCount > 0
-                    ? "font-semibold text-gray-500"
+                    ? "font-semibold text-blue-500"
                     : "font-medium text-gray-500"
                 }`}
+                numberOfLines={1}
               >
-                {room.message}
+                {room.lastMessage ?? ""}
               </Text>
             </View>
           </View>
-          <Text className="text-xs text-gray-700 ml-2">{room.time}</Text>
+          <Text className="text-xs text-gray-700 ml-2">
+            {formatTime(room.lastMessageAt)}
+          </Text>
         </TouchableOpacity>
       ))}
     </View>
