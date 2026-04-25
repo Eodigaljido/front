@@ -77,7 +77,7 @@ export type RootStackParamList = {
   OnBoardEnd: undefined;
 
   // 채팅 관련
-  ChatRoomScreen: undefined;
+  ChatRoomScreen: { roomUuid: string; roomName: string };
 };
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
