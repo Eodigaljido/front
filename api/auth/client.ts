@@ -1,4 +1,4 @@
-import { instance as authApi } from '../axios';
+import { instance as authApi } from "../axios";
 
 export { authApi };
 
