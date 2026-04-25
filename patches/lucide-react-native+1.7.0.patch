@@ -1,0 +1,27 @@
+diff --git a/node_modules/lucide-react-native/dist/esm/context.js b/node_modules/lucide-react-native/dist/esm/context.js
+index ebc34b0..ece0584 100644
+--- a/node_modules/lucide-react-native/dist/esm/context.js
++++ b/node_modules/lucide-react-native/dist/esm/context.js
+@@ -5,7 +5,7 @@
+  * See the LICENSE file in the root directory of this source tree.
+  */
+ 
+-import { createContext, useContext } from 'react';
++import React, { createContext, useContext } from 'react';
+ 
+ const LucideContext = createContext({
+   size: 24,
+@@ -14,6 +14,12 @@ const LucideContext = createContext({
+   absoluteStrokeWidth: false
+ });
+ const useLucideContext = () => useContext(LucideContext);
++const LucideProvider = ({ children, ...props }) =>
++  React.createElement(
++    LucideContext.Provider,
++    { value: { size: 24, color: "currentColor", strokeWidth: 2, absoluteStrokeWidth: false, ...props } },
++    children
++  );
+ 
+-export { useLucideContext };
++export { LucideProvider, useLucideContext };
+ //# sourceMappingURL=context.js.map
