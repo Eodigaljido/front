@@ -8,6 +8,7 @@ import { getRoomMessages, ChatMessage } from "@/api/chat/chat";
 import { useAuthStore } from "@/store/authStore";
 import { useChatSocket, ChatSocketEvent } from "@/hooks/useChatSocket";
 import { RootStackParamList } from "@/App";
+import { StatusBar } from "expo-status-bar";
 
 type ChatRoomRouteProp = RouteProp<RootStackParamList, "ChatRoomScreen">;
 
@@ -35,9 +36,7 @@ export const ChatRoomScreen = () => {
               m.uuid.startsWith("pending-"),
             );
             if (pendingIdx === -1) return prev;
-            return prev.map((m, i) =>
-              i === pendingIdx ? event.payload : m,
-            );
+            return prev.map((m, i) => (i === pendingIdx ? event.payload : m));
           });
           return;
         }
@@ -144,33 +143,36 @@ export const ChatRoomScreen = () => {
   }
 
   return (
-    <View className="flex-1">
-      <RoomHeader roomName={roomName} />
-      <ScrollView
-        ref={scrollViewRef}
-        className="flex-1"
-        contentContainerStyle={{
-          paddingHorizontal: 16,
-          paddingTop: 12,
-          paddingBottom: 180,
-        }}
-        onScroll={handleScroll}
-        scrollEventThrottle={400}
-      >
-        {loadingMore && (
-          <ActivityIndicator size="small" style={{ marginBottom: 8 }} />
-        )}
-        {messages.map((msg) => (
-          <BubbleChat
-            key={msg.uuid}
-            text={msg.isDeleted ? "(삭제된 메시지)" : (msg.content ?? "")}
-            isMine={msg.senderUuid === userUuid}
-            sentAt={new Date(msg.createdAt)}
-            userName={msg.senderNickname}
-          />
-        ))}
-      </ScrollView>
-      <RoomFooter onSend={handleSend} />
-    </View>
+    <>
+      <StatusBar style="dark" />
+      <View className="flex-1 bg-white">
+        <RoomHeader roomName={roomName} />
+        <ScrollView
+          ref={scrollViewRef}
+          className="flex-1"
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 12,
+            paddingBottom: 180,
+          }}
+          onScroll={handleScroll}
+          scrollEventThrottle={400}
+        >
+          {loadingMore && (
+            <ActivityIndicator size="small" style={{ marginBottom: 8 }} />
+          )}
+          {messages.map((msg) => (
+            <BubbleChat
+              key={msg.uuid}
+              text={msg.isDeleted ? "(삭제된 메시지)" : (msg.content ?? "")}
+              isMine={msg.senderUuid === userUuid}
+              sentAt={new Date(msg.createdAt)}
+              userName={msg.senderNickname}
+            />
+          ))}
+        </ScrollView>
+        <RoomFooter onSend={handleSend} />
+      </View>
+    </>
   );
 };
