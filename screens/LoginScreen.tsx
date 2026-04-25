@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -17,6 +17,11 @@ import { RootStackParamList } from "../App";
 import { usePasswordMask } from "../hooks/usePasswordMask";
 import { useAuthStore } from "../store/authStore";
 import { getOnboardingStatus } from "../api/onboard";
+import {
+  isTestAutoLoginEnabled,
+  TEST_AUTO_LOGIN_IDENTIFIER,
+  TEST_AUTO_LOGIN_PASSWORD,
+} from "../constants/testLogin";
 
 type LoginNavProp = NativeStackNavigationProp<RootStackParamList, "Login">;
 
@@ -29,6 +34,42 @@ export default function LoginScreen() {
     usePasswordMask();
   const loginStore = useAuthStore((s) => s.login);
   const passwordRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    if (!isTestAutoLoginEnabled()) return;
+    let cancelled = false;
+    setIdentifier(TEST_AUTO_LOGIN_IDENTIFIER);
+    setIsLoading(true);
+    setLoginError("");
+    (async () => {
+      try {
+        await loginStore({
+          identifier: TEST_AUTO_LOGIN_IDENTIFIER,
+          password: TEST_AUTO_LOGIN_PASSWORD,
+        });
+        if (cancelled) return;
+        const accessToken = useAuthStore.getState().accessToken!;
+        const { completed } = await getOnboardingStatus(accessToken);
+        if (!completed) {
+          navigation.reset({
+            index: 0,
+            routes: [{ name: "OnBoardStart" }],
+          });
+        } else {
+          navigation.reset({ index: 0, routes: [{ name: "Tabs" }] });
+        }
+      } catch {
+        if (!cancelled) {
+          setLoginError("테스트 자동 로그인에 실패했습니다.");
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loginStore, navigation]);
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={["top"]}>
