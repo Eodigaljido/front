@@ -1,12 +1,7 @@
-import { Send } from "lucide-react-native";
+import { FileImage, Send } from "lucide-react-native";
 import { useState } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
-import {
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { StyleSheet, TextInput, TouchableOpacity, View } from "react-native";
 export interface MessageInputProps {
   /** Placeholder text for the input */
   placeholder?: string;
@@ -34,6 +29,9 @@ export const MessageInput = ({
 
   return (
     <View style={[styles.container, style]}>
+      <TouchableOpacity>
+        <FileImage color={"#999"} />
+      </TouchableOpacity>
       <TextInput
         style={styles.input}
         value={text}
@@ -69,10 +67,10 @@ const styles = StyleSheet.create({
     height: 50,
     width: "70%",
     paddingHorizontal: 15,
-    backgroundColor: "#000",
+    backgroundColor: "#f0f0f0",
     borderRadius: 30,
     fontSize: 13,
-    color: "#fff",
+    color: "#000",
     marginRight: 6,
   },
   sendButton: {
