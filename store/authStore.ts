@@ -27,6 +27,7 @@ export const useAuthStore = create<AuthState>(set => ({
   login: async data => {
     const res = await apiLogin(data);
     await tokenStorage.saveTokens(res.accessToken, res.refreshToken);
+    await tokenStorage.saveUserUuid(res.user.uuid);
     set({
       accessToken: res.accessToken,
       refreshToken: res.refreshToken,
@@ -38,6 +39,7 @@ export const useAuthStore = create<AuthState>(set => ({
   register: async data => {
     const res = await apiRegister(data);
     await tokenStorage.saveTokens(res.accessToken, res.refreshToken);
+    await tokenStorage.saveUserUuid(res.user.uuid);
     set({
       accessToken: res.accessToken,
       refreshToken: res.refreshToken,
@@ -64,8 +66,15 @@ export const useAuthStore = create<AuthState>(set => ({
   restoreSession: async () => {
     const accessToken = await tokenStorage.getAccessToken();
     const refreshToken = await tokenStorage.getRefreshToken();
+    const userUuid = await tokenStorage.getUserUuid();
     if (accessToken && refreshToken) {
-      set({ accessToken, refreshToken, isAuthenticated: true });
+      set({
+        accessToken,
+        refreshToken,
+        isAuthenticated: true,
+        // user는 uuid만 복원 — 나머지 필드는 필요 시 프로필 API로 갱신
+        user: userUuid ? { uuid: userUuid } as any : null,
+      });
     }
   },
 }));
