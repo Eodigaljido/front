@@ -12,7 +12,7 @@ export const BackButton = () => {
       accessibilityLabel="뒤로 가기"
     >
       <View className="w-6 h-6 rounded-full justify-center items-center">
-        <ChevronLeft size={30} color="white" />
+        <ChevronLeft size={30} color="black" />
       </View>
     </TouchableOpacity>
   );
