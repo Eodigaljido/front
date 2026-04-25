@@ -45,10 +45,10 @@ export function BubbleChat({ text, isMine, sentAt, style }: BubbleChatProps) {
 const styles = StyleSheet.create({
   wrapper: {
     maxWidth: "100%",
-    marginTop: 25,
-    marginVertical: 5,
-    paddingVertical: 5,
-    paddingHorizontal: 20,
+    marginTop: 5,
+    marginVertical: 3,
+    paddingVertical: 3,
+    paddingHorizontal: 5,
   },
   wrapperMine: {
     alignSelf: "flex-end",
@@ -60,7 +60,7 @@ const styles = StyleSheet.create({
   },
   bubble: {
     paddingHorizontal: 18,
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderRadius: 20,
   },
   bubbleMine: {
