@@ -9,6 +9,8 @@ type Props = {
   latitude?: number;
   longitude?: number;
   level?: number;
+  /** WebView·임베드에서 지도 기본 UI·표기 최소화 */
+  chromeless?: boolean;
   allowTap?: boolean;
   avoidLineOverlap?: boolean;
   path?: MapPathPoint[];
@@ -95,6 +97,7 @@ function AppMapViewExpoGoogleMapsImpl({
   latitude = 37.5665,
   longitude = 126.978,
   level = 8,
+  chromeless = false,
   allowTap = true,
   path,
   segments,
@@ -213,7 +216,15 @@ function AppMapViewExpoGoogleMapsImpl({
       cameraPosition={cameraPosition}
       markers={nativeMarkers}
       polylines={polylines}
-      uiSettings={{ compassEnabled: true, myLocationButtonEnabled: false }}
+      uiSettings={{
+        compassEnabled: !chromeless,
+        myLocationButtonEnabled: false,
+        mapToolbarEnabled: !chromeless,
+        zoomControlsEnabled: !chromeless,
+        scaleBarEnabled: !chromeless,
+        indoorLevelPickerEnabled: false,
+      }}
+      properties={chromeless ? { selectionEnabled: false } : undefined}
     />
   );
 }
