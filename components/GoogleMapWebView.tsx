@@ -11,6 +11,8 @@ type Props = {
   latitude?: number;
   longitude?: number;
   level?: number;
+  /** true면 기본 UI·출처 컨트롤 등을 최대한 숨김(임베드용) */
+  chromeless?: boolean;
   /** false면 탭 클릭(POI/마커 선택 등)만 막고, 드래그/줌은 유지 */
   allowTap?: boolean;
   /** true면 겹치는 구간을 미세 오프셋해 선이 덜 겹치게 표시 */
@@ -30,7 +32,17 @@ function levelToGoogleZoom(level: number): number {
   return Math.max(8, Math.min(18, 20 - lv));
 }
 
-function buildGoogleBootstrapHtml(apiKey: string): string {
+function buildGoogleBootstrapHtml(apiKey: string, chromeless: boolean): string {
+  const chromelessOpts = chromeless
+    ? `
+        disableDefaultUI: true,
+        zoomControl: false,
+        clickableIcons: false,
+        keyboardShortcuts: false,
+        attributionControl: false,
+        rotateControl: false,
+`
+    : "";
   return `<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -38,6 +50,7 @@ function buildGoogleBootstrapHtml(apiKey: string): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <style>
     html, body, #map { width:100%; height:100%; margin:0; padding:0; background:#e5e7eb; }
+    ${chromeless ? `.gm-style-cc, .gm-style a[href^="https://maps.google.com/maps"], .gm-style a[href^="http://maps.google.com/maps"] { display:none !important; }` : ""}
   </style>
   <script>
     var map = null;
@@ -66,6 +79,7 @@ function buildGoogleBootstrapHtml(apiKey: string): string {
         mapTypeControl: false,
         streetViewControl: false,
         fullscreenControl: false,
+        ${chromelessOpts}
       });
 
       window.__applyRoute = function (spec) {
@@ -301,6 +315,7 @@ export default function GoogleMapWebView({
   latitude = 37.5665,
   longitude = 126.978,
   level = 8,
+  chromeless = false,
   allowTap = true,
   avoidLineOverlap = false,
   path,
@@ -316,7 +331,10 @@ export default function GoogleMapWebView({
   const stopsJson = useMemo(() => JSON.stringify(toLatLngJson(stops)), [stops]);
   const markersJson = useMemo(() => JSON.stringify(toMarkerJson(markers)), [markers]);
 
-  const bootstrapHtml = useMemo(() => (apiKey ? buildGoogleBootstrapHtml(apiKey) : ''), [apiKey]);
+  const bootstrapHtml = useMemo(
+    () => (apiKey ? buildGoogleBootstrapHtml(apiKey, chromeless) : ''),
+    [apiKey, chromeless],
+  );
 
   const webRef = useRef(null);
   const mapDomReadyRef = useRef(false);
@@ -389,12 +407,11 @@ export default function GoogleMapWebView({
         ]}
       >
         <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 8 }}>
-          Google Maps API 키가 필요해요
+          지도를 불러오려면 API 키가 필요해요
         </Text>
         <Text style={{ fontSize: 13, color: '#6b7280', lineHeight: 20 }}>
-          .env에 EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY를 넣고, Cloud Console에서
-          Maps JavaScript API를 켜 주세요.
-          있어요.
+          .env에 EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY를 설정하고, 콘솔에서
+          Maps JavaScript API를 활성화해 주세요.
         </Text>
       </View>
     );
@@ -405,7 +422,7 @@ export default function GoogleMapWebView({
       <View style={[{ flex: 1, backgroundColor: '#e5e7eb' }, style]}>
         <iframe
           ref={iframeRef}
-          title="google-map"
+          title="map"
           srcDoc={bootstrapHtml}
           onLoad={() => setWebIframeReady(true)}
           style={{ width: '100%', height: '100%', border: 'none' }}
