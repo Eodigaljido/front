@@ -8,11 +8,11 @@ interface RoomHeaderProps {
 export const RoomHeader = ({ roomName = "채팅방" }: RoomHeaderProps) => {
   return (
     <View
-      className="w-full bg-blue-500 flex-row items-center mt-6 px-4"
-      style={{ height: 64 }}
+      className="w-full bg-white flex-row items-center mt-10 px-4"
+      style={{ height: 50 }}
     >
       <BackButton />
-      <Text className="text-white text-lg font-bold flex-1 text-center">
+      <Text className="text-black text-lg font-bold flex-1 text-center">
         {roomName}
       </Text>
       <View className="w-6" />
