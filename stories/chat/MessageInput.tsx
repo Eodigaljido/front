@@ -1,13 +1,14 @@
-import { FileImage, Send } from "lucide-react-native";
+import { ImageUp, Map, Send, Sticker } from "lucide-react-native";
 import { useState } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 import { StyleSheet, TextInput, TouchableOpacity, View } from "react-native";
+
 export interface MessageInputProps {
-  /** Placeholder text for the input */
   placeholder?: string;
-  /** Called when the send button is pressed */
   onSend?: (message: string) => void;
-  /** Whether the input is disabled */
+  onImageSend?: () => void;
+  onStickerSend?: () => void;
+  onCourseSend?: () => void;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }
@@ -15,6 +16,9 @@ export interface MessageInputProps {
 export const MessageInput = ({
   placeholder = "메세지 입력",
   onSend,
+  onImageSend,
+  onStickerSend,
+  onCourseSend,
   disabled = false,
   style,
 }: MessageInputProps) => {
@@ -27,67 +31,89 @@ export const MessageInput = ({
     setText("");
   };
 
+  const canSend = !!text.trim() && !disabled;
+
   return (
-    <View style={[styles.container, style]}>
-      <TouchableOpacity>
-        <FileImage color={"#999"} />
-      </TouchableOpacity>
-      <TextInput
-        style={styles.input}
-        value={text}
-        onChangeText={setText}
-        placeholder={placeholder}
-        placeholderTextColor="#999"
-        editable={!disabled}
-      />
-      <TouchableOpacity
-        style={[
-          styles.sendButton,
-          (!text.trim() || disabled) && styles.sendButtonDisabled,
-        ]}
-        onPress={handleSend}
-        disabled={!text.trim() || disabled}
-        accessibilityRole="button"
-        accessibilityLabel="전송"
-      >
-        <Send color={"#fff"} />
-      </TouchableOpacity>
+    <View style={[style]}>
+      <View style={styles.inputWrapper}>
+        <TextInput
+          style={styles.input}
+          value={text}
+          onChangeText={setText}
+          placeholder={placeholder}
+          placeholderTextColor="#999"
+          editable={!disabled}
+        />
+
+        <TouchableOpacity
+          onPress={onCourseSend}
+          disabled={disabled}
+          accessibilityRole="button"
+          accessibilityLabel="루트 생성 및 공유"
+        >
+          <Map size={25} color="#999" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={onImageSend}
+          disabled={disabled}
+          accessibilityRole="button"
+          accessibilityLabel="이미지 보내기"
+        >
+          <ImageUp size={25} color="#999" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={onStickerSend}
+          disabled={disabled}
+          accessibilityRole="button"
+          accessibilityLabel="이모티콘 및 gif 보내기"
+        >
+          <Sticker size={25} color="#999" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.sendButton, !canSend && styles.sendButtonDisabled]}
+          onPress={handleSend}
+          disabled={!canSend}
+          accessibilityRole="button"
+          accessibilityLabel="전송"
+        >
+          <Send size={20} color="#fff" />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  inputWrapper: {
+    minWidth: "95%",
+    maxWidth: "95%",
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    borderTopColor: "#e0e0e0",
-  },
-  input: {
-    height: 50,
-    width: "70%",
-    paddingHorizontal: 15,
     backgroundColor: "#f0f0f0",
     borderRadius: 30,
+    paddingLeft: 16,
+    paddingRight: 6,
+    paddingVertical: 6,
+    gap: 15,
+  },
+  input: {
+    flex: 1,
+    minHeight: 40,
     fontSize: 13,
     color: "#000",
-    marginRight: 6,
   },
   sendButton: {
-    height: 50,
-    width: 50,
-    paddingHorizontal: 14,
-    borderRadius: 30,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: "#0088FF",
     justifyContent: "center",
     alignItems: "center",
   },
   sendButtonDisabled: {
-    backgroundColor: "#0088FF",
-  },
-  sendButtonText: {
-    color: "#fff",
-    fontSize: 13,
-    fontWeight: "600",
+    backgroundColor: "#b0d4ff",
   },
 });
