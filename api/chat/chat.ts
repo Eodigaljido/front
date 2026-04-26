@@ -65,3 +65,13 @@ export async function sendMessage(
   );
   return res.data;
 }
+
+// 읽음 처리
+export async function markAsRead(
+  accessToken: string,
+  roomUuid: string,
+): Promise<void> {
+  await instance.post(`/chats/${roomUuid}/read`, null, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
