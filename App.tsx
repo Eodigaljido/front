@@ -20,7 +20,6 @@ import AgeOnBoard from "./screens/onboard/AgeOnBoard";
 import ActivityOnBoard from "./screens/onboard/ActivityOnBoard";
 import GenderOnBoard from "./screens/onboard/GenderOnBoard";
 import OnBoardEnd from "./screens/onboard/OnBoardEnd";
-import { ChatRoomScreen } from "./screens/ChatRoomScreen";
 import ChatHomeScreen from "./screens/chat/ChatHomeScreen";
 import LoginScreen from "./screens/LoginScreen";
 import SignupScreen from "./screens/SignupScreen";
@@ -29,6 +28,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Platform } from "react-native";
 import { useAuthStore } from "./store/authStore";
 import { ActivityIndicator } from "react-native";
+import { ChatRoomScreen } from "./screens/chat/ChatRoomScreen";
 
 export type RootTabParamList = {
   Login: undefined;
