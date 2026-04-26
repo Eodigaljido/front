@@ -10,7 +10,7 @@ export function RoomFooter({ onSend }: RoomFooterProps) {
     <View
       className="w-full bg-gray-200 justify-center items-center"
       style={{
-        height: 165,
+        height: "15%",
         position: "absolute",
         bottom: 0,
         left: 0,
