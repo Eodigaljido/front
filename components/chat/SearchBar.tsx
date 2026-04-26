@@ -14,7 +14,7 @@ export const SearchBar = ({ onSearch }: SearchBarProps) => {
   };
 
   return (
-    <View className="flex-row items-center h-15 px-2 bg-gray-300 rounded-full">
+    <View className="flex-row items-center h-15 px-2 bg-gray-100 rounded-full">
       <Search size={20} strokeWidth={2} color="#6B7280" />
       <TextInput
         className="ml-2 flex-1 min-w-0 text-sm text-gray-800"
