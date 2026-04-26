@@ -1,7 +1,7 @@
 import { View, Text, TouchableOpacity, Image } from "react-native";
-import { useNavigation, NavigationProp } from "@react-navigation/native";
+import { useNavigation, NavigationProp, useFocusEffect } from "@react-navigation/native";
 import { getChatRooms, ChatRoom as ChatRoomType } from "@/api/chat/chat";
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { useAuthStore } from "@/store/authStore";
 import { useChatSocket, ChatSocketEvent } from "@/hooks/useChatSocket";
 
@@ -13,24 +13,22 @@ interface ChatRoomProps {
   searchQuery?: string;
 }
 
-// 시간 포맷 함수
-// TODO: 1분전, 2시간전, 3일전 등으로 포맷하기
 function formatTime(dateStr: string): string {
   if (!dateStr) return "";
   const date = new Date(dateStr);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
+  const diffMin = Math.floor(diffMs / (1000 * 60));
+  const diffHour = Math.floor(diffMs / (1000 * 60 * 60));
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-  if (diffDays === 0) {
-    return date.toLocaleTimeString("ko-KR", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-  } else if (diffDays === 1) {
-    return "어제";
-  } else if (diffDays < 7) {
+  if (diffMin < 1) {
+    return "방금 전";
+  } else if (diffMin < 60) {
+    return `${diffMin}분 전`;
+  } else if (diffHour < 24) {
+    return `${diffHour}시간 전`;
+  } else if (diffDays < 30) {
     return `${diffDays}일 전`;
   } else {
     return date.toLocaleDateString("ko-KR", {
@@ -64,9 +62,11 @@ export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
       });
   };
 
-  useEffect(() => {
-    fetchChatRooms();
-  }, [accessToken]);
+  useFocusEffect(
+    useCallback(() => {
+      fetchChatRooms();
+    }, [accessToken]),
+  );
 
   const filteredRooms = searchQuery
     ? chatRooms.filter(
