@@ -29,7 +29,6 @@ import { Platform } from "react-native";
 import { useAuthStore } from "./store/authStore";
 import { ActivityIndicator } from "react-native";
 import { ChatRoomScreen } from "./screens/chat/ChatRoomScreen";
-import BottomSheet from "./screens/BottomSheet";
 import BottomSheetTest from "./screens/BottomSheet";
 
 export type RootTabParamList = {
