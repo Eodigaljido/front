@@ -29,6 +29,8 @@ import { Platform } from "react-native";
 import { useAuthStore } from "./store/authStore";
 import { ActivityIndicator } from "react-native";
 import { ChatRoomScreen } from "./screens/chat/ChatRoomScreen";
+import BottomSheet from "./screens/BottomSheet";
+import BottomSheetTest from "./screens/BottomSheet";
 
 export type RootTabParamList = {
   Login: undefined;
@@ -51,6 +53,9 @@ export type RootTabParamList = {
 
   // 채팅 관련
   ChatRoomScreen: undefined;
+
+  // 기타
+  BottomSheet: undefined;
 };
 
 export type RootStackParamList = {
@@ -78,6 +83,9 @@ export type RootStackParamList = {
 
   // 채팅 관련
   ChatRoomScreen: { roomUuid: string; roomName: string };
+
+  // 기타
+  BottomSheet: undefined;
 };
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
@@ -256,6 +264,7 @@ export default function App(): React.JSX.Element {
           <Stack.Screen name="GenderOnBoard" component={GenderOnBoard} />
           <Stack.Screen name="OnBoardEnd" component={OnBoardEnd} />
           <Stack.Screen name="ChatRoomScreen" component={ChatRoomScreen} />
+          <Stack.Screen name="BottomSheet" component={BottomSheetTest} />
         </Stack.Navigator>
       </NavigationContainer>
     </MockDataProvider>
