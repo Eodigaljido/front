@@ -1,10 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, ScrollView, View } from "react-native";
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { RouteProp, useRoute } from "@react-navigation/native";
 import { RoomHeader } from "@/components/chat/RoomHeader";
 import { RoomFooter } from "@/components/chat/RoomFooter";
 import { BubbleChat } from "@/stories/chat/BubbleChat";
-import { getRoomMessages, ChatMessage, markAsRead } from "@/api/chat/chat";
+import {
+  getRoomMessages,
+  ChatMessage,
+  markAsRead,
+  deleteMessage,
+  editMessage,
+} from "@/api/chat/chat";
 import { useAuthStore } from "@/store/authStore";
 import { useChatSocket, ChatSocketEvent } from "@/hooks/useChatSocket";
 import { RootStackParamList } from "@/App";
@@ -24,6 +39,13 @@ export const ChatRoomScreen = () => {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const scrollViewRef = useRef<ScrollView>(null);
+
+  const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(
+    null,
+  );
+  const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(
+    null,
+  );
 
   const { sendMessage: socketSend } = useChatSocket(
     roomUuid,
@@ -51,9 +73,7 @@ export const ChatRoomScreen = () => {
         );
       } else if (event.eventType === "MESSAGE_DELETED") {
         setMessages((prev) =>
-          prev.map((m) =>
-            m.uuid === event.payload.uuid ? { ...m, isDeleted: true } : m,
-          ),
+          prev.filter((m) => m.uuid !== event.payload.uuid),
         );
       }
     },
@@ -68,7 +88,7 @@ export const ChatRoomScreen = () => {
           limit: 50,
         });
         // API는 최신순 반환 -> 역순으로 정렬해 오래된 메시지가 위에 오도록
-        const chronological = [...fetched].reverse();
+        const chronological = [...fetched].reverse().filter((m) => !m.isDeleted);
         if (beforeUuid) {
           setMessages((prev) => [...chronological, ...prev]);
         } else {
@@ -105,6 +125,18 @@ export const ChatRoomScreen = () => {
   }, [fetchMessages]);
 
   const handleSend = async (text: string) => {
+    if (editingMessage) {
+      const targetUuid = editingMessage.uuid;
+      setEditingMessage(null);
+      if (!accessToken) return;
+      try {
+        await editMessage(accessToken, roomUuid, targetUuid, text);
+      } catch (err) {
+        console.error("[Chat] 메시지 수정 실패:", err);
+      }
+      return;
+    }
+
     const pendingUuid = `pending-${Date.now()}`;
     const optimistic: ChatMessage = {
       uuid: pendingUuid,
@@ -131,6 +163,30 @@ export const ChatRoomScreen = () => {
       console.error("[Chat] 메시지 전송 실패:", err);
       setMessages((prev) => prev.filter((m) => m.uuid !== pendingUuid));
     }
+  };
+
+  const handleDeleteMessage = async (msg: ChatMessage) => {
+    setSelectedMessage(null);
+    if (!accessToken) return;
+    setMessages((prev) => prev.filter((m) => m.uuid !== msg.uuid));
+    try {
+      await deleteMessage(accessToken, roomUuid, msg.uuid);
+    } catch (err) {
+      console.error("[Chat] 메시지 삭제 실패:", err);
+      setMessages((prev) => {
+        const inserted = [...prev, msg];
+        inserted.sort(
+          (a, b) =>
+            new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+        );
+        return inserted;
+      });
+    }
+  };
+
+  const handleEditStart = (msg: ChatMessage) => {
+    setSelectedMessage(null);
+    setEditingMessage(msg);
   };
 
   const handleScroll = async ({ nativeEvent }: any) => {
@@ -173,18 +229,118 @@ export const ChatRoomScreen = () => {
           {loadingMore && (
             <ActivityIndicator size="small" style={{ marginBottom: 8 }} />
           )}
-          {messages.map((msg) => (
-            <BubbleChat
-              key={msg.uuid}
-              text={msg.isDeleted ? "(삭제된 메시지)" : (msg.content ?? "")}
-              isMine={msg.senderUuid === userUuid}
-              sentAt={new Date(msg.createdAt)}
-              userName={msg.senderNickname}
-            />
-          ))}
+          {messages.map((msg) => {
+            const isMine = msg.senderUuid === userUuid;
+            return (
+              <BubbleChat
+                key={msg.uuid}
+                text={msg.content}
+                isMine={isMine}
+                sentAt={new Date(msg.createdAt)}
+                userName={msg.senderNickname}
+                isEdited={!!msg.editedAt}
+                onLongPress={isMine ? () => setSelectedMessage(msg) : undefined}
+              />
+            );
+          })}
         </ScrollView>
-        <RoomFooter onSend={handleSend} />
+        <RoomFooter
+          onSend={handleSend}
+          editingText={editingMessage ? editingMessage.content : null}
+          onCancelEdit={() => setEditingMessage(null)}
+        />
       </View>
+
+      <Modal
+        visible={!!selectedMessage}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedMessage(null)}
+      >
+        <Pressable
+          style={modalStyles.backdrop}
+          onPress={() => setSelectedMessage(null)}
+        >
+          <Pressable style={modalStyles.sheet}>
+            <Text style={modalStyles.title}>메시지 옵션</Text>
+            <TouchableOpacity
+              style={modalStyles.button}
+              onPress={() =>
+                selectedMessage && handleEditStart(selectedMessage)
+              }
+            >
+              <Text style={modalStyles.buttonTextEdit}>수정</Text>
+            </TouchableOpacity>
+            <View style={modalStyles.divider} />
+            <TouchableOpacity
+              style={modalStyles.button}
+              onPress={() =>
+                selectedMessage && handleDeleteMessage(selectedMessage)
+              }
+            >
+              <Text style={modalStyles.buttonTextDelete}>삭제</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[modalStyles.button, modalStyles.cancelButton]}
+              onPress={() => setSelectedMessage(null)}
+            >
+              <Text style={modalStyles.buttonTextCancel}>취소</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </>
   );
 };
+
+const modalStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  sheet: {
+    width: 260,
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 0,
+    overflow: "hidden",
+  },
+  title: {
+    textAlign: "center",
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#888",
+    paddingVertical: 12,
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: "#e0e0e0",
+    marginHorizontal: 16,
+  },
+  button: {
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  cancelButton: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#e0e0e0",
+    marginTop: 4,
+  },
+  buttonTextEdit: {
+    fontSize: 16,
+    color: "#0088FF",
+    fontWeight: "500",
+  },
+  buttonTextDelete: {
+    fontSize: 16,
+    color: "#FF3B30",
+    fontWeight: "500",
+  },
+  buttonTextCancel: {
+    fontSize: 16,
+    color: "#888",
+  },
+});
