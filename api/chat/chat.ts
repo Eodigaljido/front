@@ -75,3 +75,29 @@ export async function markAsRead(
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 }
+
+// 메세지 삭제
+export async function deleteMessage(
+  accessToken: string,
+  roomUuid: string,
+  messageUuid: string,
+): Promise<void> {
+  await instance.delete(`/chats/${roomUuid}/messages/${messageUuid}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// 메세지 수정
+export async function editMessage(
+  accessToken: string,
+  roomUuid: string,
+  messageUuid: string,
+  content: string,
+): Promise<ChatMessage> {
+  const res = await instance.patch<ChatMessage>(
+    `/chats/${roomUuid}/messages/${messageUuid}`,
+    { content },
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  return res.data;
+}
