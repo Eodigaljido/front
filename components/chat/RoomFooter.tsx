@@ -3,21 +3,31 @@ import { View } from "react-native";
 
 interface RoomFooterProps {
   onSend?: (message: string) => void;
+  editingText?: string | null;
+  onCancelEdit?: () => void;
 }
 
-export function RoomFooter({ onSend }: RoomFooterProps) {
+export function RoomFooter({
+  onSend,
+  editingText,
+  onCancelEdit,
+}: RoomFooterProps) {
   return (
     <View
       className="w-full bg-gray-200 justify-center items-center"
       style={{
-        height: "15%",
         position: "absolute",
-        bottom: 0,
+        bottom: "4%",
         left: 0,
         right: 0,
+        paddingVertical: 10,
       }}
     >
-      <MessageInput onSend={onSend} />
+      <MessageInput
+        onSend={onSend}
+        editingText={editingText}
+        onCancelEdit={onCancelEdit}
+      />
     </View>
   );
 }
