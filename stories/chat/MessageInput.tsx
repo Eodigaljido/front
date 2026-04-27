@@ -1,7 +1,7 @@
-import { ImageUp, Map, Send, Sticker } from "lucide-react-native";
-import { useState } from "react";
+import { ImageUp, Map, Send, Sticker, X } from "lucide-react-native";
+import { useEffect, useState } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
-import { StyleSheet, TextInput, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 export interface MessageInputProps {
   placeholder?: string;
@@ -11,6 +11,8 @@ export interface MessageInputProps {
   onCourseSend?: () => void;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
+  editingText?: string | null;
+  onCancelEdit?: () => void;
 }
 
 export const MessageInput = ({
@@ -21,8 +23,18 @@ export const MessageInput = ({
   onCourseSend,
   disabled = false,
   style,
+  editingText,
+  onCancelEdit,
 }: MessageInputProps) => {
   const [text, setText] = useState("");
+
+  useEffect(() => {
+    if (editingText != null) {
+      setText(editingText);
+    } else {
+      setText("");
+    }
+  }, [editingText]);
 
   const handleSend = () => {
     const trimmed = text.trim();
@@ -33,8 +45,18 @@ export const MessageInput = ({
 
   const canSend = !!text.trim() && !disabled;
 
+  const isEditing = editingText != null;
+
   return (
     <View style={[style]}>
+      {isEditing && (
+        <View style={styles.editingBanner}>
+          <Text style={styles.editingLabel}>메시지 수정 중</Text>
+          <TouchableOpacity onPress={onCancelEdit} accessibilityLabel="수정 취소">
+            <X size={16} color="#666" />
+          </TouchableOpacity>
+        </View>
+      )}
       <View style={styles.inputWrapper}>
         <TextInput
           style={styles.input}
@@ -115,5 +137,22 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     backgroundColor: "#b0d4ff",
+  },
+  editingBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    minWidth: "95%",
+    maxWidth: "95%",
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    backgroundColor: "#e8f0fe",
+    borderRadius: 10,
+    marginBottom: 6,
+  },
+  editingLabel: {
+    fontSize: 12,
+    color: "#0055cc",
+    fontWeight: "600",
   },
 });
