@@ -1,4 +1,4 @@
-import { View, Text, ViewStyle, StyleProp, StyleSheet } from "react-native";
+import { View, Text, ViewStyle, StyleProp, StyleSheet, TouchableOpacity } from "react-native";
 
 export interface BubbleChatProps {
   text: string;
@@ -7,6 +7,8 @@ export interface BubbleChatProps {
   profileImageUrl?: string;
   userName?: string;
   style?: StyleProp<ViewStyle>;
+  onLongPress?: () => void;
+  isEdited?: boolean;
 }
 
 function formatTime(date: Date) {
@@ -17,7 +19,7 @@ function formatTime(date: Date) {
   return `${displayHours}:${minutes} ${period}`;
 }
 
-export function BubbleChat({ text, isMine, sentAt, style }: BubbleChatProps) {
+export function BubbleChat({ text, isMine, sentAt, style, onLongPress, isEdited }: BubbleChatProps) {
   return (
     <View
       style={[
@@ -26,17 +28,23 @@ export function BubbleChat({ text, isMine, sentAt, style }: BubbleChatProps) {
         style,
       ]}
     >
-      <View
-        style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther]}
+      <TouchableOpacity
+        onLongPress={onLongPress}
+        disabled={!onLongPress}
+        activeOpacity={onLongPress ? 0.7 : 1}
       >
-        <Text
-          style={[styles.text, isMine ? styles.textMine : styles.textOther]}
+        <View
+          style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther]}
         >
-          {text}
-        </Text>
-      </View>
+          <Text
+            style={[styles.text, isMine ? styles.textMine : styles.textOther]}
+          >
+            {text}
+          </Text>
+        </View>
+      </TouchableOpacity>
       <Text style={[styles.time, isMine ? styles.timeMine : styles.timeOther]}>
-        {formatTime(sentAt)}
+        {isEdited ? `(수정됨) ${formatTime(sentAt)}` : formatTime(sentAt)}
       </Text>
     </View>
   );
