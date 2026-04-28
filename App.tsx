@@ -9,6 +9,7 @@ import {
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
 
+import { KeyboardProvider } from "react-native-keyboard-controller";
 import { MockDataProvider } from "./context/MockDataContext";
 import HomeScreen from "./screens/HomeScreen";
 import SharedRouteScreen from "./screens/SharedRouteScreen";
@@ -246,6 +247,7 @@ export default function App(): React.JSX.Element {
 
   return (
     <MockDataProvider>
+      <KeyboardProvider>
       <NavigationContainer>
         <StatusBar style="auto" />
         <Stack.Navigator
@@ -266,6 +268,7 @@ export default function App(): React.JSX.Element {
           <Stack.Screen name="BottomSheet" component={BottomSheetTest} />
         </Stack.Navigator>
       </NavigationContainer>
+      </KeyboardProvider>
     </MockDataProvider>
   );
 }
