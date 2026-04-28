@@ -22,6 +22,7 @@ import {
 } from "@/api/chat/chat";
 import { useAuthStore } from "@/store/authStore";
 import { useChatSocket, ChatSocketEvent } from "@/hooks/useChatSocket";
+import { useTypingIndicator } from "@/hooks/useTypingIndicator";
 import { RootStackParamList } from "@/App";
 import { StatusBar } from "expo-status-bar";
 
@@ -47,7 +48,9 @@ export const ChatRoomScreen = () => {
     null,
   );
 
-  const { sendMessage: socketSend } = useChatSocket(
+  const { handleTypingEvent, typingText } = useTypingIndicator(userUuid);
+
+  const { sendMessage: socketSend, sendTyping } = useChatSocket(
     roomUuid,
     (event: ChatSocketEvent) => {
       if (event.eventType === "MESSAGE_CREATED") {
@@ -77,6 +80,7 @@ export const ChatRoomScreen = () => {
         );
       }
     },
+    handleTypingEvent,
   );
 
   const fetchMessages = useCallback(
@@ -88,7 +92,9 @@ export const ChatRoomScreen = () => {
           limit: 50,
         });
         // API는 최신순 반환 -> 역순으로 정렬해 오래된 메시지가 위에 오도록
-        const chronological = [...fetched].reverse().filter((m) => !m.isDeleted);
+        const chronological = [...fetched]
+          .reverse()
+          .filter((m) => !m.isDeleted);
         if (beforeUuid) {
           setMessages((prev) => [...chronological, ...prev]);
         } else {
@@ -220,8 +226,8 @@ export const ChatRoomScreen = () => {
           className="flex-1"
           contentContainerStyle={{
             paddingHorizontal: 16,
-            paddingTop: 12,
-            paddingBottom: 180,
+            paddingTop: 16,
+            paddingBottom: 60,
           }}
           onScroll={handleScroll}
           scrollEventThrottle={400}
@@ -244,10 +250,16 @@ export const ChatRoomScreen = () => {
             );
           })}
         </ScrollView>
+        {typingText !== "" && (
+          <View style={typingStyles.container}>
+            <Text style={typingStyles.text}>{typingText}</Text>
+          </View>
+        )}
         <RoomFooter
           onSend={handleSend}
           editingText={editingMessage ? editingMessage.content : null}
           onCancelEdit={() => setEditingMessage(null)}
+          onTypingChange={sendTyping}
         />
       </View>
 
@@ -301,8 +313,7 @@ const modalStyles = StyleSheet.create({
     alignItems: "center",
   },
   sheet: {
-    width: 260,
-    backgroundColor: "#fff",
+    // width: 1000,
     borderRadius: 16,
     paddingVertical: 8,
     paddingHorizontal: 0,
@@ -342,5 +353,17 @@ const modalStyles = StyleSheet.create({
   buttonTextCancel: {
     fontSize: 16,
     color: "#888",
+  },
+});
+
+const typingStyles = StyleSheet.create({
+  container: {
+    paddingHorizontal: 20,
+    paddingVertical: 6,
+  },
+  text: {
+    fontSize: 12,
+    color: "#888",
+    fontStyle: "italic",
   },
 });
