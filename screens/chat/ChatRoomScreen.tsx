@@ -254,11 +254,7 @@ export const ChatRoomScreen = () => {
           })}
         </KeyboardAwareScrollView>
         <KeyboardStickyView offset={{ closed: 0, opened: 15 }}>
-          {typingText !== "" && (
-            <View style={typingStyles.container}>
-              <Text style={typingStyles.text}>{typingText}</Text>
-            </View>
-          )}
+          {typingText !== "" && <TypingText text={typingText} />}
           <MessageInput
             onSend={handleSend}
             editingText={editingMessage ? editingMessage.content : null}
@@ -361,6 +357,29 @@ const modalStyles = StyleSheet.create({
     color: "#888",
   },
 });
+
+const DOTS = [".", "..", "..."];
+
+function TypingText({ text }: { text: string }) {
+  const [dotIndex, setDotIndex] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setDotIndex((i) => (i + 1) % DOTS.length);
+    }, 400);
+    return () => clearInterval(id);
+  }, []);
+
+  const base = text.endsWith("...") ? text.slice(0, -3) : text;
+
+  return (
+    <View style={typingStyles.container}>
+      <Text style={typingStyles.text}>
+        {base}{DOTS[dotIndex]}
+      </Text>
+    </View>
+  );
+}
 
 const typingStyles = StyleSheet.create({
   container: {
