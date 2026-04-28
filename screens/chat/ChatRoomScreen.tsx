@@ -9,9 +9,12 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import {
+  KeyboardAwareScrollView,
+  KeyboardStickyView,
+} from "react-native-keyboard-controller";
 import { RouteProp, useRoute } from "@react-navigation/native";
 import { RoomHeader } from "@/components/chat/RoomHeader";
-import { RoomFooter } from "@/components/chat/RoomFooter";
 import { BubbleChat } from "@/stories/chat/BubbleChat";
 import {
   getRoomMessages,
@@ -25,6 +28,7 @@ import { useChatSocket, ChatSocketEvent } from "@/hooks/useChatSocket";
 import { useTypingIndicator } from "@/hooks/useTypingIndicator";
 import { RootStackParamList } from "@/App";
 import { StatusBar } from "expo-status-bar";
+import { MessageInput } from "@/stories/chat/MessageInput";
 
 type ChatRoomRouteProp = RouteProp<RootStackParamList, "ChatRoomScreen">;
 
@@ -221,13 +225,12 @@ export const ChatRoomScreen = () => {
       <StatusBar style="dark" />
       <View className="flex-1 bg-white">
         <RoomHeader roomName={roomName} />
-        <ScrollView
+        <KeyboardAwareScrollView
           ref={scrollViewRef}
           className="flex-1"
           contentContainerStyle={{
-            paddingHorizontal: 16,
-            paddingTop: 16,
-            paddingBottom: 60,
+            paddingHorizontal: 10,
+            paddingBottom: 20,
           }}
           onScroll={handleScroll}
           scrollEventThrottle={400}
@@ -249,18 +252,20 @@ export const ChatRoomScreen = () => {
               />
             );
           })}
-        </ScrollView>
-        {typingText !== "" && (
-          <View style={typingStyles.container}>
-            <Text style={typingStyles.text}>{typingText}</Text>
-          </View>
-        )}
-        <RoomFooter
-          onSend={handleSend}
-          editingText={editingMessage ? editingMessage.content : null}
-          onCancelEdit={() => setEditingMessage(null)}
-          onTypingChange={sendTyping}
-        />
+        </KeyboardAwareScrollView>
+        <KeyboardStickyView offset={{ closed: 0, opened: 15 }}>
+          {typingText !== "" && (
+            <View style={typingStyles.container}>
+              <Text style={typingStyles.text}>{typingText}</Text>
+            </View>
+          )}
+          <MessageInput
+            onSend={handleSend}
+            editingText={editingMessage ? editingMessage.content : null}
+            onCancelEdit={() => setEditingMessage(null)}
+            onTypingChange={sendTyping}
+          />
+        </KeyboardStickyView>
       </View>
 
       <Modal
@@ -313,7 +318,8 @@ const modalStyles = StyleSheet.create({
     alignItems: "center",
   },
   sheet: {
-    // width: 1000,
+    width: 260,
+    backgroundColor: "#fff",
     borderRadius: 16,
     paddingVertical: 8,
     paddingHorizontal: 0,
