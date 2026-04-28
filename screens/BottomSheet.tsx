@@ -16,7 +16,7 @@ export default function BottomSheetTest() {
   const insets = useSafeAreaInsets();
   const sheetOffY = useMemo(
     () => Math.min(300, Dimensions.get("window").height * 0.4),
-    []
+    [],
   );
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const sheetTranslateY = useRef(new Animated.Value(sheetOffY)).current;
