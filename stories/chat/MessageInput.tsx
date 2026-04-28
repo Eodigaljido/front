@@ -48,7 +48,7 @@ export const MessageInput = ({
   const isEditing = editingText != null;
 
   return (
-    <View style={[style]}>
+    <View style={[styles.container, style]}>
       {isEditing && (
         <View style={styles.editingBanner}>
           <Text style={styles.editingLabel}>메시지 수정 중</Text>
@@ -109,6 +109,10 @@ export const MessageInput = ({
 };
 
 const styles = StyleSheet.create({
+  container: {
+    width: "100%",
+    alignItems: "center",
+  },
   inputWrapper: {
     minWidth: "95%",
     maxWidth: "95%",
