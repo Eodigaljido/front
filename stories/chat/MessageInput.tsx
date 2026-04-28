@@ -1,4 +1,12 @@
-import { ImageUp, Key, Map, Send, Sticker, X } from "lucide-react-native";
+import {
+  Image,
+  ImageUp,
+  Key,
+  Map,
+  Send,
+  Sticker,
+  X,
+} from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 
@@ -165,7 +173,7 @@ export const MessageInput = ({
           accessibilityRole="button"
           accessibilityLabel="이미지 보내기"
         >
-          <ImageUp size={25} color="#999" />
+          <Image size={25} color="#999" />
         </TouchableOpacity>
 
         <TouchableOpacity
