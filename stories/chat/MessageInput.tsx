@@ -1,8 +1,7 @@
 import { ImageUp, Key, Map, Send, Sticker, X } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
-import { Platform } from "react-native";
-import { KeyboardAvoidingView } from "react-native";
+
 import {
   StyleSheet,
   Text,
@@ -195,25 +194,25 @@ export const MessageInput = ({
 const styles = StyleSheet.create({
   container: {
     width: "90%",
+    alignSelf: "center",
+    justifyContent: "center",
     alignItems: "center",
-    marginBottom: 40,
+    marginBottom: 25,
+    borderRadius: 15,
   },
   inputWrapper: {
-    width: "100%",
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#f0f0f0",
     borderRadius: 15,
     paddingLeft: 14,
     paddingRight: 6,
-    paddingVertical: 5,
+    paddingVertical: 6,
     gap: 15,
   },
   input: {
     flex: 1,
-    minHeight: 40,
     fontSize: 13,
-    color: "#000",
   },
   sendButton: {
     width: 36,
