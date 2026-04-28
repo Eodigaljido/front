@@ -5,27 +5,22 @@ interface RoomFooterProps {
   onSend?: (message: string) => void;
   editingText?: string | null;
   onCancelEdit?: () => void;
+  onTypingChange?: (isTyping: boolean) => void;
 }
 
 export function RoomFooter({
   onSend,
   editingText,
   onCancelEdit,
+  onTypingChange,
 }: RoomFooterProps) {
   return (
-    <View
-      className="w-full bg-white items-center justify-center"
-      style={{
-        height: 80,
-        bottom: "4%",
-        left: 0,
-        right: 0,
-      }}
-    >
+    <View className="w-full items-center justify-center">
       <MessageInput
         onSend={onSend}
         editingText={editingText}
         onCancelEdit={onCancelEdit}
+        onTypingChange={onTypingChange}
       />
     </View>
   );
