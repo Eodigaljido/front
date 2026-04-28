@@ -1,4 +1,11 @@
-import { View, Text, ViewStyle, StyleProp, StyleSheet, TouchableOpacity } from "react-native";
+import {
+  View,
+  Text,
+  ViewStyle,
+  StyleProp,
+  StyleSheet,
+  TouchableOpacity,
+} from "react-native";
 
 export interface BubbleChatProps {
   text: string;
@@ -19,7 +26,14 @@ function formatTime(date: Date) {
   return `${displayHours}:${minutes} ${period}`;
 }
 
-export function BubbleChat({ text, isMine, sentAt, style, onLongPress, isEdited }: BubbleChatProps) {
+export function BubbleChat({
+  text,
+  isMine,
+  sentAt,
+  style,
+  onLongPress,
+  isEdited,
+}: BubbleChatProps) {
   return (
     <View
       style={[
@@ -34,12 +48,15 @@ export function BubbleChat({ text, isMine, sentAt, style, onLongPress, isEdited 
         activeOpacity={onLongPress ? 0.7 : 1}
       >
         <View
-          style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther]}
+          style={[
+            styles.bubble,
+            isMine ? styles.bubbleMine : styles.bubbleOther,
+          ]}
         >
           <Text
             style={[styles.text, isMine ? styles.textMine : styles.textOther]}
           >
-            {text}
+            {text.replace(/ /g, ' ')}
           </Text>
         </View>
       </TouchableOpacity>
@@ -79,6 +96,7 @@ const styles = StyleSheet.create({
   },
   text: {
     fontSize: 16,
+    wordBreak: "break-all",
   },
   textMine: {
     color: "#FFFFFF",
