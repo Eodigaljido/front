@@ -14,16 +14,28 @@ export type ChatSocketEvent =
   | { eventType: "MESSAGE_EDITED"; payload: ChatMessage }
   | { eventType: "MESSAGE_DELETED"; payload: ChatMessage };
 
+export interface TypingEvent {
+  senderUuid: string;
+  senderNickname: string;
+  isTyping: boolean;
+}
+
 export function useChatSocket(
   roomUuid: string | string[],
   onEvent: (event: ChatSocketEvent) => void,
+  onTypingEvent?: (event: TypingEvent) => void,
 ) {
   const clientRef = useRef<Client | null>(null);
   const accessToken = useAuthStore((s) => s.accessToken);
   const onEventRef = useRef(onEvent);
+  const onTypingEventRef = useRef(onTypingEvent);
 
   useEffect(() => {
     onEventRef.current = onEvent;
+  });
+
+  useEffect(() => {
+    onTypingEventRef.current = onTypingEvent;
   });
 
   // Stable string key so the effect only re-runs when UUIDs actually change
@@ -50,6 +62,14 @@ export function useChatSocket(
               console.warn("[STOMP] 메시지 파싱 오류:", frame.body);
             }
           });
+          client.subscribe(`/topic/chat/${uuid}/typing`, (frame) => {
+            try {
+              const event: TypingEvent = JSON.parse(frame.body);
+              onTypingEventRef.current?.(event);
+            } catch {
+              console.warn("[STOMP] 타이핑 이벤트 파싱 오류:", frame.body);
+            }
+          });
         });
         client.subscribe("/user/queue/errors", (frame) => {
           console.warn("[STOMP] 서버 에러:", frame.body);
@@ -72,7 +92,7 @@ export function useChatSocket(
     };
   }, [accessToken, roomUuidKey]);
 
-  // sendMessage is only meaningful for a single-room connection
+  // sendMessage / sendTyping are only meaningful for a single-room connection
   const singleRoomUuid = Array.isArray(roomUuid) ? "" : roomUuid;
 
   const sendMessage = useCallback(
@@ -94,5 +114,16 @@ export function useChatSocket(
     [accessToken, singleRoomUuid],
   );
 
-  return { sendMessage };
+  const sendTyping = useCallback(
+    (isTyping: boolean): void => {
+      if (!singleRoomUuid || !clientRef.current?.connected) return;
+      clientRef.current.publish({
+        destination: `/app/chat/${singleRoomUuid}/typing`,
+        body: JSON.stringify({ isTyping }),
+      });
+    },
+    [singleRoomUuid],
+  );
+
+  return { sendMessage, sendTyping };
 }
