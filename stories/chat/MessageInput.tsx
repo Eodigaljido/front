@@ -1,7 +1,19 @@
-import { ImageUp, Map, Send, Sticker, X } from "lucide-react-native";
-import { useEffect, useState } from "react";
+import { ImageUp, Key, Map, Send, Sticker, X } from "lucide-react-native";
+import { useEffect, useRef, useState } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Platform } from "react-native";
+import { KeyboardAvoidingView } from "react-native";
+import {
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+
+const RESEND_INTERVAL_MS = 2000;
+const DEBOUNCE_MS = 2000;
+const STOP_DELAY_MS = 5000;
 
 export interface MessageInputProps {
   placeholder?: string;
@@ -13,6 +25,7 @@ export interface MessageInputProps {
   style?: StyleProp<ViewStyle>;
   editingText?: string | null;
   onCancelEdit?: () => void;
+  onTypingChange?: (isTyping: boolean) => void;
 }
 
 export const MessageInput = ({
@@ -25,22 +38,90 @@ export const MessageInput = ({
   style,
   editingText,
   onCancelEdit,
+  onTypingChange,
 }: MessageInputProps) => {
   const [text, setText] = useState("");
+
+  const onTypingChangeRef = useRef(onTypingChange);
+  useEffect(() => {
+    onTypingChangeRef.current = onTypingChange;
+  });
+
+  const isTypingActiveRef = useRef(false);
+  const lastTrueSentAtRef = useRef(0);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const currentTextRef = useRef("");
+
+  const clearTypingTimers = () => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    if (stopTimerRef.current) {
+      clearTimeout(stopTimerRef.current);
+      stopTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => () => clearTypingTimers(), []);
 
   useEffect(() => {
     if (editingText != null) {
       setText(editingText);
+      currentTextRef.current = editingText;
     } else {
       setText("");
+      currentTextRef.current = "";
     }
   }, [editingText]);
+
+  const handleTextChange = (newText: string) => {
+    setText(newText);
+    currentTextRef.current = newText;
+
+    if (!onTypingChangeRef.current) return;
+
+    clearTypingTimers();
+
+    const now = Date.now();
+    if (
+      !isTypingActiveRef.current ||
+      now - lastTrueSentAtRef.current >= RESEND_INTERVAL_MS
+    ) {
+      onTypingChangeRef.current(true);
+      isTypingActiveRef.current = true;
+      lastTrueSentAtRef.current = now;
+    }
+
+    debounceTimerRef.current = setTimeout(() => {
+      debounceTimerRef.current = null;
+      if (!currentTextRef.current.trim()) {
+        onTypingChangeRef.current?.(false);
+        isTypingActiveRef.current = false;
+      } else {
+        stopTimerRef.current = setTimeout(() => {
+          stopTimerRef.current = null;
+          onTypingChangeRef.current?.(false);
+          isTypingActiveRef.current = false;
+        }, STOP_DELAY_MS);
+      }
+    }, DEBOUNCE_MS);
+  };
 
   const handleSend = () => {
     const trimmed = text.trim();
     if (!trimmed) return;
+
+    clearTypingTimers();
+    if (isTypingActiveRef.current) {
+      onTypingChangeRef.current?.(false);
+      isTypingActiveRef.current = false;
+    }
+
     onSend?.(trimmed);
     setText("");
+    currentTextRef.current = "";
   };
 
   const canSend = !!text.trim() && !disabled;
@@ -52,7 +133,10 @@ export const MessageInput = ({
       {isEditing && (
         <View style={styles.editingBanner}>
           <Text style={styles.editingLabel}>메시지 수정 중</Text>
-          <TouchableOpacity onPress={onCancelEdit} accessibilityLabel="수정 취소">
+          <TouchableOpacity
+            onPress={onCancelEdit}
+            accessibilityLabel="수정 취소"
+          >
             <X size={16} color="#666" />
           </TouchableOpacity>
         </View>
@@ -61,7 +145,7 @@ export const MessageInput = ({
         <TextInput
           style={styles.input}
           value={text}
-          onChangeText={setText}
+          onChangeText={handleTextChange}
           placeholder={placeholder}
           placeholderTextColor="#999"
           editable={!disabled}
@@ -110,19 +194,19 @@ export const MessageInput = ({
 
 const styles = StyleSheet.create({
   container: {
-    width: "100%",
+    width: "90%",
     alignItems: "center",
+    marginBottom: 40,
   },
   inputWrapper: {
-    minWidth: "95%",
-    maxWidth: "95%",
+    width: "100%",
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#f0f0f0",
-    borderRadius: 30,
-    paddingLeft: 16,
+    borderRadius: 15,
+    paddingLeft: 14,
     paddingRight: 6,
-    paddingVertical: 6,
+    paddingVertical: 5,
     gap: 15,
   },
   input: {
