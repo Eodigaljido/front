@@ -29,3 +29,21 @@ export const MyMessage: Story = {
     sentAt: new Date(),
   },
 };
+
+export const EditedMessage: Story = {
+  args: {
+    text: "안녕하세요! 반갑습니다.",
+    isMine: false,
+    sentAt: new Date(),
+    userName: "홍길동",
+    isEdited: true,
+  },
+};
+
+export const TypingIndicator: Story = {
+  args: {
+    isMine: false,
+    isTyping: true,
+    userName: "홍길동",
+  },
+};
