@@ -14,13 +14,12 @@ export function RoomFooter({
 }: RoomFooterProps) {
   return (
     <View
-      className="w-full bg-gray-200 justify-center items-center"
+      className="w-full bg-white items-center justify-center"
       style={{
-        position: "absolute",
+        height: 80,
         bottom: "4%",
         left: 0,
         right: 0,
-        paddingVertical: 10,
       }}
     >
       <MessageInput
