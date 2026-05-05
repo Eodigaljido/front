@@ -10,6 +10,8 @@ import {
 import { useEffect, useRef, useState } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 
+import * as ImagePicker from "expo-image-picker";
+
 import {
   StyleSheet,
   Text,
@@ -48,6 +50,7 @@ export const MessageInput = ({
   onTypingChange,
 }: MessageInputProps) => {
   const [text, setText] = useState("");
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const onTypingChangeRef = useRef(onTypingChange);
   useEffect(() => {
@@ -135,6 +138,20 @@ export const MessageInput = ({
 
   const isEditing = editingText != null;
 
+  const pickImageAsync = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      allowsEditing: false,
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      console.log(result);
+      setSelectedImage(result.assets[0].uri); // 선택한 이미지의 URI를 상태에 저장
+    } else {
+      console.log("이미지를 선택하지 않았습니다.");
+    }
+  };
+
   return (
     <View style={[styles.container, style]}>
       {isEditing && (
@@ -168,21 +185,12 @@ export const MessageInput = ({
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={onImageSend}
+          onPress={pickImageAsync}
           disabled={disabled}
           accessibilityRole="button"
           accessibilityLabel="이미지 보내기"
         >
           <Image size={25} color="#999" />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          onPress={onStickerSend}
-          disabled={disabled}
-          accessibilityRole="button"
-          accessibilityLabel="이모티콘 및 gif 보내기"
-        >
-          <Sticker size={25} color="#999" />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -201,7 +209,7 @@ export const MessageInput = ({
 
 const styles = StyleSheet.create({
   container: {
-    width: "90%",
+    width: "95%",
     alignSelf: "center",
     justifyContent: "center",
     alignItems: "center",
