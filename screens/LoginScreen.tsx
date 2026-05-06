@@ -116,11 +116,16 @@ export default function LoginScreen() {
             </TouchableOpacity>
 
             {/* 링크 */}
-            <View className="flex-row items-center gap-2 mt-2">
-              <Text className="text-sm text-gray-700">비밀번호 찾기</Text>
+            <View className="flex-row items-center gap-2 mt-4">
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => navigation.navigate('FindAccount')}
+              >
+                <Text className="text-sm text-gray-700">계정을 잊으셨나요?</Text>
+              </TouchableOpacity>
               <Text className="text-base font-black text-gray-300">|</Text>
-              <TouchableOpacity activeOpacity={0.3} onPress={() => navigation.navigate('Signup')}>
-                <Text className="text-sm text-gray-700">회원가입</Text>
+              <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('Signup')}>
+                <Text className="text-sm text-blue-500">회원가입</Text>
               </TouchableOpacity>
             </View>
 

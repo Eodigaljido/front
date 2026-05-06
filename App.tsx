@@ -213,7 +213,7 @@ export default function App(): React.JSX.Element {
             <StatusBar style="auto" />
             <Stack.Navigator
               screenOptions={{ headerShown: false }}
-              initialRouteName={isAuthenticated ? 'Tabs' : 'Login'}
+              initialRouteName={isAuthenticated ? 'Login' : 'Login'}
             >
               <Stack.Screen name="Tabs" component={TabNavigator} />
               <Stack.Screen name="RouteCreate" component={RouteCreateScreen} />

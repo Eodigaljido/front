@@ -6,11 +6,8 @@ export interface SendFindIdCodeRequest {
   phone: string;
 }
 
-export async function sendFindIdCode(
-  data: SendFindIdCodeRequest,
-): Promise<{ expiresInSeconds: number }> {
-  const res = await authApi.post<{ expiresInSeconds: number }>('auth/find-id/send-code', data);
-  return res.data;
+export async function sendFindIdCode(data: SendFindIdCodeRequest): Promise<void> {
+  await authApi.post('auth/find-account/send', data);
 }
 
 export interface VerifyFindIdCodeRequest {
@@ -21,10 +18,11 @@ export interface VerifyFindIdCodeRequest {
 export interface FindIdResult {
   userId: string;
   email: string;
+  emailLinked: boolean;
 }
 
 export async function verifyFindIdCode(data: VerifyFindIdCodeRequest): Promise<FindIdResult> {
-  const res = await authApi.post<FindIdResult>('auth/find-id/verify', data);
+  const res = await authApi.post<FindIdResult>('auth/find-account/verify', data);
   return res.data;
 }
 
@@ -32,35 +30,21 @@ export async function verifyFindIdCode(data: VerifyFindIdCodeRequest): Promise<F
 
 export interface SendResetPasswordCodeRequest {
   identifier: string;
+  phone: string;
 }
 
 export async function sendResetPasswordCode(
   data: SendResetPasswordCodeRequest,
-): Promise<{ expiresInSeconds: number }> {
-  const res = await authApi.post<{ expiresInSeconds: number }>(
-    'auth/reset-password/send-code',
-    data,
-  );
-  return res.data;
-}
-
-export interface VerifyResetPasswordCodeRequest {
-  identifier: string;
-  code: string;
-}
-
-export async function verifyResetPasswordCode(
-  data: VerifyResetPasswordCodeRequest,
 ): Promise<void> {
-  await authApi.post('auth/reset-password/verify-code', data);
+  await authApi.post('auth/reset-password/send', data);
 }
 
 export interface ResetPasswordRequest {
-  identifier: string;
+  phone: string;
   code: string;
   newPassword: string;
 }
 
 export async function resetPassword(data: ResetPasswordRequest): Promise<void> {
-  await authApi.post('auth/reset-password/reset', data);
+  await authApi.post('auth/reset-password/verify', data);
 }

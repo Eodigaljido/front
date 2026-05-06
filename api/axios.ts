@@ -1,4 +1,3 @@
-// api/axios.ts
 // @ts-nocheck
 import axios from 'axios';
 import { tokenStorage } from '../utils/tokenStorage';

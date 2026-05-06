@@ -6,6 +6,7 @@ import { Ionicons, Feather } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 
 import type { RootTabParamList } from '../App';
+import { useAuthStore } from '../store/authStore';
 
 type MenuItem = {
   id: string;
@@ -18,6 +19,7 @@ type MenuItem = {
 
 export default function AllScreen(): React.JSX.Element {
   const navigation = useNavigation<any>();
+  const logout = useAuthStore(s => s.logout);
 
   const routeMenus: MenuItem[] = [
     {
@@ -137,6 +139,25 @@ export default function AllScreen(): React.JSX.Element {
 
         {renderMenuSection(routeMenus)}
         {renderMenuSection(settingMenus)}
+
+        <Pressable
+          onPress={() =>
+            Alert.alert('로그아웃', '정말 로그아웃 하시겠습니까?', [
+              { text: '취소', style: 'cancel' },
+              {
+                text: '로그아웃',
+                style: 'destructive',
+                onPress: async () => {
+                  await logout();
+                  navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Login' }] });
+                },
+              },
+            ])
+          }
+          className="items-center py-4 mt-4 bg-white border border-gray-200 rounded-2xl active:opacity-80"
+        >
+          <Text className="text-base font-semibold text-red-500">로그아웃</Text>
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
