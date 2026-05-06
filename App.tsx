@@ -24,6 +24,7 @@ import OnBoardEnd from './screens/onboard/OnBoardEnd';
 import LoginScreen from './screens/LoginScreen';
 import SignupScreen from './screens/SignupScreen';
 import StartScreen from './screens/StartScreen';
+import FindAccountScreen from './screens/FindAccountScreen';
 import RouteCreateScreen from './screens/RouteCreateScreen';
 import ProfileSettingsScreen from './screens/ProfileSettingsScreen';
 
@@ -46,6 +47,7 @@ export type RootStackParamList = {
   // Auth 관련
   Login: undefined;
   Signup: undefined;
+  FindAccount: undefined;
   OnBoardStart: undefined;
   AreaOnBoard: undefined;
   AgeOnBoard: undefined;
@@ -87,7 +89,7 @@ function TabNavigator() {
   return (
     <Tab.Navigator
       initialRouteName="Home"
-      tabBar={props => (
+      tabBar={(props) => (
         <View
           pointerEvents="box-none"
           style={{
@@ -224,6 +226,7 @@ export default function App(): React.JSX.Element {
               <Stack.Screen name="OnBoardEnd" component={OnBoardEnd} />
               <Stack.Screen name="Login" component={LoginScreen} />
               <Stack.Screen name="Signup" component={SignupScreen} />
+              <Stack.Screen name="FindAccount" component={FindAccountScreen} />
               <Stack.Screen name="Start" component={StartScreen} />
             </Stack.Navigator>
           </NavigationContainer>
