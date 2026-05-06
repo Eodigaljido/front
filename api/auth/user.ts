@@ -23,3 +23,8 @@ export async function register(data: RegisterRequest): Promise<AuthResponse> {
   const res = await authApi.post<AuthResponse>('auth/register', data);
   return res.data;
 }
+
+// 로그아웃
+export async function logout(refreshToken: string): Promise<void> {
+  await authApi.post('auth/logout', { refreshToken });
+}
