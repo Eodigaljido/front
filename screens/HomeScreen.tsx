@@ -7,11 +7,15 @@ import {
   ScrollView,
   Pressable,
   Dimensions,
+  Image,
   ImageBackground,
   StyleSheet,
+  Animated,
   ActivityIndicator,
+  PanResponder,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import type { RootTabParamList } from "../App";
@@ -31,7 +35,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const HORIZONTAL_MARGIN = 16;
 const FEATURE_CARD_WIDTH = SCREEN_WIDTH * 0.62;
 
-const PAGE_BG = "#F2F2F2";
+const PAGE_BG = "#EAF3FF";
 
 const CARD_STYLE = {
   backgroundColor: "#fff",
@@ -49,7 +53,28 @@ const CARD_STYLE = {
 const WEATHER_AUTO_REFRESH_MS = 10 * 60 * 1000;
 const WEATHER_FETCH_TIMEOUT_MS = 12_000;
 const LOCATION_TIMEOUT_MS = 7000;
+const REFRESH_GUARD_TIMEOUT_MS = 15_000;
+const REFRESH_SPINNER_MAX_MS = 3_000;
+const PULL_INDICATOR_HIDDEN_Y = -84;
+const PULL_INDICATOR_MAX_DRAG = 76;
+const PULL_TRIGGER_DISTANCE = 44;
+// 새로고침 제스처는 날씨 파트(상단 영역)에서 시작한 경우에만 허용
+const PULL_CAPTURE_TOP_LIMIT = 260;
 const DEFAULT_WEATHER_LOCATION = "서울 강남구";
+const WEATHER_ICON_IMAGES = {
+  sunny: require("../assets/Weather/Sunny.png"),
+  partly_cloudy: require("../assets/Weather/PartlyCloudy.png"),
+  cloudy: require("../assets/Weather/PartlyCloudy.png"),
+  rainy: require("../assets/Weather/Rainy.png"),
+  shower: require("../assets/Weather/RainThunder.png"),
+  sleet: require("../assets/Weather/Snowy.png"),
+  snowy: require("../assets/Weather/Snowy.png"),
+} as const;
+
+function getWeatherIconSource(iconKey?: string) {
+  const key = String(iconKey ?? "").toLowerCase() as keyof typeof WEATHER_ICON_IMAGES;
+  return WEATHER_ICON_IMAGES[key] ?? WEATHER_ICON_IMAGES.partly_cloudy;
+}
 
 function formatFetchedAt(iso?: string): string {
   if (!iso) return "";
@@ -116,6 +141,7 @@ function SectionHeader({
 }
 
 export default function HomeScreen(): React.JSX.Element {
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<HomeNavProp>();
   const { savedCourseIds, publicCourseIds } = useMockData();
   const popularCourses = getPopularNearbyCourses(3);
@@ -125,14 +151,25 @@ export default function HomeScreen(): React.JSX.Element {
   const [integrated, setIntegrated] = useState<IntegratedWeatherResponse | null>(
     null,
   );
+  const [refreshing, setRefreshing] = useState(false);
+  const [showPullIndicator, setShowPullIndicator] = useState(false);
   const [heroLocationLabel, setHeroLocationLabel] = useState("위치 확인 중...");
   /** 지도 중심·마커 (GPS 또는 주소 지오코딩) */
   const [mapCoords, setMapCoords] = useState<{
     latitude: number;
     longitude: number;
   } | null>(null);
+  const [mapCenter, setMapCenter] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const [locatingMe, setLocatingMe] = useState(false);
 
   const weatherLocationRef = useRef("");
+  const pullDownY = useRef(new Animated.Value(PULL_INDICATOR_HIDDEN_Y)).current;
+  const pullProgress = useRef(new Animated.Value(0)).current;
+  const pullDistanceRef = useRef(0);
+  const refreshingRef = useRef(false);
 
   const applyGeocodedMapFallback = useCallback(async () => {
     try {
@@ -143,10 +180,14 @@ export default function HomeScreen(): React.JSX.Element {
         typeof g.latitude === "number" &&
         typeof g.longitude === "number"
       ) {
-        setMapCoords({ latitude: g.latitude, longitude: g.longitude });
+        const next = { latitude: g.latitude, longitude: g.longitude };
+        setMapCoords(next);
+        setMapCenter(next);
       }
     } catch {
-      setMapCoords({ latitude: 37.4979, longitude: 127.0276 });
+      const next = { latitude: 37.4979, longitude: 127.0276 };
+      setMapCoords(next);
+      setMapCenter(next);
     }
   }, []);
 
@@ -256,6 +297,10 @@ export default function HomeScreen(): React.JSX.Element {
           latitude: pos.coords.latitude,
           longitude: pos.coords.longitude,
         });
+        setMapCenter({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        });
 
         const addr = await Location.reverseGeocodeAsync({
           latitude: pos.coords.latitude,
@@ -285,8 +330,117 @@ export default function HomeScreen(): React.JSX.Element {
     };
   }, []);
 
+  const handlePullToRefresh = useCallback(async () => {
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
+    setRefreshing(true);
+    setShowPullIndicator(true);
+    const spinnerTimer = setTimeout(() => {
+      // 3초 이상 걸리면 로딩 UI는 숨김(작업은 계속 진행)
+      setRefreshing(false);
+      setShowPullIndicator(false);
+    }, REFRESH_SPINNER_MAX_MS);
+    try {
+      await Promise.race([
+        (async () => {
+          await resolveCurrentLocation();
+          await fetchWeather(undefined, undefined, { silent: true });
+        })(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("새로고침 시간 초과")), REFRESH_GUARD_TIMEOUT_MS),
+        ),
+      ]);
+    } catch {
+      // 시간 초과 또는 위치/네트워크 지연 시에도 로더가 고정되지 않도록 무조건 종료한다.
+    } finally {
+      clearTimeout(spinnerTimer);
+      refreshingRef.current = false;
+      setRefreshing(false);
+      setShowPullIndicator(false);
+    }
+  }, [resolveCurrentLocation, fetchWeather]);
+
   const displayLocation =
     integrated?.location?.trim() || heroLocationLabel || "위치 확인 중...";
+
+  const handleMoveToMyLocation = useCallback(async () => {
+    try {
+      setLocatingMe(true);
+      const perm = await Location.requestForegroundPermissionsAsync();
+      if (perm.status !== "granted") return;
+      const pos = await Promise.race([
+        Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("위치 시간 초과")),
+            LOCATION_TIMEOUT_MS,
+          ),
+        ),
+      ]);
+      const next = {
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+      };
+      setMapCoords(next);
+      setMapCenter(next);
+    } finally {
+      setLocatingMe(false);
+    }
+  }, []);
+
+  const pullPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, gestureState) =>
+          !refreshing &&
+          gestureState.y0 <= insets.top + PULL_CAPTURE_TOP_LIMIT &&
+          gestureState.dy > 6 &&
+          Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.1,
+        onPanResponderMove: (_, gestureState) => {
+          const d = Math.max(0, Math.min(PULL_INDICATOR_MAX_DRAG, gestureState.dy * 0.55));
+          pullDistanceRef.current = d;
+          setShowPullIndicator(d > 0);
+          pullDownY.setValue(PULL_INDICATOR_HIDDEN_Y + d);
+          pullProgress.setValue(d / PULL_INDICATOR_MAX_DRAG);
+        },
+        onPanResponderRelease: () => {
+          const shouldRefresh = pullDistanceRef.current >= PULL_TRIGGER_DISTANCE;
+          pullDistanceRef.current = 0;
+          Animated.spring(pullDownY, {
+            toValue: PULL_INDICATOR_HIDDEN_Y,
+            useNativeDriver: true,
+            tension: 70,
+            friction: 9,
+          }).start();
+          Animated.timing(pullProgress, {
+            toValue: 0,
+            duration: 120,
+            useNativeDriver: true,
+          }).start();
+          if (!shouldRefresh) setShowPullIndicator(false);
+          if (shouldRefresh) handlePullToRefresh();
+        },
+        onPanResponderTerminate: () => {
+          pullDistanceRef.current = 0;
+          Animated.spring(pullDownY, {
+            toValue: PULL_INDICATOR_HIDDEN_Y,
+            useNativeDriver: true,
+            tension: 70,
+            friction: 9,
+          }).start();
+          Animated.timing(pullProgress, {
+            toValue: 0,
+            duration: 120,
+            useNativeDriver: true,
+          }).start();
+          setShowPullIndicator(false);
+        },
+      }),
+    [handlePullToRefresh, insets.top, pullDownY, pullProgress, refreshing],
+  );
 
   return (
     <SafeAreaView
@@ -294,17 +448,54 @@ export default function HomeScreen(): React.JSX.Element {
       style={{ backgroundColor: PAGE_BG }}
       edges={["top"]}
     >
-      <ScrollView
-        className="flex-1"
-        showsVerticalScrollIndicator={false}
-        nestedScrollEnabled
-        contentContainerStyle={{
-          paddingBottom: 120,
-          paddingHorizontal: HORIZONTAL_MARGIN,
-        }}
-      >
-        {/* 상단 날씨: 카드 없이 페이지 배경에 직접 */}
-        <View className="pt-1">
+      <LinearGradient
+        colors={["#CFE9FF", "#DFF2FF", "#EAF3FF"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+      />
+      <View style={{ flex: 1 }}>
+        {showPullIndicator ? (
+          <Animated.View
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              top: insets.top + 6,
+              left: 0,
+              right: 0,
+              zIndex: 30,
+              alignItems: "center",
+              opacity: refreshing
+                ? 1
+                : pullProgress.interpolate({
+                    inputRange: [0, 0.35, 1],
+                    outputRange: [0.15, 0.45, 1],
+                    extrapolate: "clamp",
+                  }),
+              transform: [{ translateY: refreshing ? 0 : pullDownY }],
+            }}
+          >
+            <View
+              className="rounded-full px-3 py-2"
+              style={{ backgroundColor: "rgba(255,255,255,0.92)" }}
+            >
+              <ActivityIndicator size="small" color="#2563eb" />
+            </View>
+          </Animated.View>
+        ) : null}
+
+        <ScrollView
+          className="flex-1"
+          showsVerticalScrollIndicator={false}
+          scrollEnabled={false}
+          contentContainerStyle={{
+            paddingBottom: 24,
+            paddingHorizontal: HORIZONTAL_MARGIN,
+            flexGrow: 1,
+          }}
+        >
+        {/* 상단 날씨: 테두리 없이 그라데이션 배경 위에 배치 */}
+        <View className="pt-4" {...pullPanResponder.panHandlers}>
           <View className="flex-row items-start justify-between">
             <Text
               className="flex-1 pr-3 text-sm font-medium leading-5 text-gray-800"
@@ -317,7 +508,7 @@ export default function HomeScreen(): React.JSX.Element {
             </Pressable>
           </View>
 
-          <View className="mt-2 flex-row items-start justify-between">
+          <View className="mt-3 flex-row items-start justify-between">
             <View className="min-w-0 flex-1 pr-3">
               {weatherLoading && !integrated ? (
                 <View className="mt-2 flex-row items-center">
@@ -325,17 +516,17 @@ export default function HomeScreen(): React.JSX.Element {
                   <Text className="ml-2 text-sm text-gray-500">불러오는 중…</Text>
                 </View>
               ) : (
-                <Text className="text-[52px] font-extrabold leading-[56px] text-gray-900">
+                <Text className="text-[60px] font-extrabold leading-[64px] text-gray-900">
                   {integrated?.current != null
                     ? `${Math.round(integrated.current.temperature)}°`
                     : "--°"}
                 </Text>
               )}
               <View
-                className="mt-3 self-start rounded-full px-3 py-2"
-                style={{ backgroundColor: "#E8E8ED" }}
+                className="mt-4 self-start rounded-full px-4 py-2.5"
+                style={{ backgroundColor: "rgba(37, 99, 235, 0.14)" }}
               >
-                <Text className="text-xs font-semibold text-gray-700">
+                <Text className="text-sm font-semibold text-gray-700">
                   {precipHumidityChip}
                 </Text>
               </View>
@@ -372,23 +563,19 @@ export default function HomeScreen(): React.JSX.Element {
               ) : null}
             </View>
 
-            <View className="items-end" style={{ width: 92 }}>
+            <View className="items-end" style={{ width: 124 }}>
               <View
-                className="items-center justify-center overflow-hidden rounded-2xl"
+                className="items-center justify-center"
                 style={{
-                  width: 88,
-                  height: 88,
-                  backgroundColor: "#D9D9D9",
+                  width: 120,
+                  height: 120,
                 }}
               >
-                <Text
-                  className="px-2 text-center text-[11px] font-bold text-gray-600"
-                  numberOfLines={4}
-                >
-                  {integrated?.current?.weatherDesc
-                    ? `3D 아이콘\n(${integrated.current.weatherDesc})`
-                    : "3D 아이콘\n(추가 예정)"}
-                </Text>
+                <Image
+                  source={getWeatherIconSource(integrated?.current?.weatherIcon)}
+                  style={{ width: 112, height: 112 }}
+                  resizeMode="contain"
+                />
               </View>
             </View>
           </View>
@@ -398,16 +585,24 @@ export default function HomeScreen(): React.JSX.Element {
           ) : null}
         </View>
 
-        {/* 지도 (상단 라벨 없음, 임베드용 최소 UI) */}
+        {/* 지도 (세로 길이 확장) */}
         <View
           className="mt-5 overflow-hidden rounded-3xl"
-          style={{ height: 200, backgroundColor: "#e8eaed" }}
+          style={{
+            height: 258,
+            minHeight: 258,
+            maxHeight: 258,
+            backgroundColor: "rgba(147, 197, 253, 0.28)",
+          }}
+          onStartShouldSetResponder={() => true}
+          onMoveShouldSetResponder={() => true}
         >
           {mapCoords ? (
             <AppMapView
               chromeless
-              latitude={mapCoords.latitude}
-              longitude={mapCoords.longitude}
+              interactive
+              latitude={(mapCenter?.latitude ?? mapCoords.latitude) + 0.0012}
+              longitude={mapCenter?.longitude ?? mapCoords.longitude}
               level={4}
               markers={[
                 {
@@ -417,16 +612,37 @@ export default function HomeScreen(): React.JSX.Element {
                 },
               ]}
               allowTap
-              style={{ width: "100%", height: 200 }}
+              style={StyleSheet.absoluteFillObject}
             />
+            
           ) : (
-            <View className="flex-1 items-center justify-center px-4" style={{ minHeight: 200 }}>
+            <View className="flex-1 items-center justify-center px-4" style={{ minHeight: 258 }}>
               <ActivityIndicator size="small" color="#64748b" />
               <Text className="mt-2 text-center text-xs text-gray-500">
                 위치를 불러오면 지도가 표시됩니다.
               </Text>
             </View>
           )}
+
+          <Pressable
+            onPress={handleMoveToMyLocation}
+            disabled={locatingMe}
+            className="absolute bottom-3 right-3 flex-row items-center rounded-full px-3 py-2.5 active:opacity-90"
+            style={{
+              backgroundColor: "rgba(255,255,255,0.95)",
+              borderWidth: 1,
+              borderColor: "rgba(148,163,184,0.35)",
+            }}
+          >
+            {locatingMe ? (
+              <ActivityIndicator size="small" color="#2563eb" />
+            ) : (
+              <Ionicons name="locate" size={16} color="#2563eb" />
+            )}
+            <Text className="ml-1.5 text-xs font-semibold text-blue-700">
+              내 위치
+            </Text>
+          </Pressable>
         </View>
 
         {/* 저장 / 공개 코스 */}
@@ -436,9 +652,9 @@ export default function HomeScreen(): React.JSX.Element {
             className="active:opacity-95"
             style={{
               borderRadius: 20,
-              backgroundColor: "#fff",
+              backgroundColor: "rgba(255,255,255,0.95)",
               borderWidth: 1,
-              borderColor: "rgba(37, 99, 235, 0.14)",
+              borderColor: "rgba(37, 99, 235, 0.26)",
               paddingVertical: 16,
               paddingHorizontal: 16,
               shadowColor: "#1e3a8a",
@@ -451,7 +667,7 @@ export default function HomeScreen(): React.JSX.Element {
             <View className="flex-row items-center">
               <View
                 className="h-12 w-12 items-center justify-center rounded-2xl"
-                style={{ backgroundColor: "#eff6ff" }}
+                style={{ backgroundColor: "#dbeafe" }}
               >
                 <Ionicons name="bookmark" size={22} color="#2563eb" />
               </View>
@@ -464,7 +680,7 @@ export default function HomeScreen(): React.JSX.Element {
                 </Text>
               </View>
               <View className="items-end mr-1">
-                <Text className="text-2xl font-extrabold tabular-nums" style={{ color: "#1d4ed8" }}>
+                <Text className="text-2xl font-extrabold tabular-nums" style={{ color: "#1e40af" }}>
                   {savedCourseIds.length}
                 </Text>
                 <Text className="text-[10px] font-semibold text-gray-400">개</Text>
@@ -478,9 +694,9 @@ export default function HomeScreen(): React.JSX.Element {
             className="active:opacity-95"
             style={{
               borderRadius: 20,
-              backgroundColor: "#fff",
+              backgroundColor: "rgba(255,255,255,0.95)",
               borderWidth: 1,
-              borderColor: "rgba(22, 163, 74, 0.16)",
+              borderColor: "rgba(5, 150, 105, 0.26)",
               paddingVertical: 16,
               paddingHorizontal: 16,
               shadowColor: "#14532d",
@@ -493,7 +709,7 @@ export default function HomeScreen(): React.JSX.Element {
             <View className="flex-row items-center">
               <View
                 className="h-12 w-12 items-center justify-center rounded-2xl"
-                style={{ backgroundColor: "#ecfdf5" }}
+                style={{ backgroundColor: "#d1fae5" }}
               >
                 <Ionicons name="paper-plane" size={20} color="#059669" />
               </View>
@@ -516,114 +732,10 @@ export default function HomeScreen(): React.JSX.Element {
           </Pressable>
         </View>
 
-        {/* 주변 인기 코스 */}
-        <View style={{ marginTop: 22 }}>
-          <SectionHeader
-            title="주변 인기 코스"
-            actionLabel="자세히 보기"
-            onPressAction={() =>
-              navigation.navigate("SharedRoute", {
-                openFilter: true,
-                openAsPopular: true,
-              })
-            }
-          />
-          <Text className="mt-1 text-xs text-gray-500">
-            현재 지역을 기반으로 추천하는 코스예요!
-          </Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{
-              marginTop: 12,
-              paddingRight: HORIZONTAL_MARGIN,
-              gap: 12,
-            }}
-            style={{
-              marginLeft: -HORIZONTAL_MARGIN,
-              paddingLeft: HORIZONTAL_MARGIN,
-            }}
-          >
-            {popularCourses.map((course) => (
-              <Pressable
-                key={course.id}
-                style={{ width: FEATURE_CARD_WIDTH }}
-                onPress={() =>
-                  navigation.navigate("SharedRoute", {
-                    viewCourseId: course.id,
-                    openAsPopular: true,
-                  })
-                }
-              >
-                <View style={[CARD_STYLE, { padding: 0, overflow: "hidden" }]}>
-                  <View style={{ height: 88, backgroundColor: "#111827" }}>
-                    <ImageBackground
-                      source={require("../assets/banner.jpg")}
-                      resizeMode="cover"
-                      style={{ width: "100%", height: "100%" }}
-                      imageStyle={{ opacity: 0.85 }}
-                    >
-                      <View
-                        style={{
-                          ...StyleSheet.absoluteFillObject,
-                          backgroundColor: "rgba(0,0,0,0.35)",
-                        }}
-                      />
-                      <View className="flex-1 justify-end px-4 pb-3">
-                        <View className="flex-row items-center justify-between">
-                          <View className="rounded-full bg-white/15 px-2.5 py-1">
-                            <Text className="text-[11px] font-semibold text-white">
-                              {course.region} · {course.category}
-                            </Text>
-                          </View>
-                          <View className="flex-row items-center">
-                            <Ionicons
-                              name="eye-outline"
-                              size={14}
-                              color="#fff"
-                            />
-                            <Text className="ml-1 text-[11px] font-semibold text-white/90">
-                              {course.views}
-                            </Text>
-                          </View>
-                        </View>
-                      </View>
-                    </ImageBackground>
-                  </View>
-                  <View className="px-4 pb-4 pt-3">
-                    <Text
-                      className="text-sm font-extrabold text-gray-900"
-                      numberOfLines={2}
-                    >
-                      {course.title}
-                    </Text>
-                    <View className="mt-2 flex-row items-center">
-                      <View className="rounded bg-green-100 px-2 py-0.5">
-                        <Text className="text-[11px] font-semibold text-green-700">
-                          {course.departure}
-                        </Text>
-                      </View>
-                      <Ionicons
-                        name="arrow-forward"
-                        size={14}
-                        color="#9ca3af"
-                        style={{ marginHorizontal: 6 }}
-                      />
-                      <View className="rounded bg-red-100 px-2 py-0.5">
-                        <Text className="text-[11px] font-semibold text-red-700">
-                          {course.arrival}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                </View>
-              </Pressable>
-            ))}
-          </ScrollView>
-        </View>
 
         <View style={{ height: 10 }} />
-      </ScrollView>
+        </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
