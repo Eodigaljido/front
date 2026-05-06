@@ -13,6 +13,8 @@ type Props = {
   level?: number;
   /** true면 기본 UI·출처 컨트롤 등을 최대한 숨김(임베드용) */
   chromeless?: boolean;
+  /** false면 지도 제스처(드래그/줌/회전) 비활성화 */
+  interactive?: boolean;
   /** false면 탭 클릭(POI/마커 선택 등)만 막고, 드래그/줌은 유지 */
   allowTap?: boolean;
   /** true면 겹치는 구간을 미세 오프셋해 선이 덜 겹치게 표시 */
@@ -32,7 +34,11 @@ function levelToGoogleZoom(level: number): number {
   return Math.max(8, Math.min(18, 20 - lv));
 }
 
-function buildGoogleBootstrapHtml(apiKey: string, chromeless: boolean): string {
+function buildGoogleBootstrapHtml(
+  apiKey: string,
+  chromeless: boolean,
+  interactive: boolean,
+): string {
   const chromelessOpts = chromeless
     ? `
         disableDefaultUI: true,
@@ -80,6 +86,12 @@ function buildGoogleBootstrapHtml(apiKey: string, chromeless: boolean): string {
         streetViewControl: false,
         fullscreenControl: false,
         ${chromelessOpts}
+      });
+      map.setOptions({
+        draggable: ${interactive ? "true" : "false"},
+        scrollwheel: ${interactive ? "true" : "false"},
+        disableDoubleClickZoom: ${interactive ? "false" : "true"},
+        gestureHandling: ${interactive ? "'auto'" : "'none'"},
       });
 
       window.__applyRoute = function (spec) {
@@ -316,6 +328,7 @@ export default function GoogleMapWebView({
   longitude = 126.978,
   level = 8,
   chromeless = false,
+  interactive = true,
   allowTap = true,
   avoidLineOverlap = false,
   path,
@@ -332,8 +345,9 @@ export default function GoogleMapWebView({
   const markersJson = useMemo(() => JSON.stringify(toMarkerJson(markers)), [markers]);
 
   const bootstrapHtml = useMemo(
-    () => (apiKey ? buildGoogleBootstrapHtml(apiKey, chromeless) : ''),
-    [apiKey, chromeless],
+    () =>
+      apiKey ? buildGoogleBootstrapHtml(apiKey, chromeless, interactive) : '',
+    [apiKey, chromeless, interactive],
   );
 
   const webRef = useRef(null);
