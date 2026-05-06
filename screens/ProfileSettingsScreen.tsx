@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -17,19 +17,68 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
+import { useAuthStore } from '../store/authStore';
+import {
+  deleteMyAccount,
+  deleteMyProfileImage,
+  getMyProfile,
+  patchMyPhone,
+  patchMyProfile,
+  patchMyProfileImage,
+} from '../api/users';
 
 const DEFAULT_AVATAR_URI = 'https://i.pravatar.cc/100?img=5';
 
 export default function ProfileSettingsScreen(): React.JSX.Element {
   const navigation = useNavigation<any>();
+  const setUser = useAuthStore(s => s.setUser);
+  const logout = useAuthStore(s => s.logout);
 
   const [avatarUri, setAvatarUri] = useState<string>(DEFAULT_AVATAR_URI);
   const [pickingImage, setPickingImage] = useState(false);
-  const [nickname, setNickname] = useState('juyung');
-  const [email] = useState('btm.email2769@gmail.com');
+  const [nickname, setNickname] = useState('');
+  const [email, setEmail] = useState('');
   const [bio, setBio] = useState('');
+  const [phone, setPhone] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(true);
   const [publicProfile, setPublicProfile] = useState(true);
   const [emailNotif, setEmailNotif] = useState(false);
+
+  const syncAuthUser = useCallback(
+    (profile: any) => {
+      setUser({
+        id: profile.id ?? 0,
+        uuid: profile.uuid,
+        userId: profile.userId ?? '',
+        email: profile.email ?? '',
+        nickname: profile.nickname ?? '',
+        role: profile.role ?? 'USER',
+      });
+    },
+    [setUser],
+  );
+
+  const loadProfile = useCallback(async () => {
+    setLoadingProfile(true);
+    try {
+      const me = await getMyProfile();
+      setNickname(me.nickname ?? '');
+      setEmail(me.email ?? '');
+      setBio((me.bio ?? me.introduction ?? '').trim());
+      setPhone(me.phone ?? '');
+      setAvatarUri(me.profileImageUrl || DEFAULT_AVATAR_URI);
+      syncAuthUser(me);
+    } catch (e: any) {
+      Alert.alert('오류', e?.message ?? '프로필을 불러오지 못했습니다.');
+    } finally {
+      setLoadingProfile(false);
+    }
+  }, [syncAuthUser]);
+
+  useEffect(() => {
+    loadProfile();
+  }, [loadProfile]);
 
   const pickFromGallery = useCallback(async () => {
     if (pickingImage) return;
@@ -52,18 +101,78 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
       });
 
       if (!result.canceled && result.assets[0]?.uri) {
-        setAvatarUri(result.assets[0].uri);
+        const asset = result.assets[0];
+        const updated = await patchMyProfileImage({
+          uri: asset.uri,
+          name: asset.fileName ?? 'profile.jpg',
+          type: asset.mimeType ?? 'image/jpeg',
+        });
+        setAvatarUri(updated.profileImageUrl || DEFAULT_AVATAR_URI);
+        syncAuthUser(updated);
       }
-    } catch {
-      Alert.alert('오류', '이미지를 불러오지 못했습니다. 다시 시도해 주세요.');
+    } catch (e: any) {
+      Alert.alert('오류', e?.message ?? '이미지를 변경하지 못했습니다.');
     } finally {
       setPickingImage(false);
     }
-  }, [pickingImage]);
+  }, [pickingImage, syncAuthUser]);
 
-  const handleSave = () => {
-    Alert.alert('저장 완료', '프로필이 저장되었습니다. (로컬만 반영)');
-  };
+  const handleSave = useCallback(async () => {
+    if (saving) return;
+    if (!nickname.trim()) {
+      Alert.alert('입력 확인', '닉네임을 입력해 주세요.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const updated = await patchMyProfile({
+        nickname: nickname.trim(),
+        bio: bio.trim(),
+      });
+      if (phone.trim()) {
+        await patchMyPhone(phone.trim());
+      }
+      syncAuthUser(updated);
+      Alert.alert('저장 완료', '프로필이 서버에 저장되었습니다.');
+    } catch (e: any) {
+      Alert.alert('오류', e?.message ?? '프로필 저장에 실패했습니다.');
+    } finally {
+      setSaving(false);
+    }
+  }, [saving, nickname, bio, phone, syncAuthUser]);
+
+  const handleDeleteProfileImage = useCallback(async () => {
+    try {
+      const updated = await deleteMyProfileImage();
+      setAvatarUri(updated.profileImageUrl || DEFAULT_AVATAR_URI);
+      syncAuthUser(updated);
+    } catch (e: any) {
+      Alert.alert('오류', e?.message ?? '프로필 이미지를 삭제하지 못했습니다.');
+    }
+  }, [syncAuthUser]);
+
+  const handleDeleteAccount = useCallback(() => {
+    Alert.alert(
+      '회원 탈퇴',
+      '정말 탈퇴하시겠어요? 이 작업은 되돌릴 수 없습니다.',
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '탈퇴',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteMyAccount();
+              await logout();
+              navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+            } catch (e: any) {
+              Alert.alert('오류', e?.message ?? '회원 탈퇴에 실패했습니다.');
+            }
+          },
+        },
+      ],
+    );
+  }, [logout, navigation]);
 
   return (
     <SafeAreaView className="flex-1 bg-[#f5f5f9]" edges={['top', 'left', 'right']}>
@@ -86,6 +195,13 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
           contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 40 }}
           keyboardShouldPersistTaps="handled"
         >
+          {loadingProfile ? (
+            <View className="items-center justify-center py-12">
+              <ActivityIndicator size="large" color="#111827" />
+              <Text className="mt-3 text-sm text-gray-500">프로필 불러오는 중...</Text>
+            </View>
+          ) : null}
+
           <View className="items-center rounded-2xl border border-gray-200 bg-white px-4 py-6">
             <View className="relative">
               <Image
@@ -110,6 +226,9 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
               className="mt-3 active:opacity-70 disabled:opacity-50"
             >
               <Text className="text-sm font-semibold text-blue-600">갤러리에서 사진 선택</Text>
+            </Pressable>
+            <Pressable onPress={handleDeleteProfileImage} className="mt-2 active:opacity-70">
+              <Text className="text-xs font-semibold text-gray-500">기본 이미지로 변경</Text>
             </Pressable>
             <Text className="mt-2 text-center text-xs text-gray-500">
               사진은 다른 유저에게 프로필에 표시됩니다.
@@ -151,6 +270,18 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
                 textAlignVertical="top"
               />
             </View>
+
+            <View className="border-t border-gray-100 py-3">
+              <Text className="mb-1.5 text-xs text-gray-500">전화번호</Text>
+              <TextInput
+                value={phone}
+                onChangeText={setPhone}
+                placeholder="010-0000-0000"
+                placeholderTextColor="#9ca3af"
+                keyboardType="phone-pad"
+                className="text-base font-semibold text-gray-900"
+              />
+            </View>
           </View>
 
           <View className="mt-4 rounded-2xl border border-gray-200 bg-white px-4 py-2">
@@ -187,9 +318,21 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
 
           <Pressable
             onPress={handleSave}
-            className="mt-6 items-center rounded-2xl bg-gray-900 py-4 active:opacity-90"
+            disabled={saving || loadingProfile}
+            className="mt-6 items-center rounded-2xl bg-gray-900 py-4 active:opacity-90 disabled:opacity-50"
           >
-            <Text className="text-base font-semibold text-white">변경 사항 저장</Text>
+            {saving ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text className="text-base font-semibold text-white">변경 사항 저장</Text>
+            )}
+          </Pressable>
+
+          <Pressable
+            onPress={handleDeleteAccount}
+            className="mt-3 items-center rounded-2xl border border-rose-200 bg-white py-4 active:opacity-90"
+          >
+            <Text className="text-base font-semibold text-rose-600">회원 탈퇴</Text>
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
