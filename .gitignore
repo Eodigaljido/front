@@ -44,4 +44,6 @@ yarn-error.*
 
 
 .idea/*
+*storybook.log
+storybook-static
 .env

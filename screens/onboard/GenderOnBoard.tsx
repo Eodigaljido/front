@@ -10,12 +10,20 @@ import Description from "@/components/onboard/Description";
 import RadioButton from "@/components/onboard/RadioButton";
 import PreviousButton from "@/components/onboard/PreviousButton";
 import SubmitButton from "@/components/onboard/SubmitButton";
+import { useAuthStore } from "@/store/authStore";
+import { completeOnboardingStep } from "@/api/onboard/step";
 
 export default function GenderOnBoard(): React.JSX.Element {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
+  const accessToken = useAuthStore((s) => s.accessToken);
   const [selectedGender, setSelectedGender] = React.useState<string | null>(
     null,
   );
+
+  const handleNext = async () => {
+    await completeOnboardingStep(accessToken!, 4, selectedGender);
+    navigation.navigate("OnBoardEnd");
+  };
 
   const toggle = (item: string) => {
     setSelectedGender(item);
@@ -52,14 +60,11 @@ export default function GenderOnBoard(): React.JSX.Element {
           />
         </View>
       </View>
-      <View className="flex-row items-center justify-between px-10 mt-20">
+      <View className="flex-row items-center justify-between px-10 mt-10">
         <PreviousButton
           onPress={() => navigation.navigate("ActivityOnBoard")}
         />
-        <SubmitButton
-          disabled={selectedGender === null}
-          onPress={() => navigation.navigate("OnBoardEnd")}
-        />
+        <SubmitButton disabled={selectedGender === null} onPress={handleNext} />
       </View>
     </SafeAreaView>
   );

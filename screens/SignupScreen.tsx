@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+  import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -56,7 +56,7 @@ export default function SignupScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [isPhoneVerified, setIsPhoneVerified] = useState(false);
   const [otpExpiry, setOtpExpiry] = useState(TIMER_SECONDS);
-  const registerStore = useAuthStore(s => s.register);
+  const registerStore = useAuthStore((s: ReturnType<typeof useAuthStore.getState>) => s.register);
 
   const userIdRef = useRef<TextInput>(null);
   const emailRef = useRef<TextInput>(null);
