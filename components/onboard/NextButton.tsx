@@ -10,7 +10,7 @@ const NextButton = ({
   return (
     <TouchableOpacity
       style={{ width: 150, height: 50 }}
-      className={`ml-4 rounded-full items-center justify-center ${
+      className={`rounded-full items-center justify-center ${
         disabled ? "bg-gray-300" : "bg-blue-500"
       }`}
       disabled={disabled}

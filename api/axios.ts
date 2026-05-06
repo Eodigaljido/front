@@ -1,10 +1,10 @@
 // @ts-nocheck
-import axios from 'axios';
-import { tokenStorage } from '../utils/tokenStorage';
+import axios from "axios";
+import { tokenStorage } from "../utils/tokenStorage";
 
 export const instance = axios.create({
   baseURL: process.env.EXPO_PUBLIC_API_BASE_URL,
-  headers: { 'Content-Type': 'application/json' },
+  headers: { "Content-Type": "application/json" },
   withCredentials: true,
 });
 
@@ -13,7 +13,9 @@ instance.interceptors.request.use(async config => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
-  console.log('[REQ]', config.method?.toUpperCase(), config.baseURL + config.url, config.data);
+  if (__DEV__) {
+    console.log('[REQ]', config.method?.toUpperCase(), config.baseURL + config.url, config.data);
+  }
   return config;
 });
 
@@ -27,7 +29,9 @@ function processQueue(newToken: string) {
 
 instance.interceptors.response.use(
   res => {
-    console.log('[RES]', res.status, res.config.url, res.data);
+    if (__DEV__) {
+      console.log('[RES]', res.status, res.config.url, res.data);
+    }
     return res;
   },
   async err => {
