@@ -6,9 +6,6 @@ import {
   TouchableOpacity,
   Image,
   ScrollView,
-  Modal,
-  Pressable,
-  StyleSheet,
   KeyboardAvoidingView,
   Platform,
   Alert,
@@ -21,10 +18,10 @@ import { RootStackParamList } from '../App';
 import { usePasswordMask } from '../hooks/usePasswordMask';
 import { sendPhoneCode, verifyPhoneCode } from '../api/auth';
 import { useAuthStore } from '../store/authStore';
+import { OtpModal } from '../components/OtpModal';
 
 type SignupNavProp = NativeStackNavigationProp<RootStackParamList, 'Signup'>;
 
-const OTP_LENGTH = 6;
 const TIMER_SECONDS = 5 * 60;
 const DEBOUNCE_MS = 500;
 
@@ -45,181 +42,6 @@ function validateField(field: string, value: string): string {
     default:
       return '';
   }
-}
-
-interface OtpModalProps {
-  visible: boolean;
-  phone: string;
-  accessToken: string;
-  initialSeconds: number;
-  onClose: () => void;
-  onVerified: () => void;
-}
-
-function OtpModal({
-  visible,
-  phone,
-  accessToken,
-  initialSeconds,
-  onClose,
-  onVerified,
-}: OtpModalProps) {
-  const [otp, setOtp] = useState(Array(OTP_LENGTH).fill(''));
-  const [seconds, setSeconds] = useState(initialSeconds);
-  const [isLoading, setIsLoading] = useState(false);
-  const inputRefs = useRef<(TextInput | null)[]>([]);
-
-  useEffect(() => {
-    if (!visible) return;
-    setOtp(Array(OTP_LENGTH).fill(''));
-    setSeconds(initialSeconds);
-    const interval = setInterval(() => {
-      setSeconds(prev => (prev <= 1 ? (clearInterval(interval), 0) : prev - 1));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [visible, initialSeconds]);
-
-  const formatTime = (s: number) => {
-    const m = Math.floor(s / 60);
-    const sec = s % 60;
-    return `${m}:${sec.toString().padStart(2, '0')}`;
-  };
-
-  const handleChange = (text: string, index: number) => {
-    const digits = text.replace(/[^0-9]/g, '');
-
-    // 붙여넣기: 2자리 이상이면 첫 칸부터 순서대로 채움
-    if (digits.length > 1) {
-      const next = Array(OTP_LENGTH).fill('');
-      digits.slice(0, OTP_LENGTH).split('').forEach((d, i) => { next[i] = d; });
-      setOtp(next);
-      inputRefs.current[Math.min(digits.length, OTP_LENGTH) - 1]?.focus();
-      return;
-    }
-
-    // 이미 값 있는 칸은 입력 무시
-    if (otp[index]) return;
-
-    const next = [...otp];
-    next[index] = digits;
-    setOtp(next);
-    if (digits && index < OTP_LENGTH - 1) {
-      inputRefs.current[index + 1]?.focus();
-    }
-  };
-
-  const handleKeyPress = (e: { nativeEvent: { key: string } }, index: number) => {
-    if (e.nativeEvent.key === 'Backspace') {
-      const next = [...otp];
-      if (!otp[index] && index > 0) {
-        next[index - 1] = '';
-        setOtp(next);
-        inputRefs.current[index - 1]?.focus();
-      } else {
-        next[index] = '';
-        setOtp(next);
-        if (index > 0) inputRefs.current[index - 1]?.focus();
-      }
-    }
-  };
-
-  const handleResend = async () => {
-    try {
-      const res = await sendPhoneCode({ phone, purpose: 'REGISTER' }, accessToken);
-      setOtp(Array(OTP_LENGTH).fill(''));
-      setSeconds(res.expiresInSeconds);
-      setTimeout(() => inputRefs.current[0]?.focus(), 100);
-    } catch {
-      Alert.alert('오류', '인증번호 재발송에 실패했습니다.');
-    }
-  };
-
-  const handleVerify = async () => {
-    const code = otp.join('');
-    if (code.length < OTP_LENGTH) {
-      Alert.alert('입력 오류', `${OTP_LENGTH}자리 인증번호를 모두 입력해주세요.`);
-      return;
-    }
-    setIsLoading(true);
-    try {
-      await verifyPhoneCode({ phone, code, purpose: 'REGISTER' }, accessToken);
-      onVerified();
-    } catch (err: any) {
-      const msg = err?.response?.data?.message ?? '인증번호가 올바르지 않습니다.';
-      Alert.alert('인증 실패', msg);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={StyleSheet.absoluteFill} className="bg-black/40" onPress={onClose} />
-      <View className="absolute bottom-0 left-0 right-0 px-8 bg-white rounded-t-3xl pt-7 pb-14">
-        {/* 닫기 */}
-        <TouchableOpacity
-          onPress={onClose}
-          className="absolute top-5 right-6"
-          hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-        >
-          <Text className="text-xl font-bold text-gray-800">✕</Text>
-        </TouchableOpacity>
-
-        {/* 타이틀 & 타이머 */}
-        <Text className="mb-1 text-lg font-bold text-center text-black">인증번호 입력</Text>
-        <Text className="mb-8 text-base font-semibold text-center text-blue-500">
-          {formatTime(seconds)}
-        </Text>
-
-        {/* OTP 입력 박스 */}
-        <View className="flex-row justify-center gap-5 mb-10">
-          {otp.map((digit, i) => (
-            <View key={i} className="items-center">
-              <TextInput
-                ref={ref => {
-                  inputRefs.current[i] = ref;
-                }}
-                value={digit}
-                onChangeText={text => handleChange(text, i)}
-                onKeyPress={e => handleKeyPress(e, i)}
-                keyboardType="number-pad"
-                style={{
-                  width: 40,
-                  fontSize: 26,
-                  fontWeight: 'bold',
-                  textAlign: 'center',
-                  color: '#111',
-                  paddingBottom: 4,
-                }}
-              />
-              <View style={{ width: 40, height: 2, backgroundColor: '#333', marginTop: 2 }} />
-            </View>
-          ))}
-        </View>
-
-        {/* 확인 버튼 */}
-        <TouchableOpacity
-          activeOpacity={0.7}
-          disabled={isLoading}
-          onPress={handleVerify}
-          className="items-center justify-center w-full h-12 mb-4 bg-blue-500 rounded-full"
-        >
-          {isLoading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text className="font-bold text-white">확인</Text>
-          )}
-        </TouchableOpacity>
-
-        {/* 재발급 */}
-        <TouchableOpacity onPress={handleResend} className="items-center">
-          <Text className="text-sm text-gray-500" style={{ textDecorationLine: 'underline' }}>
-            인증번호 재발급
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </Modal>
-  );
 }
 
 export default function SignupScreen() {
@@ -564,13 +386,20 @@ export default function SignupScreen() {
 
       <OtpModal
         visible={modalVisible}
-        phone={phone.replace(/\D/g, '')}
-        accessToken=""
         initialSeconds={otpExpiry}
         onClose={() => setModalVisible(false)}
+        onVerify={async code => {
+          const rawPhone = phone.replace(/\D/g, '');
+          await verifyPhoneCode({ phone: rawPhone, code, purpose: 'REGISTER' }, '');
+        }}
         onVerified={() => {
           setIsPhoneVerified(true);
           setModalVisible(false);
+        }}
+        onResend={async () => {
+          const rawPhone = phone.replace(/\D/g, '');
+          const res = await sendPhoneCode({ phone: rawPhone, purpose: 'REGISTER' });
+          return res.expiresInSeconds;
         }}
       />
     </SafeAreaView>
