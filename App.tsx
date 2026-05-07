@@ -31,6 +31,7 @@ import { useAuthStore } from "./store/authStore";
 import { ActivityIndicator } from "react-native";
 import { ChatRoomScreen } from "./screens/chat/ChatRoomScreen";
 import BottomSheetTest from "./screens/BottomSheet";
+import ChatCreatingScreen from "./screens/chat/ChatCreatingScreen";
 
 export type RootTabParamList = {
   Login: undefined;
@@ -53,6 +54,7 @@ export type RootTabParamList = {
 
   // 채팅 관련
   ChatRoomScreen: undefined;
+  ChatCreatingScreen: undefined;
 
   // 기타
   BottomSheet: undefined;
@@ -83,6 +85,7 @@ export type RootStackParamList = {
 
   // 채팅 관련
   ChatRoomScreen: { roomUuid: string; roomName: string };
+  ChatCreatingScreen: undefined;
 
   // 기타
   BottomSheet: undefined;
@@ -248,26 +251,30 @@ export default function App(): React.JSX.Element {
   return (
     <MockDataProvider>
       <KeyboardProvider>
-      <NavigationContainer>
-        <StatusBar style="auto" />
-        <Stack.Navigator
-          initialRouteName="Login"
-          screenOptions={{ headerShown: false }}
-        >
-          <Stack.Screen name="Login" component={LoginScreen} />
-          <Stack.Screen name="Signup" component={SignupScreen} />
-          <Stack.Screen name="Tabs" component={TabNavigator} />
-          <Stack.Screen name="Home" component={HomeScreen} />
-          <Stack.Screen name="OnBoardStart" component={OnBoardStart} />
-          <Stack.Screen name="AreaOnBoard" component={AreaOnBoard} />
-          <Stack.Screen name="AgeOnBoard" component={AgeOnBoard} />
-          <Stack.Screen name="ActivityOnBoard" component={ActivityOnBoard} />
-          <Stack.Screen name="GenderOnBoard" component={GenderOnBoard} />
-          <Stack.Screen name="OnBoardEnd" component={OnBoardEnd} />
-          <Stack.Screen name="ChatRoomScreen" component={ChatRoomScreen} />
-          <Stack.Screen name="BottomSheet" component={BottomSheetTest} />
-        </Stack.Navigator>
-      </NavigationContainer>
+        <NavigationContainer>
+          <StatusBar style="auto" />
+          <Stack.Navigator
+            initialRouteName="Login"
+            screenOptions={{ headerShown: false }}
+          >
+            <Stack.Screen name="Login" component={LoginScreen} />
+            <Stack.Screen name="Signup" component={SignupScreen} />
+            <Stack.Screen name="Tabs" component={TabNavigator} />
+            <Stack.Screen name="Home" component={HomeScreen} />
+            <Stack.Screen name="OnBoardStart" component={OnBoardStart} />
+            <Stack.Screen name="AreaOnBoard" component={AreaOnBoard} />
+            <Stack.Screen name="AgeOnBoard" component={AgeOnBoard} />
+            <Stack.Screen name="ActivityOnBoard" component={ActivityOnBoard} />
+            <Stack.Screen name="GenderOnBoard" component={GenderOnBoard} />
+            <Stack.Screen name="OnBoardEnd" component={OnBoardEnd} />
+            <Stack.Screen name="ChatRoomScreen" component={ChatRoomScreen} />
+            <Stack.Screen
+              name="ChatCreatingScreen"
+              component={ChatCreatingScreen}
+            />
+            <Stack.Screen name="BottomSheet" component={BottomSheetTest} />
+          </Stack.Navigator>
+        </NavigationContainer>
       </KeyboardProvider>
     </MockDataProvider>
   );
