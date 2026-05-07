@@ -101,3 +101,19 @@ export async function editMessage(
   );
   return res.data;
 }
+
+export async function createChatRoom(
+  accessToken: string,
+  memberUuids: string[],
+  name: string,
+  image: string | null,
+): Promise<ChatRoom> {
+  const body: Record<string, unknown> = { name, memberUuids };
+  if (image != null) body.image = image;
+  const res = await instance.post<ChatRoom>(
+    "/chats",
+    body,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  return res.data;
+}
