@@ -135,7 +135,7 @@ function buildGoogleBootstrapHtml(
         var linePath = pathPts.map(function (c) {
           return { lat: Number(c.lat), lng: Number(c.lng) };
         });
-        if (avoidLineOverlap) {
+        if (avoidLineOverlap && linePath.length >= 24) {
           linePath = separateOverlap(linePath);
         }
         var markerPath = stopPts.length
@@ -156,7 +156,7 @@ function buildGoogleBootstrapHtml(
             var segPath = (seg.points || []).map(function (c) {
               return { lat: Number(c.lat), lng: Number(c.lng) };
             });
-            if (avoidLineOverlap) {
+            if (avoidLineOverlap && segPath.length >= 24) {
               segPath = separateOverlap(segPath);
             }
             if (segPath.length < 2) continue;
@@ -166,7 +166,7 @@ function buildGoogleBootstrapHtml(
               geodesic: true,
               strokeColor: seg.color || '#2563eb',
               strokeOpacity: seg.dashed ? 0 : 0.94,
-              strokeWeight: Number(seg.width) || 5,
+              strokeWeight: Number(seg.width) || 4,
               icons: seg.dashed
                 ? [
                     {
@@ -175,19 +175,7 @@ function buildGoogleBootstrapHtml(
                       repeat: '20px',
                     },
                   ]
-                : [
-                    {
-                      icon: {
-                        path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                        strokeOpacity: 0,
-                        fillOpacity: 0.95,
-                        fillColor: '#ffffff',
-                        scale: 2.8,
-                      },
-                      offset: '10%',
-                      repeat: '42px',
-                    },
-                  ],
+                : [],
               map: map,
             });
             polylines.push(poly);
@@ -199,20 +187,8 @@ function buildGoogleBootstrapHtml(
             geodesic: true,
             strokeColor: '#2563eb',
             strokeOpacity: 0.92,
-            strokeWeight: 5,
-            icons: [
-              {
-                icon: {
-                  path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                  strokeOpacity: 0,
-                  fillOpacity: 0.95,
-                  fillColor: '#ffffff',
-                  scale: 2.6,
-                },
-                offset: '10%',
-                repeat: '46px',
-              },
-            ],
+            strokeWeight: 4,
+            icons: [],
             map: map,
           });
           polylines.push(polyline);
@@ -224,15 +200,31 @@ function buildGoogleBootstrapHtml(
                 return { lat: p.lat, lng: p.lng };
               });
           markerSource.forEach(function (pos, idx) {
+            var markerColor =
+              pos.color ||
+              (pos.kind === 'start'
+                ? '#2563eb'
+                : pos.kind === 'end'
+                  ? '#ef4444'
+                  : '#64748b');
+            var markerScale = pos.kind === 'start' || pos.kind === 'end' ? 8.5 : 7.2;
             var m = new google.maps.Marker({
               position: { lat: Number(pos.lat), lng: Number(pos.lng) },
               map: map,
               clickable: allowTap,
+              icon: {
+                path: google.maps.SymbolPath.CIRCLE,
+                fillColor: markerColor,
+                fillOpacity: 1,
+                strokeColor: '#ffffff',
+                strokeWeight: 2,
+                scale: markerScale,
+              },
               label: pos.label
                 ? {
                     text: String(pos.label),
                     color: '#ffffff',
-                    fontSize: '13px',
+                    fontSize: '12px',
                     fontWeight: '700',
                   }
                 : undefined,
@@ -305,10 +297,24 @@ function toLatLngJson(points: MapPathPoint[] | undefined): { lat: number; lng: n
     .map((p) => ({ lat: p.latitude, lng: p.longitude }));
 }
 
-function toMarkerJson(points: MapMarkerPoint[] | undefined): { lat: number; lng: number; label?: string }[] {
+function toMarkerJson(
+  points: MapMarkerPoint[] | undefined,
+): {
+  lat: number;
+  lng: number;
+  label?: string;
+  kind?: "start" | "waypoint" | "end";
+  color?: string;
+}[] {
   return (points ?? [])
     .filter((p) => p && typeof p.latitude === 'number' && typeof p.longitude === 'number')
-    .map((p) => ({ lat: p.latitude, lng: p.longitude, label: p.label }));
+    .map((p) => ({
+      lat: p.latitude,
+      lng: p.longitude,
+      label: p.label,
+      kind: p.kind,
+      color: p.color,
+    }));
 }
 
 function toSegmentsJson(segments: MapRouteSegment[] | undefined) {

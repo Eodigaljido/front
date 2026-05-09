@@ -157,6 +157,7 @@ function AppMapViewExpoGoogleMapsImpl({
         coordinates: { latitude: c.latitude, longitude: c.longitude },
         title: c.label ? `${c.label}` : undefined,
         subtitle: c.label ? " " : undefined,
+        tintColor: c.color,
         isTappable: allowTap,
       }));
     }
@@ -194,7 +195,7 @@ function AppMapViewExpoGoogleMapsImpl({
         id: s.id,
         coordinates: toCoordinates(s.points),
         color: s.color || ROUTE_COLOR,
-        width: s.width ?? 5,
+        width: s.width ?? 4,
         geodesic: true,
         lineDashPattern: s.dashed ? [8, 8] : undefined,
       }));
@@ -205,7 +206,7 @@ function AppMapViewExpoGoogleMapsImpl({
         id: "route",
         coordinates: lineCoords,
         color: ROUTE_COLOR,
-        width: 5,
+        width: 4,
         geodesic: true,
       },
     ];
