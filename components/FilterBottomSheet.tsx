@@ -110,18 +110,25 @@ export default function FilterBottomSheet({
         </Animated.View>
         <Animated.View style={{ transform: [{ translateY: sheetTranslateY }] }}>
           <View
-            className="rounded-t-3xl bg-white pt-3 pb-2"
-            style={{ paddingHorizontal: 18, maxHeight: sheetMaxH }}
+            className="rounded-t-3xl bg-[#F8FBFF] pt-3 pb-2"
+            style={{
+              backgroundColor: "#F8FBFF",
+              paddingHorizontal: 18,
+              maxHeight: sheetMaxH,
+              borderTopWidth: 0.5,
+              borderColor: "rgba(37,99,235,0.15)",
+            }}
           >
             <View className="items-center pb-2">
-              <View className="h-1.5 w-12 rounded-full bg-gray-200" />
+              <View className="h-1.5 w-12 rounded-full bg-blue-100" />
             </View>
 
             <View className="mb-4 flex-row items-center justify-between">
-              <Text className="text-[22px] font-extrabold text-gray-900">필터</Text>
+              <Text className="text-[20px] font-semibold text-[#1A1A2E]">필터</Text>
               <Pressable
                 onPress={onClose}
-                className="h-9 w-9 items-center justify-center rounded-full bg-gray-100"
+                className="h-9 w-9 items-center justify-center rounded-full bg-white"
+                style={{ borderWidth: 0.5, borderColor: "rgba(37,99,235,0.15)" }}
               >
                 <Text className="text-base font-bold text-gray-500">×</Text>
               </Pressable>
@@ -133,7 +140,7 @@ export default function FilterBottomSheet({
               keyboardShouldPersistTaps="handled"
               nestedScrollEnabled
             >
-              <Text className="mb-2 text-xs font-semibold tracking-wide text-gray-400">카테고리</Text>
+              <Text className="mb-2 text-xs font-semibold tracking-wide text-slate-400">카테고리</Text>
               <View className="mb-5 flex-row flex-wrap gap-2">
                 {CATEGORIES.map(cat => (
                   (() => {
@@ -144,12 +151,12 @@ export default function FilterBottomSheet({
                     onPress={() => onCategoryToggle(cat)}
                     className="rounded-full border px-4 py-2.5"
                     style={{
-                      borderColor: selected ? '#047857' : '#e5e7eb',
-                      backgroundColor: selected ? '#059669' : '#ffffff',
+                      borderColor: selected ? '#2563EB' : '#dbeafe',
+                      backgroundColor: selected ? '#2563EB' : '#ffffff',
                     }}
                   >
                     <Text
-                      className="text-sm font-semibold"
+                      className="text-sm font-medium"
                       style={{ color: selected ? '#ffffff' : '#4b5563' }}
                     >
                       {cat}
@@ -160,7 +167,7 @@ export default function FilterBottomSheet({
                 ))}
               </View>
 
-              <Text className="mb-2 text-xs font-semibold tracking-wide text-gray-400">지역</Text>
+              <Text className="mb-2 text-xs font-semibold tracking-wide text-slate-400">지역</Text>
               <View className="mb-5 flex-row flex-wrap gap-2">
                 {REGIONS.map(region => (
                   (() => {
@@ -171,12 +178,12 @@ export default function FilterBottomSheet({
                     onPress={() => onRegionToggle(region)}
                     className="rounded-full border px-4 py-2.5"
                     style={{
-                      borderColor: selected ? '#047857' : '#e5e7eb',
-                      backgroundColor: selected ? '#059669' : '#ffffff',
+                      borderColor: selected ? '#2563EB' : '#dbeafe',
+                      backgroundColor: selected ? '#2563EB' : '#ffffff',
                     }}
                   >
                     <Text
-                      className="text-sm font-semibold"
+                      className="text-sm font-medium"
                       style={{ color: selected ? '#ffffff' : '#4b5563' }}
                     >
                       {region}
@@ -187,7 +194,7 @@ export default function FilterBottomSheet({
                 ))}
               </View>
 
-              <Text className="mb-2 text-xs font-semibold tracking-wide text-gray-400">정렬기준</Text>
+              <Text className="mb-2 text-xs font-semibold tracking-wide text-slate-400">정렬기준</Text>
               <View className="mb-2 flex-row flex-wrap gap-2">
                 {SORT_OPTIONS.map(opt => (
                   (() => {
@@ -198,12 +205,12 @@ export default function FilterBottomSheet({
                     onPress={() => onSortToggle(opt)}
                     className="rounded-full border px-4 py-2.5"
                     style={{
-                      borderColor: selected ? '#047857' : '#e5e7eb',
-                      backgroundColor: selected ? '#059669' : '#ffffff',
+                      borderColor: selected ? '#2563EB' : '#dbeafe',
+                      backgroundColor: selected ? '#2563EB' : '#ffffff',
                     }}
                   >
                     <Text
-                      className="text-sm font-semibold"
+                      className="text-sm font-medium"
                       style={{ color: selected ? '#ffffff' : '#4b5563' }}
                     >
                       {opt}
@@ -215,27 +222,27 @@ export default function FilterBottomSheet({
               </View>
             </ScrollView>
 
-            <View className="mt-3 flex-row border-t border-gray-100 pt-3">
+            <View className="mt-3 flex-row border-t border-blue-100 pt-3">
               <Pressable
                 onPress={onReset}
-                className="items-center rounded-2xl border border-gray-200 bg-white py-3.5"
+                className="items-center rounded-xl border border-gray-300 bg-white py-3"
                 style={{ width: '48%' }}
               >
-                <Text className="font-semibold text-gray-700">초기화</Text>
+                <Text className="text-[13px] font-normal text-gray-600">초기화</Text>
               </Pressable>
               <Pressable
                 onPress={() => {
                   onApply();
                   onClose();
                 }}
-                className="items-center rounded-2xl bg-emerald-500 py-3.5"
+                className="items-center rounded-xl bg-[#2563EB] py-3"
                 style={{ width: '48%', marginLeft: '4%' }}
               >
-                <Text className="font-semibold text-white">적용</Text>
+                <Text className="text-[13px] font-semibold text-white">적용</Text>
               </Pressable>
             </View>
           </View>
-          <View style={{ height: Math.max(insets.bottom, 0), backgroundColor: '#ffffff' }} />
+          <View style={{ height: Math.max(insets.bottom, 0), backgroundColor: '#F8FBFF' }} />
         </Animated.View>
       </View>
     </Modal>

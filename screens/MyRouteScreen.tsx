@@ -24,6 +24,7 @@ import {
 } from "../data/mockData";
 import { useNavigation } from "@react-navigation/native";
 import { useMockData } from "../context/MockDataContext";
+import { deleteMyCourse, fetchMyCourses } from "../api/courses";
 import {
   UserSavedRoute,
   userRouteToCourseItem,
@@ -35,12 +36,27 @@ import FilterBottomSheet from "../components/FilterBottomSheet";
 import { fetchMergedDirectionsPolyline } from "../data/googleDirectionsApi";
 
 const CARD_STYLE = {
-  shadowColor: "#000",
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.08,
-  shadowRadius: 8,
-  elevation: 3,
+  borderWidth: 0.5,
+  borderColor: "rgba(37,99,235,0.12)",
+  borderRadius: 16,
+  backgroundColor: "#fff",
 };
+
+function simplifyRoutePath(
+  path: { latitude: number; longitude: number }[] | null | undefined,
+  maxPoints = 20,
+): { latitude: number; longitude: number }[] | undefined {
+  if (!path || path.length === 0) return undefined;
+  if (path.length <= maxPoints) return path;
+  const first = path[0];
+  const last = path[path.length - 1];
+  const inner = path.slice(1, -1);
+  const keepInner = Math.max(0, maxPoints - 2);
+  if (keepInner <= 0) return [first, last];
+  const step = Math.max(1, Math.ceil(inner.length / keepInner));
+  const sampled = inner.filter((_, idx) => idx % step === 0).slice(0, keepInner);
+  return [first, ...sampled, last];
+}
 
 function CourseCard({
   item,
@@ -64,7 +80,7 @@ function CourseCard({
       >
         {/* 상단: 썸네일 + 제목/메타 + 삭제 아이콘 */}
         <View className="flex-row border-b border-gray-100 p-3.5">
-          <View className="h-[80px] w-[80px] shrink-0 overflow-hidden rounded-xl bg-gray-100">
+          <View className="h-[80px] w-[80px] shrink-0 overflow-hidden rounded-xl bg-blue-50">
             {item.thumbnail ? (
               <Image
                 source={{ uri: item.thumbnail }}
@@ -72,8 +88,8 @@ function CourseCard({
                 resizeMode="cover"
               />
             ) : (
-              <View className="items-center justify-center w-full h-full bg-gray-100">
-                <Ionicons name="image-outline" size={28} color="#d1d5db" />
+              <View className="items-center justify-center w-full h-full bg-blue-50">
+                <Ionicons name="image-outline" size={24} color="#60a5fa" />
               </View>
             )}
           </View>
@@ -106,14 +122,14 @@ function CourseCard({
 
         {/* 경로 안내 */}
         <View className="flex-row items-center px-3.5 py-2.5">
-          <View className="px-2 py-1 bg-green-500 rounded-md">
+          <View className="px-2 py-1 bg-blue-600 rounded-md">
             <Text className="text-[11px] font-semibold text-white">출발</Text>
           </View>
           <Text className="ml-2 text-[13px] text-gray-900" numberOfLines={1}>
             {item.departure}
           </Text>
           <View className="w-px h-3 mx-2 bg-gray-300" />
-          <View className="px-2 py-1 bg-red-500 rounded-md">
+          <View className="px-2 py-1 bg-slate-500 rounded-md">
             <Text className="text-[11px] font-semibold text-white">도착</Text>
           </View>
           <Text
@@ -147,6 +163,7 @@ export default function MyRouteScreen(): React.JSX.Element {
   } = useMockData();
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [apiMyCourses, setApiMyCourses] = useState<CourseItem[]>([]);
   const [filterVisible, setFilterVisible] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
@@ -160,6 +177,18 @@ export default function MyRouteScreen(): React.JSX.Element {
     { latitude: number; longitude: number }[] | null
   >(null);
   const [detailPathLoading, setDetailPathLoading] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    fetchMyCourses()
+      .then((courses) => {
+        if (mounted) setApiMyCourses(courses);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!viewingCourseId) {
@@ -182,7 +211,9 @@ export default function MyRouteScreen(): React.JSX.Element {
     }
     const ur = userSavedRoutes.find((r) => r.id === viewingCourseId);
     const courseFromMock = MOCK_COURSES.find((c) => c.id === viewingCourseId);
-    const course = courseFromMock ?? (ur ? userRouteToCourseItem(ur) : null);
+    const courseFromApi = apiMyCourses.find((c) => c.id === viewingCourseId);
+    const course =
+      courseFromApi ?? courseFromMock ?? (ur ? userRouteToCourseItem(ur) : null);
     if (!course) {
       setDetailMergedPath(null);
       setDetailPathLoading(false);
@@ -194,7 +225,7 @@ export default function MyRouteScreen(): React.JSX.Element {
       stepPoints = userRouteMapPath(ur);
     } else if (course.routeSteps.length >= 2) {
       stepPoints = course.routeSteps.map((_, i) => {
-        const p = getCourseStepMapPoint(course.id, i);
+        const p = getCourseStepMapPoint(course.id, i, course.routeSteps.length);
         return { latitude: p.lat, longitude: p.lng };
       });
     } else {
@@ -209,7 +240,6 @@ export default function MyRouteScreen(): React.JSX.Element {
     fetchMergedDirectionsPolyline({
       points: stepPoints,
       mode: "transit",
-      transitType: "subway",
       signal: ac.signal,
     })
       .then((path) => {
@@ -221,13 +251,19 @@ export default function MyRouteScreen(): React.JSX.Element {
       });
 
     return () => ac.abort();
-  }, [viewingCourseId, userSavedRoutes]);
+  }, [viewingCourseId, userSavedRoutes, apiMyCourses]);
 
   const mergedCourses = useMemo(() => {
     const fromUser = userSavedRoutes.map(userRouteToCourseItem);
     const fromMock = MOCK_COURSES.filter((c) => savedCourseIds.includes(c.id));
-    return [...fromUser, ...fromMock];
-  }, [userSavedRoutes, savedCourseIds]);
+    const combined = [...fromUser, ...fromMock, ...apiMyCourses];
+    const seen = new Set<string>();
+    return combined.filter((c) => {
+      if (seen.has(c.id)) return false;
+      seen.add(c.id);
+      return true;
+    });
+  }, [userSavedRoutes, savedCourseIds, apiMyCourses]);
 
   const filteredCourses = useMemo(() => {
     let list = mergedCourses;
@@ -274,7 +310,8 @@ export default function MyRouteScreen(): React.JSX.Element {
         {
           text: "삭제",
           style: "destructive",
-          onPress: () => {
+          onPress: async () => {
+            await deleteMyCourse(item.id);
             if (isUserSavedRouteId(item.id)) deleteUserRoute(item.id);
             else removeSavedCourse(item.id);
             if (viewingCourseId === item.id) setViewingCourseId(null);
@@ -298,55 +335,30 @@ export default function MyRouteScreen(): React.JSX.Element {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-white" edges={["top"]}>
+    <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={["top"]}>
       {/* 헤더 배너 */}
-      <View className="overflow-hidden">
-        <ImageBackground
-          source={require("../assets/banner-water.png")}
-          resizeMode="cover"
-          style={{ width: "100%", minHeight: 100 }}
-          imageStyle={{ opacity: 0.9 }}
-        >
-          <View
-            style={{
-              ...StyleSheet.absoluteFillObject,
-              backgroundColor: "rgba(0,0,0,0.35)",
-            }}
-          />
-          <View
-            className="flex-row items-center px-5 pt-2 pb-5"
-            style={{ zIndex: 1, minHeight: 100 }}
-          >
-            <Text className="text-2xl font-bold text-white">내 코스</Text>
-            <View
-              style={{
-                width: 1,
-                height: 30,
-                backgroundColor: "rgba(255,255,255,0.9)",
-                marginHorizontal: 16,
-              }}
-            />
-            <View className="justify-center flex-1">
-              <Text className="text-sm text-white opacity-95">
-                나만의 경로를 짜고
-              </Text>
-              <Text className="mt-0.5 text-sm text-white opacity-95">
-                동선을 파악해 보아요!
+      <View className="px-4 pt-2 pb-2">
+        <View className="rounded-2xl px-4 py-4" style={{ backgroundColor: "#2563EB" }}>
+          <View className="flex-row items-center justify-between">
+            <View className="flex-1 pr-3">
+              <Text className="text-xl font-semibold text-white">내 코스</Text>
+              <Text className="mt-1 text-xs text-blue-100">
+                저장한 코스와 내가 만든 코스를 관리해요
               </Text>
             </View>
             <TouchableOpacity
               activeOpacity={0.7}
               onPress={() => stackNav.getParent()?.navigate("RouteCreate")}
-              className="px-3 py-2 rounded-xl bg-white/20 active:opacity-90"
+              className="px-3 py-2 rounded-lg bg-white/20 active:opacity-90"
             >
-              <Text className="text-xs font-bold text-white">루트 제작</Text>
+              <Text className="text-xs font-semibold text-white">루트 제작</Text>
             </TouchableOpacity>
           </View>
-        </ImageBackground>
+        </View>
       </View>
 
       {/* 검색 + 필터 */}
-      <View className="flex-row items-center gap-2 px-4 py-3 border-b border-gray-100">
+      <View className="flex-row items-center gap-2 px-4 py-3">
         <View className="flex-1 flex-row items-center rounded-xl bg-gray-100 px-4 py-2.5">
           <Ionicons name="search-outline" size={20} color="#9ca3af" />
           <TextInput
@@ -366,7 +378,7 @@ export default function MyRouteScreen(): React.JSX.Element {
       </View>
 
       {/* 저장 코스 수 */}
-      <View className="px-4 py-2.5 border-b border-gray-100">
+      <View className="px-4 py-1.5">
         <Text className="text-sm text-gray-500">
           {filteredCourses.length}개의 코스를 저장했어요
         </Text>
@@ -452,7 +464,7 @@ export default function MyRouteScreen(): React.JSX.Element {
           <View style={{ flex: 1, justifyContent: "flex-end" }}>
             <View
               className="overflow-hidden rounded-t-3xl"
-              style={{ maxHeight: "82%", backgroundColor: "#0f172a" }}
+              style={{ maxHeight: "82%", backgroundColor: "#F8FBFF" }}
             >
               {viewingCourseId &&
                 (() => {
@@ -462,8 +474,13 @@ export default function MyRouteScreen(): React.JSX.Element {
                   const courseFromMock = MOCK_COURSES.find(
                     (c) => c.id === viewingCourseId,
                   );
+                  const courseFromApi = apiMyCourses.find(
+                    (c) => c.id === viewingCourseId,
+                  );
                   const course =
-                    courseFromMock ?? (ur ? userRouteToCourseItem(ur) : null);
+                    courseFromApi ??
+                    courseFromMock ??
+                    (ur ? userRouteToCourseItem(ur) : null);
                   if (!course) return null;
 
                   const hours = (course.overallDurationMinutes / 60).toFixed(1);
@@ -477,7 +494,11 @@ export default function MyRouteScreen(): React.JSX.Element {
                     }));
                   } else if (course.routeSteps.length >= 1) {
                     pathPts = course.routeSteps.map((_, i) => {
-                      const p = getCourseStepMapPoint(course.id, i);
+                      const p = getCourseStepMapPoint(
+                        course.id,
+                        i,
+                        course.routeSteps.length,
+                      );
                       return { latitude: p.lat, longitude: p.lng };
                     });
                   } else {
@@ -489,18 +510,31 @@ export default function MyRouteScreen(): React.JSX.Element {
                           latitude: pt.latitude,
                           longitude: pt.longitude,
                           label: `${i + 1}`,
+                          kind:
+                            i === 0
+                              ? "start"
+                              : i === pathPts.length - 1
+                                ? "end"
+                                : "waypoint",
+                          color:
+                            i === 0
+                              ? "#2563EB"
+                              : i === pathPts.length - 1
+                                ? "#EF4444"
+                                : "#64748B",
                         }))
                       : undefined;
-                  const polylinePath =
+                  // 실경로가 있으면 단순화해서 사용하고, 없으면 경유지 연결선으로 대체
+                  const polylinePath = simplifyRoutePath(
                     detailMergedPath && detailMergedPath.length >= 2
                       ? detailMergedPath
-                      : pathPts;
+                      : pathPts,
+                  );
                   const fallbackCenter = ur
                     ? userRouteMapCenter(ur)
                     : getCourseMapCenter(course.id);
                   const mapCenter = mapFocus ?? fallbackCenter;
-                  const mapLevel =
-                    polylinePath && polylinePath.length >= 2 ? 5 : 4;
+                  const mapLevel = polylinePath && polylinePath.length >= 2 ? 4 : 4;
                   const startStepName =
                     course.routeSteps[0]?.name ?? course.departure;
                   const endStepName =
@@ -511,25 +545,25 @@ export default function MyRouteScreen(): React.JSX.Element {
                     <>
                       <View
                         style={{
-                          backgroundColor: "#0f172a",
+                          backgroundColor: "#EEF5FF",
                           paddingTop: 14,
                           paddingBottom: 14,
                           borderTopLeftRadius: 24,
                           borderTopRightRadius: 24,
                           overflow: "hidden",
                           borderBottomWidth: StyleSheet.hairlineWidth,
-                          borderBottomColor: "#1e293b",
+                          borderBottomColor: "rgba(37,99,235,0.15)",
                         }}
                       >
                         <View className="flex-row items-center justify-between px-4 mb-2">
-                          <Text className="text-sm font-semibold text-white/90">
+                          <Text className="text-sm font-semibold text-[#1A1A2E]">
                             코스 위치
                           </Text>
                           <TouchableOpacity
                             onPress={() => setViewingCourseId(null)}
                             hitSlop={12}
                           >
-                            <Ionicons name="close" size={26} color="#e2e8f0" />
+                            <Ionicons name="close" size={26} color="#64748b" />
                           </TouchableOpacity>
                         </View>
                         <View
@@ -538,9 +572,9 @@ export default function MyRouteScreen(): React.JSX.Element {
                             marginHorizontal: 10,
                             borderRadius: 14,
                             overflow: "hidden",
-                            backgroundColor: "#0f172a",
-                            borderWidth: 2,
-                            borderColor: "#0f172a",
+                            backgroundColor: "#dbeafe",
+                            borderWidth: 1,
+                            borderColor: "#bfdbfe",
                             position: "relative",
                           }}
                         >
@@ -553,7 +587,6 @@ export default function MyRouteScreen(): React.JSX.Element {
                             latitude={mapCenter.lat}
                             longitude={mapCenter.lng}
                             level={mapLevel}
-                            avoidLineOverlap
                             path={
                               polylinePath && polylinePath.length >= 1
                                 ? polylinePath
@@ -579,14 +612,14 @@ export default function MyRouteScreen(): React.JSX.Element {
                                 paddingHorizontal: 10,
                                 paddingVertical: 6,
                                 borderRadius: 10,
-                                backgroundColor: "rgba(15,23,42,0.82)",
+                                backgroundColor: "rgba(255,255,255,0.92)",
                               }}
                             >
-                              <ActivityIndicator size="small" color="#e2e8f0" />
+                              <ActivityIndicator size="small" color="#2563eb" />
                               <Text
                                 style={{
                                   fontSize: 11,
-                                  color: "#e2e8f0",
+                                  color: "#2563eb",
                                   fontWeight: "600",
                                 }}
                               >
@@ -595,7 +628,7 @@ export default function MyRouteScreen(): React.JSX.Element {
                             </View>
                           ) : null}
                         </View>
-                        <Text className="mt-2 px-4 text-[11px] font-medium text-slate-300">
+                        <Text className="mt-2 px-4 text-[11px] font-medium text-slate-500">
                           {pathPts && pathPts.length >= 2
                             ? `선 방향: 1번(${startStepName}) → ${pathPts.length}번(${endStepName})`
                             : "선 방향: 출발 지점 기준"}
@@ -722,7 +755,11 @@ export default function MyRouteScreen(): React.JSX.Element {
                                   setMapFocus(getUserRouteStepPoint(ur, index));
                                 else
                                   setMapFocus(
-                                    getCourseStepMapPoint(course.id, index),
+                                    getCourseStepMapPoint(
+                                      course.id,
+                                      index,
+                                      course.routeSteps.length,
+                                    ),
                                   );
                                 setSelectedStepId(step.id);
                               }}
