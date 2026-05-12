@@ -32,6 +32,7 @@ import { ActivityIndicator } from "react-native";
 import { ChatRoomScreen } from "./screens/chat/ChatRoomScreen";
 import BottomSheetTest from "./screens/BottomSheet";
 import ChatCreatingScreen from "./screens/chat/ChatCreatingScreen";
+import ChatRoomInfoScreen from "./screens/chat/ChatRoomInfoScreen";
 
 export type RootTabParamList = {
   Login: undefined;
@@ -86,6 +87,7 @@ export type RootStackParamList = {
   // 채팅 관련
   ChatRoomScreen: { roomUuid: string; roomName: string };
   ChatCreatingScreen: undefined;
+  ChatRoomInfoScreen: { roomUuid: string; roomName: string };
 
   // 기타
   BottomSheet: undefined;
@@ -272,6 +274,7 @@ export default function App(): React.JSX.Element {
               name="ChatCreatingScreen"
               component={ChatCreatingScreen}
             />
+            <Stack.Screen name="ChatRoomInfoScreen" component={ChatRoomInfoScreen} />
             <Stack.Screen name="BottomSheet" component={BottomSheetTest} />
           </Stack.Navigator>
         </NavigationContainer>
