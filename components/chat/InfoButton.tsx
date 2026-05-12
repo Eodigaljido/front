@@ -1,13 +1,19 @@
-import { useNavigation } from "@react-navigation/native";
+import { NavigationProp, useNavigation } from "@react-navigation/native";
 import { Info } from "lucide-react-native";
-import { TouchableOpacity, View, Text } from "react-native";
+import { TouchableOpacity, View } from "react-native";
+import { RootStackParamList } from "@/App";
 
-export const InfoButton = () => {
-  const navigation = useNavigation();
+interface InfoButtonProps {
+  roomUuid: string;
+  roomName: string;
+}
+
+export const InfoButton = ({ roomUuid, roomName }: InfoButtonProps) => {
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
 
   return (
     <TouchableOpacity
-      onPress={() => navigation.goBack()}
+      onPress={() => navigation.navigate("ChatRoomInfoScreen", { roomUuid, roomName })}
       accessibilityRole="button"
       accessibilityLabel="정보 보기"
     >
