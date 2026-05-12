@@ -34,7 +34,7 @@ export default function AgeOnBoard(): React.JSX.Element {
           어떻게 되시나요?
         </Title>
         <Description desc={`나이에 따라서 추천하는 장소가 달라져요!`} />
-        <View className="mt-6 gap-3">
+        <View className="mt-6 gap-1">
           <RadioButton
             label="10대"
             value={selectedAge === "10대"}

@@ -10,6 +10,8 @@ export type DirectionsTransitType = 'bus' | 'subway' | 'train';
 type LatLng = { latitude: number; longitude: number };
 
 const EARTH_RADIUS_M = 6371000;
+const TRANSIT_WALKING_PRIORITY_METERS = 1800;
+const TRANSIT_WALKING_PROBE_MAX_STRAIGHT_METERS = 3500;
 
 function haversineMeters(a: LatLng, b: LatLng): number {
   const rad = Math.PI / 180;
@@ -608,7 +610,7 @@ export async function fetchMergedDirectionsPolyline(opts: {
   if (pts.length < 2) return pts;
 
   const mode = opts.mode ?? 'transit';
-  const transitType = opts.transitType ?? 'subway';
+  const transitType = opts.transitType;
   const signal = opts.signal;
 
   const merged: LatLng[] = [];
@@ -616,11 +618,31 @@ export async function fetchMergedDirectionsPolyline(opts: {
     const from = pts[i];
     const to = pts[i + 1];
     try {
+      let effectiveMode: DirectionsMode = mode;
+      if (mode === 'transit') {
+        const straightMeters = haversineMeters(from, to);
+        // 구간 간 실제 체감거리를 우선하기 위해 도보 leg를 먼저 조회해 판단한다.
+        if (straightMeters <= TRANSIT_WALKING_PROBE_MAX_STRAIGHT_METERS) {
+          try {
+            const walkProbe = await fetchGoogleDirectionsLeg({
+              from,
+              to,
+              mode: 'walking',
+              signal,
+            });
+            if (walkProbe.distanceMeters > 0 && walkProbe.distanceMeters <= TRANSIT_WALKING_PRIORITY_METERS) {
+              effectiveMode = 'walking';
+            }
+          } catch {
+            // 도보 probe 실패 시 기존 transit 판단으로 진행
+          }
+        }
+      }
       const leg = await fetchGoogleDirectionsLeg({
         from,
         to,
-        mode,
-        transitType: mode === 'transit' ? transitType : undefined,
+        mode: effectiveMode,
+        transitType: effectiveMode === 'transit' ? transitType : undefined,
         signal,
       });
       const seg = leg.path ?? [];
