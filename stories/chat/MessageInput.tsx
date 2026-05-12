@@ -27,7 +27,7 @@ const STOP_DELAY_MS = 5000;
 export interface MessageInputProps {
   placeholder?: string;
   onSend?: (message: string) => void;
-  onImageSend?: () => void;
+  onImageSend?: (imageUri: string) => void;
   onStickerSend?: () => void;
   onCourseSend?: () => void;
   disabled?: boolean;
@@ -139,7 +139,7 @@ export const MessageInput = ({
   const isEditing = editingText != null;
 
   const pickImageAsync = async () => {
-    let result = await ImagePicker.launchImageLibraryAsync({
+    const result = await ImagePicker.launchImageLibraryAsync({
       allowsEditing: false,
       quality: 1,
     });
@@ -147,6 +147,7 @@ export const MessageInput = ({
     if (!result.canceled) {
       console.log(result);
       setSelectedImage(result.assets[0].uri); // 선택한 이미지의 URI를 상태에 저장
+      onImageSend?.(result.assets[0].uri);
     } else {
       console.log("이미지를 선택하지 않았습니다.");
     }
