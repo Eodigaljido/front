@@ -1,150 +1,132 @@
 // @ts-nocheck
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AppState,
   View,
   Text,
   ScrollView,
+  RefreshControl,
   Pressable,
   Dimensions,
-  ImageBackground,
+  Image,
   StyleSheet,
-  TextInput,
-  Modal,
+  Animated,
   ActivityIndicator,
+  PanResponder,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import Svg, { Polyline, Circle } from "react-native-svg";
+import { LinearGradient } from "expo-linear-gradient";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import type { RootTabParamList } from "../App";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
-import { useMockData } from "../context/MockDataContext";
-import { getPopularNearbyCourses } from "../data/mockData";
+import * as Haptics from "expo-haptics";
+import { fetchFollowingNews, fetchHomeCourses } from "../api/courses";
+import { useAuthStore } from "../store/authStore";
+import {
+  fetchIntegratedWeather,
+  type IntegratedWeatherResponse,
+} from "../data/integratedWeatherApi";
 
 type HomeNavProp = BottomTabNavigationProp<RootTabParamList, "Home">;
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const HORIZONTAL_MARGIN = 16;
-const FEATURE_CARD_WIDTH = SCREEN_WIDTH * 0.62;
+const RECENT_CARD_WIDTH = SCREEN_WIDTH * 0.78;
+const HEADER_HEIGHT = 50;
+
+const PAGE_BG = "#F0F5FF";
 
 const CARD_STYLE = {
-  backgroundColor: "#fff",
-  borderRadius: 18,
-  padding: 16,
-  shadowColor: "#000",
-  shadowOffset: { width: 0, height: 10 },
-  shadowOpacity: 0.08,
-  shadowRadius: 18,
-  elevation: 6,
-  borderWidth: 1,
-  borderColor: "rgba(0,0,0,0.04)",
+  backgroundColor: "#FFFFFF",
+  borderRadius: 16,
+  borderWidth: 0.5,
+  borderColor: "rgba(37,99,235,0.1)",
 };
 
-const WEATHER_API_KEY =
-  "517f70743c415da1aae1a5681eea2afc6c4e46bcaceb9423269090e7889c3135";
-const WEATHER_GRID = { nx: 60, ny: 127 };
+const WEATHER_AUTO_REFRESH_MS = 10 * 60 * 1000;
+const WEATHER_FETCH_TIMEOUT_MS = 12_000;
+const LOCATION_TIMEOUT_MS = 7000;
+const REFRESH_GUARD_TIMEOUT_MS = 15_000;
+const REFRESH_SPINNER_MAX_MS = 3_000;
+const PULL_INDICATOR_HIDDEN_Y = -84;
+const PULL_INDICATOR_MAX_DRAG = 76;
+const PULL_TRIGGER_DISTANCE = 44;
+// 새로고침 제스처는 날씨 파트(상단 영역)에서 시작한 경우에만 허용
+const PULL_CAPTURE_TOP_LIMIT = 260;
+const DEFAULT_WEATHER_LOCATION = "서울 강남구";
+const WEATHER_ICON_IMAGES = {
+  sunny: require("../assets/Weather/Sunny.png"),
+  partly_cloudy: require("../assets/Weather/PartlyCloudy.png"),
+  cloudy: require("../assets/Weather/PartlyCloudy.png"),
+  rainy: require("../assets/Weather/Rainy.png"),
+  shower: require("../assets/Weather/RainThunder.png"),
+  sleet: require("../assets/Weather/Snowy.png"),
+  snowy: require("../assets/Weather/Snowy.png"),
+} as const;
 
-type WeatherSnapshot = {
-  temperatureC: number | null;
-  minTempC: number | null;
-  maxTempC: number | null;
-  humidity: number | null;
-  rainChance: number | null;
-  sky: string;
-  baseDate: string;
-  baseTime: string;
-};
-
-function getKstNow() {
-  const utc = Date.now() + new Date().getTimezoneOffset() * 60000;
-  return new Date(utc + 9 * 60 * 60000);
+function getWeatherIconSource(iconKey?: string) {
+  const key = String(iconKey ?? "").toLowerCase() as keyof typeof WEATHER_ICON_IMAGES;
+  return WEATHER_ICON_IMAGES[key] ?? WEATHER_ICON_IMAGES.partly_cloudy;
 }
 
-function toYmd(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}${m}${day}`;
-}
-
-function computeBaseDateTime(nowKst: Date): {
-  baseDate: string;
-  baseTime: string;
-} {
-  const candidates = [
-    "0200",
-    "0500",
-    "0800",
-    "1100",
-    "1400",
-    "1700",
-    "2000",
-    "2300",
-  ];
-  const hhmm = Number(
-    `${String(nowKst.getHours()).padStart(2, "0")}${String(nowKst.getMinutes()).padStart(2, "0")}`,
-  );
-  let picked = candidates[0];
-  for (const c of candidates) {
-    if (Number(c) <= hhmm) picked = c;
+function formatFetchedAt(iso?: string): string {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    return `조회 ${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  } catch {
+    return "";
   }
-  if (Number(hhmm) < Number(candidates[0])) {
-    const prev = new Date(nowKst);
-    prev.setDate(prev.getDate() - 1);
-    return { baseDate: toYmd(prev), baseTime: "2300" };
-  }
-  return { baseDate: toYmd(nowKst), baseTime: picked };
 }
 
-function parseSkyLabel(sky?: string, pty?: string): string {
-  if (pty && pty !== "0") {
-    if (pty === "1") return "비";
-    if (pty === "2") return "비/눈";
-    if (pty === "3") return "눈";
-    if (pty === "4") return "소나기";
+function buildWeatherLocationQuery(
+  addr?: Location.LocationGeocodedAddress | null,
+): string {
+  if (!addr) return DEFAULT_WEATHER_LOCATION;
+  const parts = [
+    addr.region,
+    addr.city,
+    addr.district,
+    addr.subregion,
+    addr.name,
+  ]
+    .map((p) => (typeof p === "string" ? p.trim() : ""))
+    .filter(Boolean);
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const p of parts) {
+    if (!seen.has(p)) {
+      seen.add(p);
+      ordered.push(p);
+    }
   }
-  if (sky === "1") return "맑음";
-  if (sky === "3") return "구름많음";
-  if (sky === "4") return "흐림";
-  return "정보 없음";
+  const joined = ordered.join(" ").replace(/\s+/g, " ").trim();
+  return joined || DEFAULT_WEATHER_LOCATION;
 }
 
-function toGrid(lat: number, lng: number): { nx: number; ny: number } {
-  // 기상청 DFS 격자 변환
-  const RE = 6371.00877;
-  const GRID = 5.0;
-  const SLAT1 = 30.0;
-  const SLAT2 = 60.0;
-  const OLON = 126.0;
-  const OLAT = 38.0;
-  const XO = 43;
-  const YO = 136;
+function getWeatherMoodMessage(weather?: IntegratedWeatherResponse["current"]): string {
+  if (!weather) return "오늘 코스를 천천히 고르기 좋은 날씨네요!";
+  const temp = Number.isFinite(weather.temperature) ? weather.temperature : 18;
+  const rain = Number.isFinite(weather.precipitation1h) ? weather.precipitation1h : 0;
+  const desc = String(weather.weatherDesc ?? "").toLowerCase();
 
-  const DEGRAD = Math.PI / 180.0;
-  const re = RE / GRID;
-  const slat1 = SLAT1 * DEGRAD;
-  const slat2 = SLAT2 * DEGRAD;
-  const olon = OLON * DEGRAD;
-  const olat = OLAT * DEGRAD;
-
-  let sn =
-    Math.tan(Math.PI * 0.25 + slat2 * 0.5) /
-    Math.tan(Math.PI * 0.25 + slat1 * 0.5);
-  sn = Math.log(Math.cos(slat1) / Math.cos(slat2)) / Math.log(sn);
-  let sf = Math.tan(Math.PI * 0.25 + slat1 * 0.5);
-  sf = (Math.pow(sf, sn) * Math.cos(slat1)) / sn;
-  let ro = Math.tan(Math.PI * 0.25 + olat * 0.5);
-  ro = (re * sf) / Math.pow(ro, sn);
-  let ra = Math.tan(Math.PI * 0.25 + lat * DEGRAD * 0.5);
-  ra = (re * sf) / Math.pow(ra, sn);
-  let theta = lng * DEGRAD - olon;
-  if (theta > Math.PI) theta -= 2.0 * Math.PI;
-  if (theta < -Math.PI) theta += 2.0 * Math.PI;
-  theta *= sn;
-  return {
-    nx: Math.floor(ra * Math.sin(theta) + XO + 0.5),
-    ny: Math.floor(ro - ra * Math.cos(theta) + YO + 0.5),
-  };
+  if (rain >= 1 || desc.includes("비")) {
+    return "오늘은 실내 코스로 여유롭게 즐기기 좋은 날씨네요!";
+  }
+  if (temp >= 28) {
+    return "오늘은 그늘 많은 짧은 산책 코스가 딱 좋은 날씨네요!";
+  }
+  if (temp <= 5) {
+    return "오늘은 따뜻하게 입고 가까운 코스를 즐기기 좋은 날씨네요!";
+  }
+  if (desc.includes("맑") || desc.includes("sun")) {
+    return "오늘은 야외 산책 코스를 즐기기 좋은 날씨네요!";
+  }
+  return "오늘은 가볍게 이동하며 코스를 둘러보기 좋은 날씨네요!";
 }
 
 function SectionHeader({
@@ -158,11 +140,11 @@ function SectionHeader({
 }) {
   return (
     <View className="flex-row items-center justify-between">
-      <Text className="text-lg font-extrabold text-gray-900">{title}</Text>
+      <Text style={{ fontSize: 15, fontWeight: "600", color: "#1A1A2E" }}>{title}</Text>
       {actionLabel ? (
         <Pressable hitSlop={12} onPress={onPressAction}>
           <View className="flex-row items-center">
-            <Text className="text-sm font-semibold text-blue-600">
+            <Text style={{ fontSize: 13, fontWeight: "400", color: "#6B7280" }}>
               {actionLabel}
             </Text>
             <Ionicons name="chevron-forward" size={16} color="#2563eb" />
@@ -175,600 +157,705 @@ function SectionHeader({
   );
 }
 
+function getTagStyle(tag: string) {
+  if (tag === "카페") return { bg: "#FEF3C7", color: "#92400E" };
+  if (tag === "골목") return { bg: "#EDE9FE", color: "#4338CA" };
+  if (tag === "산책") return { bg: "#D1FAE5", color: "#065F46" };
+  if (tag === "맛집") return { bg: "#FEE2E2", color: "#991B1B" };
+  return { bg: "#DBEAFE", color: "#1D4ED8" };
+}
+
+function getCategoryTint(category: string) {
+  return "#DBEAFE";
+}
+
 export default function HomeScreen(): React.JSX.Element {
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<HomeNavProp>();
-  const { savedCourseIds, publicCourseIds } = useMockData();
-  const popularCourses = getPopularNearbyCourses(3);
+  const authUser = useAuthStore((s: any) => s.user);
+  const [popularCourses, setPopularCourses] = useState<any[]>([]);
+  const [followingNewsApi, setFollowingNewsApi] = useState<any[]>([]);
+
   const [weatherLoading, setWeatherLoading] = useState(true);
   const [weatherError, setWeatherError] = useState<string | null>(null);
-  const [weather, setWeather] = useState<WeatherSnapshot | null>(null);
-  const [weatherPlaceLabel, setWeatherPlaceLabel] = useState("홍대입구");
-  const [weatherGrid, setWeatherGrid] = useState(WEATHER_GRID);
-  const [weatherSource, setWeatherSource] = useState<
-    "default" | "current" | "custom"
-  >("default");
+  const [integrated, setIntegrated] = useState<IntegratedWeatherResponse | null>(
+    null,
+  );
+  const [refreshing, setRefreshing] = useState(false);
+  const [showPullIndicator, setShowPullIndicator] = useState(false);
   const [heroLocationLabel, setHeroLocationLabel] = useState("위치 확인 중...");
-  const [locationModalOpen, setLocationModalOpen] = useState(false);
-  const [customAddressInput, setCustomAddressInput] = useState("");
-  const [resolvingAddress, setResolvingAddress] = useState(false);
+  const weatherLocationRef = useRef("");
+  const pullDownY = useRef(new Animated.Value(PULL_INDICATOR_HIDDEN_Y)).current;
+  const pullProgress = useRef(new Animated.Value(0)).current;
+  const pullDistanceRef = useRef(0);
+  const refreshingRef = useRef(false);
 
-  const weatherSubtitle = useMemo(() => {
-    if (!weather) return "";
-    return `발표 ${weather.baseDate.slice(4, 6)}.${weather.baseDate.slice(6, 8)} ${weather.baseTime.slice(0, 2)}:${weather.baseTime.slice(2, 4)} 기준`;
-  }, [weather]);
+  useEffect(() => {
+    let mounted = true;
+    fetchHomeCourses(6)
+      .then((courses) => {
+        if (mounted) setPopularCourses(courses);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    fetchFollowingNews(3)
+      .then((items) => {
+        if (mounted && items.length > 0) setFollowingNewsApi(items);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const weatherSubtitle = useMemo(
+    () => formatFetchedAt(integrated?.fetchedAt),
+    [integrated?.fetchedAt],
+  );
+  const weatherMoodMessage = useMemo(
+    () => getWeatherMoodMessage(integrated?.current),
+    [integrated?.current],
+  );
+  const weatherHighlights = useMemo(() => {
+    const c = integrated?.current;
+    if (!c) return ["체감 --°", "습도 --%", "미세 --"];
+    return [
+      `체감 ${Math.round(c.feelsLike)}°`,
+      `습도 ${Math.round(c.humidity)}%`,
+      `미세 ${integrated?.air?.pm10Grade ?? "--"}`,
+    ];
+  }, [integrated?.air?.pm10Grade, integrated?.current]);
+  const recentCourses = useMemo(
+    () =>
+      popularCourses.slice(0, 3).map((course, idx) => ({
+        id: `recent-${course.id}`,
+        title: course.title,
+        waypoints: course.routeSteps.slice(0, 3).map((step) => step.name),
+        pinCount: course.routeSteps.length,
+        distanceKm: Number((course.overallDurationMinutes / 55).toFixed(1)),
+        tags: idx % 2 === 0 ? ["카페", "골목"] : ["맛집", "산책"],
+      })),
+    [popularCourses],
+  );
+  const trendingCourses = useMemo(
+    () =>
+      popularCourses.slice(0, 3).map((course, idx) => ({
+        id: `trend-${course.id}`,
+        title: course.title,
+        author: `${course.region}러 ${idx + 1}`,
+        likes: Math.max(12, Math.round(course.views / 8)),
+        pinCount: course.routeSteps.length,
+        distanceKm: Number((course.overallDurationMinutes / 55).toFixed(1)),
+        category: course.category,
+      })),
+    [popularCourses],
+  );
+  const followingNewsFallback = useMemo(
+    () =>
+      trendingCourses.slice(0, 3).map((item, idx) => ({
+        id: `feed-${item.id}`,
+        user: item.author,
+        action: idx % 2 === 0 ? "새 코스를 공개했어요" : "코스를 완주했어요",
+        courseName: item.title,
+        ago: idx === 0 ? "9분 전" : idx === 1 ? "1시간 전" : "3시간 전",
+      })),
+    [trendingCourses],
+  );
+  const followingNews = followingNewsApi.length > 0 ? followingNewsApi : followingNewsFallback;
+
+  const precipHumidityChip = useMemo(() => {
+    const c = integrated?.current;
+    if (!c) return "강수 · 습도";
+    const p = Number.isFinite(c.precipitation1h)
+      ? `${c.precipitation1h}mm`
+      : "--";
+    const h = Number.isFinite(c.humidity) ? `${Math.round(c.humidity)}%` : "--";
+    return `1시간 강수 ${p} · 습도 ${h}`;
+  }, [integrated?.current]);
 
   const fetchWeather = useCallback(
     async (
       cancelledRef?: { value: boolean },
-      grid?: { nx: number; ny: number },
+      locationOverride?: string,
+      options?: { silent?: boolean },
     ) => {
+      const raw = (locationOverride ?? weatherLocationRef.current).trim();
+      const target = raw || DEFAULT_WEATHER_LOCATION;
+      weatherLocationRef.current = target;
+
       try {
-        setWeatherLoading(true);
+        if (!options?.silent) setWeatherLoading(true);
         setWeatherError(null);
-        const now = getKstNow();
-        const { baseDate, baseTime } = computeBaseDateTime(now);
-        const targetGrid = grid ?? weatherGrid;
-        const url =
-          `https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst` +
-          `?serviceKey=${encodeURIComponent(WEATHER_API_KEY)}` +
-          `&pageNo=1&numOfRows=180&dataType=JSON` +
-          `&base_date=${baseDate}&base_time=${baseTime}` +
-          `&nx=${targetGrid.nx}&ny=${targetGrid.ny}`;
-        const res = await fetch(url);
-        const json = await res.json();
-        const items = json?.response?.body?.items?.item ?? [];
-        if (!Array.isArray(items) || items.length === 0)
-          throw new Error("날씨 데이터가 없습니다.");
-        const grouped = new Map<
-          string,
-          {
-            TMP?: string;
-            SKY?: string;
-            PTY?: string;
-            REH?: string;
-            POP?: string;
-            TMN?: string;
-            TMX?: string;
-          }
-        >();
-        for (const it of items) {
-          const key = `${it.fcstDate}-${it.fcstTime}`;
-          const row = grouped.get(key) ?? {};
-          if (it.category === "TMP") row.TMP = String(it.fcstValue);
-          if (it.category === "SKY") row.SKY = String(it.fcstValue);
-          if (it.category === "PTY") row.PTY = String(it.fcstValue);
-          if (it.category === "REH") row.REH = String(it.fcstValue);
-          if (it.category === "POP") row.POP = String(it.fcstValue);
-          if (it.category === "TMN") row.TMN = String(it.fcstValue);
-          if (it.category === "TMX") row.TMX = String(it.fcstValue);
-          grouped.set(key, row);
+
+        const controller = new AbortController();
+        const timerId = setTimeout(
+          () => controller.abort(),
+          WEATHER_FETCH_TIMEOUT_MS,
+        );
+        let data: IntegratedWeatherResponse;
+        try {
+          data = await fetchIntegratedWeather(target, controller.signal);
+        } finally {
+          clearTimeout(timerId);
         }
-        const keys = Array.from(grouped.keys()).sort();
-        const pick =
-          keys.find((k) => {
-            const [d, t] = k.split("-");
-            return (
-              Number(`${d}${t}`) >=
-              Number(
-                `${toYmd(now)}${String(now.getHours()).padStart(2, "0")}00`,
-              )
-            );
-          }) ?? keys[0];
-        const row = grouped.get(pick) ?? {};
+
         if (cancelledRef?.value) return;
-        let minTemp: number | null = null;
-        let maxTemp: number | null = null;
-        for (const r of grouped.values()) {
-          if (r.TMN != null) minTemp = Number(r.TMN);
-          if (r.TMX != null) maxTemp = Number(r.TMX);
-        }
-        setWeather({
-          temperatureC: row.TMP != null ? Number(row.TMP) : null,
-          minTempC: minTemp,
-          maxTempC: maxTemp,
-          humidity: row.REH != null ? Number(row.REH) : null,
-          rainChance: row.POP != null ? Number(row.POP) : null,
-          sky: parseSkyLabel(row.SKY, row.PTY),
-          baseDate,
-          baseTime,
-        });
+        setIntegrated(data);
+        setHeroLocationLabel(data.location);
       } catch (e: any) {
         if (cancelledRef?.value) return;
-        setWeatherError(e?.message ?? "날씨 정보를 불러오지 못했습니다.");
+        const msg =
+          e?.name === "AbortError"
+            ? "날씨 요청 시간이 초과되었습니다."
+            : (e?.message ?? "날씨 정보를 불러오지 못했습니다.");
+        setWeatherError(msg);
       } finally {
-        if (!cancelledRef?.value) setWeatherLoading(false);
+        if (!cancelledRef?.value && !options?.silent) setWeatherLoading(false);
       }
     },
-    [weatherGrid],
+    [],
+  );
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (!weatherLocationRef.current.trim()) return;
+      fetchWeather(undefined, undefined, { silent: true });
+    }, WEATHER_AUTO_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [fetchWeather]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active" && weatherLocationRef.current.trim()) {
+        fetchWeather(undefined, undefined, { silent: true });
+      }
+    });
+    return () => sub.remove();
+  }, [fetchWeather]);
+
+  const resolveCurrentLocation = useCallback(
+    async (cancelledRef?: { value: boolean }) => {
+      try {
+        const perm = await Location.requestForegroundPermissionsAsync();
+        if (perm.status !== "granted") {
+          if (!cancelledRef?.value) {
+            setHeroLocationLabel("위치 권한 미허용");
+            await fetchWeather(cancelledRef, DEFAULT_WEATHER_LOCATION);
+          }
+          return;
+        }
+
+        const pos = await Promise.race([
+          Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error("위치 시간 초과")),
+              LOCATION_TIMEOUT_MS,
+            ),
+          ),
+        ]);
+
+        if (cancelledRef?.value) return;
+
+        const addr = await Location.reverseGeocodeAsync({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        });
+
+        if (cancelledRef?.value) return;
+
+        const q = buildWeatherLocationQuery(addr?.[0]);
+        await fetchWeather(cancelledRef, q);
+      } catch {
+        if (!cancelledRef?.value) {
+          setHeroLocationLabel("위치 확인 실패");
+          await fetchWeather(cancelledRef, DEFAULT_WEATHER_LOCATION);
+        }
+      }
+    },
+    [fetchWeather],
   );
 
   useEffect(() => {
     const cancelledRef = { value: false };
-    fetchWeather(cancelledRef);
+    resolveCurrentLocation(cancelledRef);
     return () => {
       cancelledRef.value = true;
     };
-  }, [fetchWeather]);
+  }, []);
 
-  const resolveCurrentLocation = useCallback(async () => {
+  const handlePullToRefresh = useCallback(async () => {
+    if (refreshingRef.current) return;
     try {
-      const perm = await Location.requestForegroundPermissionsAsync();
-      if (perm.status !== "granted") {
-        setHeroLocationLabel("위치 권한 미허용");
-        return;
-      }
-      const pos = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      const { nx, ny } = toGrid(pos.coords.latitude, pos.coords.longitude);
-      setWeatherGrid({ nx, ny });
-      setWeatherSource("current");
-      setWeatherPlaceLabel("현재 위치");
-      await fetchWeather(undefined, { nx, ny });
-
-      const addr = await Location.reverseGeocodeAsync({
-        latitude: pos.coords.latitude,
-        longitude: pos.coords.longitude,
-      });
-      const a = addr?.[0];
-      const label =
-        [a?.district, a?.subregion, a?.city]
-          .filter(Boolean)
-          .slice(0, 2)
-          .join(" ") || "현재 위치";
-      setHeroLocationLabel(label);
-    } catch {
-      setHeroLocationLabel("현재 위치");
-    }
-  }, [fetchWeather]);
-
-  useEffect(() => {
-    resolveCurrentLocation();
-  }, [resolveCurrentLocation]);
-
-  const useCurrentLocationWeather = useCallback(async () => {
+      await Haptics.selectionAsync();
+    } catch {}
+    refreshingRef.current = true;
+    setRefreshing(true);
     try {
-      setResolvingAddress(true);
-      const perm = await Location.requestForegroundPermissionsAsync();
-      if (perm.status !== "granted") {
-        setWeatherError("위치 권한이 필요합니다.");
-        return;
-      }
-      const pos = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      const { nx, ny } = toGrid(pos.coords.latitude, pos.coords.longitude);
-      setWeatherGrid({ nx, ny });
-      setWeatherPlaceLabel("현재 위치");
-      setWeatherSource("current");
-      setLocationModalOpen(false);
-      await fetchWeather(undefined, { nx, ny });
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+    const spinnerTimer = setTimeout(() => {
+      // 3초 이상 걸리면 로딩 UI는 숨김(작업은 계속 진행)
+      setRefreshing(false);
+    }, REFRESH_SPINNER_MAX_MS);
+    try {
+      await Promise.race([
+        (async () => {
+          await resolveCurrentLocation();
+          await fetchWeather(undefined, undefined, { silent: true });
+        })(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("새로고침 시간 초과")), REFRESH_GUARD_TIMEOUT_MS),
+        ),
+      ]);
+      try {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch {}
     } catch {
-      setWeatherError("현재 위치를 가져오지 못했습니다.");
+      // 시간 초과 또는 위치/네트워크 지연 시에도 로더가 고정되지 않도록 무조건 종료한다.
+      try {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      } catch {}
     } finally {
-      setResolvingAddress(false);
+      clearTimeout(spinnerTimer);
+      refreshingRef.current = false;
+      setRefreshing(false);
     }
-  }, [fetchWeather]);
+  }, [resolveCurrentLocation, fetchWeather]);
 
-  const useCustomAddressWeather = useCallback(async () => {
-    const q = customAddressInput.trim();
-    if (!q) {
-      setWeatherError("주소를 입력해 주세요.");
-      return;
-    }
-    try {
-      setResolvingAddress(true);
-      const geo = await Location.geocodeAsync(q);
-      if (!geo.length) {
-        setWeatherError("입력한 위치를 찾지 못했습니다.");
-        return;
-      }
-      const { latitude, longitude } = geo[0];
-      const { nx, ny } = toGrid(latitude, longitude);
-      setWeatherGrid({ nx, ny });
-      setWeatherPlaceLabel(q);
-      setWeatherSource("custom");
-      setLocationModalOpen(false);
-      await fetchWeather(undefined, { nx, ny });
-    } catch {
-      setWeatherError("위치 변환 중 오류가 발생했습니다.");
-    } finally {
-      setResolvingAddress(false);
-    }
-  }, [customAddressInput, fetchWeather]);
+  const displayLocation =
+    integrated?.location?.trim() || heroLocationLabel || "위치 확인 중...";
+  const contentTopPadding = insets.top + HEADER_HEIGHT;
+  const contentBottomPadding = insets.bottom + 120;
+  const openRouteCreate = useCallback(() => {
+    (navigation.getParent() as any)?.navigate("RouteCreate");
+  }, [navigation]);
+  const moveTab = useCallback(
+    (tab: keyof RootTabParamList) => {
+      navigation.navigate(tab);
+    },
+    [navigation],
+  );
+
+  const pullPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, gestureState) =>
+          !refreshing &&
+          gestureState.y0 <= insets.top + PULL_CAPTURE_TOP_LIMIT &&
+          gestureState.dy > 6 &&
+          Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.1,
+        onPanResponderMove: (_, gestureState) => {
+          const d = Math.max(0, Math.min(PULL_INDICATOR_MAX_DRAG, gestureState.dy * 0.55));
+          pullDistanceRef.current = d;
+          setShowPullIndicator(d > 0);
+          pullDownY.setValue(PULL_INDICATOR_HIDDEN_Y + d);
+          pullProgress.setValue(d / PULL_INDICATOR_MAX_DRAG);
+        },
+        onPanResponderRelease: () => {
+          const shouldRefresh = pullDistanceRef.current >= PULL_TRIGGER_DISTANCE;
+          pullDistanceRef.current = 0;
+          Animated.spring(pullDownY, {
+            toValue: PULL_INDICATOR_HIDDEN_Y,
+            useNativeDriver: true,
+            tension: 70,
+            friction: 9,
+          }).start();
+          Animated.timing(pullProgress, {
+            toValue: 0,
+            duration: 120,
+            useNativeDriver: true,
+          }).start();
+          if (!shouldRefresh) setShowPullIndicator(false);
+          if (shouldRefresh) handlePullToRefresh();
+        },
+        onPanResponderTerminate: () => {
+          pullDistanceRef.current = 0;
+          Animated.spring(pullDownY, {
+            toValue: PULL_INDICATOR_HIDDEN_Y,
+            useNativeDriver: true,
+            tension: 70,
+            friction: 9,
+          }).start();
+          Animated.timing(pullProgress, {
+            toValue: 0,
+            duration: 120,
+            useNativeDriver: true,
+          }).start();
+          setShowPullIndicator(false);
+        },
+      }),
+    [handlePullToRefresh, insets.top, pullDownY, pullProgress, refreshing],
+  );
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-50" edges={["top"]}>
+    <SafeAreaView className="flex-1" style={{ backgroundColor: PAGE_BG }} edges={["top"]}>
+      <View
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 30,
+          height: insets.top + HEADER_HEIGHT,
+          paddingTop: insets.top + 2,
+          paddingHorizontal: HORIZONTAL_MARGIN,
+          backgroundColor: "rgba(240,245,255,0.96)",
+          borderBottomWidth: 0.5,
+          borderBottomColor: "rgba(37,99,235,0.08)",
+        }}
+      >
+        <View className="flex-row items-center justify-between">
+          <Pressable
+            className="flex-row items-center rounded-full px-3 py-2"
+            style={{ backgroundColor: "#dbeafe" }}
+          >
+            <Ionicons name="location" size={14} color="#1d4ed8" />
+            <Text className="mx-1.5 text-xs font-semibold text-blue-800">{displayLocation}</Text>
+            <Ionicons name="chevron-down" size={13} color="#1d4ed8" />
+          </Pressable>
+          <View className="flex-row items-center">
+            <Pressable
+              className="mr-2 h-9 w-9 items-center justify-center rounded-full bg-white"
+              onPress={() => navigation.navigate("SharedRoute", { openFilter: true })}
+            >
+              <Ionicons name="search-outline" size={20} color="#1a1a2e" />
+            </Pressable>
+            <Pressable
+              className="h-9 w-9 items-center justify-center rounded-full bg-white"
+              onPress={() => navigation.navigate("Chat")}
+            >
+              <Ionicons name="notifications-outline" size={20} color="#1a1a2e" />
+            </Pressable>
+          </View>
+        </View>
+      </View>
+
       <ScrollView
         className="flex-1"
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handlePullToRefresh}
+            tintColor="#2563EB"
+            colors={["#2563EB"]}
+            size="large"
+            progressBackgroundColor="#ffffff"
+            progressViewOffset={insets.top + HEADER_HEIGHT + 22}
+            title="새로고침 중..."
+            titleColor="#2563EB"
+          />
+        }
         contentContainerStyle={{
-          paddingBottom: 120,
+          paddingTop: contentTopPadding,
+          paddingBottom: contentBottomPadding,
           paddingHorizontal: HORIZONTAL_MARGIN,
         }}
       >
-        {/* 히어로 배너 */}
-        <View className="mt-4 overflow-hidden rounded-3xl">
-          <ImageBackground
-            source={require("../assets/banner.jpg")}
-            resizeMode="cover"
-            style={{ width: "100%", minHeight: 132 }}
-            imageStyle={{ opacity: 0.95 }}
-          >
-            <View
-              style={{
-                ...StyleSheet.absoluteFillObject,
-                backgroundColor: "rgba(0,0,0,0.38)",
-              }}
-            />
-            <View className="px-5 pt-5 pb-5" style={{ minHeight: 132 }}>
-              <View className="flex-row items-center justify-between">
-                <View className="flex-row items-center">
-                  <View className="items-center justify-center h-9 w-9 rounded-xl bg-white/15">
-                    <Ionicons name="navigate" size={18} color="#fff" />
-                  </View>
-                  <View className="ml-3">
-                    <Text className="text-xs text-white/80">현재 위치</Text>
-                    <Text className="mt-0.5 text-lg font-extrabold text-white">
-                      {heroLocationLabel}
-                    </Text>
-                  </View>
-                </View>
-                <Pressable
-                  onPress={resolveCurrentLocation}
-                  className="px-3 py-2 rounded-full bg-white/15"
-                  style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
-                >
-                  <Text className="text-xs font-semibold text-white">갱신</Text>
-                </Pressable>
-              </View>
-
-              <Text className="mt-3 text-sm font-semibold text-white/90">
-                오늘 주변 인기 코스 {popularCourses.length}개 · 이벤트 5개
+        <LinearGradient
+          colors={["#2563EB", "#3B82F6"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          className=""
+          style={{
+            borderRadius: 20,
+            marginHorizontal: 0,
+            minHeight: 168,
+            paddingHorizontal: 16,
+            paddingVertical: 16,
+          }}
+        >
+          <View className="flex-row justify-between">
+            <View className="flex-1 pr-3">
+              <Text className="text-sm font-semibold text-blue-100">
+                {authUser?.nickname ? `${authUser.nickname}님, 반가워요` : "반가워요"}
               </Text>
-
-              {/* 퀵 액션 */}
-              <View className="flex-row gap-10 mt-4">
-                <Pressable
-                  onPress={() =>
-                    navigation.navigate("SharedRoute", { openFilter: true })
-                  }
-                  className="flex-row items-center"
-                >
-                  <View className="items-center justify-center bg-white h-9 w-9 rounded-xl">
-                    <Ionicons name="search" size={18} color="#111827" />
-                  </View>
-                  <Text className="ml-2 text-sm font-bold text-white">
-                    코스 찾기
-                  </Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => navigation.navigate("MyRoute")}
-                  className="flex-row items-center"
-                >
-                  <View className="items-center justify-center bg-white h-9 w-9 rounded-xl">
-                    <Ionicons name="bookmark" size={18} color="#111827" />
-                  </View>
-                  <Text className="ml-2 text-sm font-bold text-white">
-                    내 저장
-                  </Text>
-                </Pressable>
-              </View>
+              <Text style={{ marginTop: 4, fontSize: 22, fontWeight: "600", lineHeight: 30, color: "#fff" }}>
+                오늘은 어디를 걸어볼까요?
+              </Text>
+              <Text style={{ marginTop: 4, fontSize: 13, fontWeight: "400", color: "#dbeafe" }}>{weatherMoodMessage}</Text>
+              <Pressable
+                onPress={openRouteCreate}
+                className="mt-4 self-start active:opacity-90"
+                style={{
+                  backgroundColor: "#2563EB",
+                  borderRadius: 10,
+                  paddingVertical: 9,
+                  paddingHorizontal: 18,
+                }}
+              >
+                <Text style={{ color: "#ffffff", fontSize: 13, fontWeight: "600" }}>새 코스 만들기</Text>
+              </Pressable>
             </View>
-          </ImageBackground>
-        </View>
-
-        {/* 요약 카드 2개 */}
-        <View className="flex-row gap-3 mt-4">
-          <Pressable
-            style={[CARD_STYLE, { flex: 1, padding: 14 }]}
-            onPress={() => navigation.navigate("MyRoute")}
-          >
-            <View className="flex-row items-center justify-between">
-              <View className="rounded-2xl bg-blue-50 p-2.5">
-                <Ionicons name="bookmark" size={20} color="#2563eb" />
+            <View className="items-end justify-end">
+              <View
+                style={{
+                  width: 72,
+                  height: 72,
+                  borderRadius: 999,
+                  backgroundColor: "rgba(255,255,255,0.22)",
+                  position: "absolute",
+                  right: 0,
+                  bottom: 0,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {/* TODO: 캐릭터 이미지로 교체 예정 */}
+                {(() => {
+                  const source = require("../assets/ruty.png");
+                  if (!source) return null;
+                  return (
+                    <Image
+                      source={source}
+                      resizeMode="contain"
+                      style={{ width: 56, height: 56 }}
+                    />
+                  );
+                })()}
               </View>
-              <Ionicons name="chevron-forward" size={18} color="#cbd5e1" />
-            </View>
-            <Text className="mt-3 text-xs font-semibold text-gray-500">
-              저장한 코스
-            </Text>
-            <Text className="mt-1 text-2xl font-extrabold text-gray-900">
-              {savedCourseIds.length}
-            </Text>
-            <Text className="mt-0.5 text-xs text-gray-500">전체 보기</Text>
-          </Pressable>
-
-          <Pressable
-            style={[CARD_STYLE, { flex: 1, padding: 14 }]}
-            onPress={() => navigation.navigate("SharedRoute")}
-          >
-            <View className="flex-row items-center justify-between">
-              <View className="rounded-2xl bg-emerald-50 p-2.5">
-                <Ionicons name="paper-plane" size={20} color="#059669" />
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="#cbd5e1" />
-            </View>
-            <Text className="mt-3 text-xs font-semibold text-gray-500">
-              공개한 코스
-            </Text>
-            <Text className="mt-1 text-2xl font-extrabold text-gray-900">
-              {publicCourseIds.length}
-            </Text>
-            <Text className="mt-0.5 text-xs text-gray-500">전체 보기</Text>
-          </Pressable>
-        </View>
-
-        {/* 오늘 날씨 */}
-        <View style={{ marginTop: 22 }}>
-          <SectionHeader title="오늘 날씨" />
-          <View style={[CARD_STYLE, { marginTop: 12, padding: 14 }]}>
-            <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center">
-                <View className="h-10 w-10 items-center justify-center rounded-xl bg-sky-50">
-                  <Ionicons
-                    name="partly-sunny-outline"
-                    size={22}
-                    color="#0284c7"
-                  />
-                </View>
-                <View className="ml-3">
-                  <Text className="text-sm font-semibold text-gray-900">
-                    {weatherPlaceLabel} 예상 날씨
-                  </Text>
-                  <Text className="mt-0.5 text-xs text-gray-500">
-                    {weatherSubtitle}
-                  </Text>
-                </View>
-              </View>
-              <View className="flex-row items-center gap-2">
-                <Pressable
-                  onPress={() => setLocationModalOpen(true)}
-                  className="rounded-lg bg-blue-50 px-2.5 py-1.5"
-                >
-                  <Text className="text-[11px] font-semibold text-blue-700">
-                    위치 선택
-                  </Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => fetchWeather()}
-                  className="rounded-lg bg-gray-100 px-2.5 py-1.5"
-                >
-                  <Text className="text-[11px] font-semibold text-gray-700">
-                    새로고침
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-            <View className="mt-3 min-h-[72px]">
-              <View className="flex-row items-end">
-                <Text className="text-3xl font-extrabold text-gray-900">
-                  {weather?.temperatureC != null
-                    ? `${Math.round(weather.temperatureC)}°`
-                    : "--°"}
-                </Text>
-                <Text className="mb-1 ml-2 text-sm font-semibold text-sky-700">
-                  {weather?.sky ?? "날씨 준비중"}
-                </Text>
-              </View>
-              <View className="mt-2 flex-row flex-wrap gap-2">
-                <View className="rounded-full bg-gray-100 px-2.5 py-1">
-                  <Text className="text-[11px] font-semibold text-gray-700">
-                    강수확률{" "}
-                    {weather?.rainChance != null
-                      ? `${Math.round(weather.rainChance)}%`
-                      : "--"}
-                  </Text>
-                </View>
-                <View className="rounded-full bg-gray-100 px-2.5 py-1">
-                  <Text className="text-[11px] font-semibold text-gray-700">
-                    습도{" "}
-                    {weather?.humidity != null
-                      ? `${Math.round(weather.humidity)}%`
-                      : "--"}
-                  </Text>
-                </View>
-                <View className="rounded-full bg-gray-100 px-2.5 py-1">
-                  <Text className="text-[11px] font-semibold text-gray-700">
-                    최저/최고{" "}
-                    {weather?.minTempC != null
-                      ? Math.round(weather.minTempC)
-                      : "--"}
-                    ° /{" "}
-                    {weather?.maxTempC != null
-                      ? Math.round(weather.maxTempC)
-                      : "--"}
-                    °
-                  </Text>
-                </View>
-                <View className="rounded-full bg-gray-100 px-2.5 py-1">
-                  <Text className="text-[11px] font-semibold text-gray-700">
-                    기준{" "}
-                    {weatherSource === "current"
-                      ? "현재 위치"
-                      : weatherSource === "custom"
-                        ? "선택 위치"
-                        : "기본 위치"}
-                  </Text>
-                </View>
-              </View>
-              {weatherError ? (
-                <Text className="mt-2 text-xs text-rose-500">
-                  일시적으로 최신 날씨를 불러오지 못했습니다.
-                </Text>
-              ) : null}
             </View>
           </View>
-        </View>
+        </LinearGradient>
 
-        {/* 주변 인기 코스 */}
-        <View style={{ marginTop: 22 }}>
-          <SectionHeader
-            title="주변 인기 코스"
-            actionLabel="자세히 보기"
-            onPressAction={() =>
-              navigation.navigate("SharedRoute", {
-                openFilter: true,
-                openAsPopular: true,
-              })
-            }
-          />
+        <View className="mt-5 flex-row items-center justify-between px-4 py-3" style={CARD_STYLE}>
+          <View className="min-w-0 flex-1 pr-2">
+            <View className="flex-row items-center">
+              <Image
+                source={getWeatherIconSource(integrated?.current?.weatherIcon)}
+                style={{ width: 24, height: 24 }}
+              />
+              <Text style={{ marginLeft: 8, color: "#1A1A2E", fontSize: 22, fontWeight: "600" }}>
+                {integrated?.current ? `${Math.round(integrated.current.temperature)}°` : "--°"}
+              </Text>
+              <Text style={{ marginLeft: 8, color: "#6B7280", fontSize: 13, fontWeight: "400" }}>
+                {integrated?.current?.weatherDesc ?? "날씨 확인 중"}
+              </Text>
+            </View>
+            <Text style={{ marginTop: 4, color: "#6B7280", fontSize: 12, fontWeight: "400" }} numberOfLines={1}>
+              {weatherHighlights.join(" · ")}
+            </Text>
+          </View>
+          <View
+            style={{
+              backgroundColor: "#EFF6FF",
+              paddingVertical: 5,
+              paddingHorizontal: 10,
+              borderRadius: 20,
+              maxWidth: 120,
+              flexShrink: 0,
+            }}
+          >
+            <Text style={{ color: "#2563EB", fontSize: 12, fontWeight: "500" }} numberOfLines={1}>
+              코스 추천일 ☀️
+            </Text>
+          </View>
+        </View>
+        {weatherError ? <Text className="mt-1 text-xs text-rose-600">{weatherError}</Text> : null}
+
+        <View style={{ marginTop: 20 }}>
+          <View style={{ marginBottom: 12 }}>
+            <SectionHeader title="내 최근 코스" actionLabel="전체 보기" onPressAction={() => navigation.navigate("MyRoute")} />
+          </View>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{
-              marginTop: 12,
-              paddingRight: HORIZONTAL_MARGIN,
-              gap: 12,
-            }}
-            style={{
-              marginLeft: -HORIZONTAL_MARGIN,
-              paddingLeft: HORIZONTAL_MARGIN,
-            }}
+            snapToInterval={RECENT_CARD_WIDTH + 12}
+            decelerationRate="fast"
+            contentContainerStyle={{ paddingTop: 12, paddingRight: 8 }}
           >
-            {popularCourses.map((course) => (
+            {recentCourses.map((course) => (
               <Pressable
                 key={course.id}
-                style={{ width: FEATURE_CARD_WIDTH }}
-                onPress={() =>
-                  navigation.navigate("SharedRoute", {
-                    viewCourseId: course.id,
-                    openAsPopular: true,
-                  })
-                }
+                onPress={() => navigation.navigate("MyRoute")}
+                className="mr-3 rounded-[16px] p-3 active:opacity-95"
+                style={{ width: RECENT_CARD_WIDTH, ...CARD_STYLE }}
               >
-                <View style={[CARD_STYLE, { padding: 0, overflow: "hidden" }]}>
-                  <View style={{ height: 88, backgroundColor: "#111827" }}>
-                    <ImageBackground
-                      source={require("../assets/banner.jpg")}
-                      resizeMode="cover"
-                      style={{ width: "100%", height: "100%" }}
-                      imageStyle={{ opacity: 0.85 }}
-                    >
-                      <View
-                        style={{
-                          ...StyleSheet.absoluteFillObject,
-                          backgroundColor: "rgba(0,0,0,0.35)",
-                        }}
-                      />
-                      <View className="justify-end flex-1 px-4 pb-3">
-                        <View className="flex-row items-center justify-between">
-                          <View className="rounded-full bg-white/15 px-2.5 py-1">
-                            <Text className="text-[11px] font-semibold text-white">
-                              {course.region} · {course.category}
-                            </Text>
-                          </View>
-                          <View className="flex-row items-center">
-                            <Ionicons
-                              name="eye-outline"
-                              size={14}
-                              color="#fff"
-                            />
-                            <Text className="ml-1 text-[11px] font-semibold text-white/90">
-                              {course.views}
-                            </Text>
-                          </View>
+                <View
+                  style={{
+                    height: 86,
+                    borderRadius: 12,
+                    backgroundColor: "#DBEAFE",
+                    borderWidth: 0.5,
+                    borderColor: "#c7d2fe",
+                    overflow: "hidden",
+                  }}
+                >
+                  <Svg width="100%" height="100%" viewBox="0 0 300 120">
+                    <Polyline
+                      points="60,88 150,34 240,56"
+                      fill="none"
+                      stroke="#2563EB"
+                      strokeWidth="5"
+                      strokeLinejoin="round"
+                      strokeLinecap="round"
+                      opacity="0.35"
+                    />
+                    <Circle cx="60" cy="88" r="10" fill="#fff" stroke="#2563EB" strokeWidth="5" />
+                    <Circle cx="150" cy="34" r="10" fill="#fff" stroke="#2563EB" strokeWidth="5" />
+                    <Circle cx="240" cy="56" r="10" fill="#fff" stroke="#2563EB" strokeWidth="5" />
+                  </Svg>
+
+                  <View style={{ position: "absolute", left: 10, bottom: 8, flexDirection: "row" }}>
+                    {course.tags.slice(0, 2).map((tag) => {
+                      const tagStyle = getTagStyle(tag);
+                      return (
+                        <View
+                          key={`${course.id}-${tag}`}
+                          style={{
+                            marginRight: 6,
+                            backgroundColor: tagStyle.bg,
+                            paddingHorizontal: 8,
+                            paddingVertical: 3,
+                            borderRadius: 999,
+                          }}
+                        >
+                          <Text style={{ color: tagStyle.color, fontSize: 11, fontWeight: "500" }}>{tag}</Text>
                         </View>
-                      </View>
-                    </ImageBackground>
+                      );
+                    })}
                   </View>
-                  <View className="px-4 pt-3 pb-4">
-                    <Text
-                      className="text-sm font-extrabold text-gray-900"
-                      numberOfLines={2}
-                    >
-                      {course.title}
-                    </Text>
-                    <View className="flex-row items-center mt-2">
-                      <View className="rounded bg-green-100 px-2 py-0.5">
-                        <Text className="text-[11px] font-semibold text-green-700">
-                          {course.departure}
-                        </Text>
-                      </View>
-                      <Ionicons
-                        name="arrow-forward"
-                        size={14}
-                        color="#9ca3af"
-                        style={{ marginHorizontal: 6 }}
-                      />
-                      <View className="rounded bg-red-100 px-2 py-0.5">
-                        <Text className="text-[11px] font-semibold text-red-700">
-                          {course.arrival}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
+                </View>
+                <Text style={{ marginTop: 12, fontSize: 14, fontWeight: "600", color: "#1A1A2E" }} numberOfLines={1}>
+                  {course.title}
+                </Text>
+                <Text style={{ marginTop: 4, fontSize: 13, fontWeight: "400", color: "#6B7280" }} numberOfLines={1}>
+                  {course.waypoints.join(" · ")}
+                </Text>
+                <Text style={{ marginTop: 4, fontSize: 12, fontWeight: "400", color: "#6B7280" }}>
+                  핀 {course.pinCount}개 · {course.distanceKm}km
+                </Text>
+                <View className="mt-3 flex-row">
+                  <Pressable
+                    className="mr-2"
+                    style={{
+                      backgroundColor: "transparent",
+                      borderWidth: 1,
+                      borderColor: "#D1D5DB",
+                      borderRadius: 10,
+                      paddingVertical: 9,
+                      paddingHorizontal: 18,
+                    }}
+                  >
+                    <Text style={{ color: "#6B7280", fontSize: 13, fontWeight: "400" }}>공유</Text>
+                  </Pressable>
+                  <Pressable
+                    style={{
+                      backgroundColor: "#2563EB",
+                      borderRadius: 10,
+                      paddingVertical: 9,
+                      paddingHorizontal: 18,
+                    }}
+                  >
+                    <Text style={{ color: "#ffffff", fontSize: 13, fontWeight: "600" }}>보기</Text>
+                  </Pressable>
                 </View>
               </Pressable>
             ))}
+            <Pressable
+              onPress={openRouteCreate}
+              className="items-center justify-center rounded-[18px] p-3"
+              style={{
+                width: RECENT_CARD_WIDTH * 0.58,
+                borderWidth: 1.5,
+                borderColor: "#93c5fd",
+                borderStyle: "dashed",
+                backgroundColor: "#f8fbff",
+              }}
+            >
+              <Ionicons name="add-circle-outline" size={28} color="#2563EB" />
+              <Text style={{ marginTop: 8, fontSize: 13, fontWeight: "600", color: "#2563EB" }}>새 코스 만들기</Text>
+            </Pressable>
           </ScrollView>
         </View>
 
-        <View style={{ height: 10 }} />
-      </ScrollView>
-
-      <Modal
-        visible={locationModalOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setLocationModalOpen(false)}
-      >
-        <View className="flex-1 justify-center px-6">
-          <Pressable
-            style={StyleSheet.absoluteFillObject}
-            className="bg-black/40"
-            onPress={() => setLocationModalOpen(false)}
-          />
-          <View className="rounded-2xl bg-white p-5" style={{ zIndex: 1 }}>
-            <Text className="text-lg font-bold text-gray-900">
-              날씨 위치 선택
-            </Text>
-            <Text className="mt-1 text-xs text-gray-500">
-              현재 위치 또는 원하는 주소로 날씨를 조회할 수 있어요.
-            </Text>
-
-            <Pressable
-              onPress={useCurrentLocationWeather}
-              className="mt-4 flex-row items-center justify-center rounded-xl bg-blue-600 py-3 active:opacity-90"
-              disabled={resolvingAddress}
-            >
-              <Ionicons name="locate" size={18} color="#fff" />
-              <Text className="ml-2 text-sm font-bold text-white">
-                현재 위치 사용
-              </Text>
-            </Pressable>
-
-            <Text className="mt-4 text-xs font-semibold text-gray-600">
-              원하는 위치(주소)
-            </Text>
-            <TextInput
-              value={customAddressInput}
-              onChangeText={setCustomAddressInput}
-              placeholder="예: 서울 마포구 홍익로"
-              placeholderTextColor="#9ca3af"
-              className="mt-1 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-base text-gray-900"
-            />
-            <Pressable
-              onPress={useCustomAddressWeather}
-              className="mt-2 items-center rounded-xl border border-gray-300 py-3 active:opacity-90"
-              disabled={resolvingAddress}
-            >
-              <Text className="text-sm font-semibold text-gray-700">
-                이 위치로 조회
-              </Text>
-            </Pressable>
-
-            {resolvingAddress ? (
-              <View className="mt-3 flex-row items-center justify-center">
-                <ActivityIndicator size="small" color="#2563eb" />
-                <Text className="ml-2 text-xs text-gray-500">
-                  위치 확인 중...
-                </Text>
-              </View>
-            ) : null}
+        <View style={{ marginTop: 20 }}>
+          <View style={{ marginBottom: 12 }}>
+            <SectionHeader title="지금 인기 코스" actionLabel="더 보기" onPressAction={() => navigation.navigate("SharedRoute")} />
+          </View>
+          <View className="mt-3">
+            {trendingCourses.map((course) => (
+              <Pressable
+                key={course.id}
+                onPress={() => navigation.navigate("SharedRoute")}
+                className="mb-3 flex-row items-center rounded-[16px] p-3 active:opacity-95"
+                style={CARD_STYLE}
+              >
+                <View
+                  className="mr-3 h-12 w-12 items-center justify-center rounded-xl"
+                  style={{ backgroundColor: getCategoryTint(course.category) }}
+                >
+                  <Ionicons name="map-outline" size={22} color="#2563EB" />
+                </View>
+                <View className="min-w-0 flex-1">
+                  <Text style={{ fontSize: 14, fontWeight: "600", color: "#1A1A2E" }} numberOfLines={1}>
+                    {course.title}
+                  </Text>
+                  <Text style={{ marginTop: 2, fontSize: 13, fontWeight: "400", color: "#6B7280" }}>🙂 {course.author}</Text>
+                  <Text style={{ marginTop: 2, fontSize: 12, fontWeight: "400", color: "#6B7280" }}>
+                    핀 {course.pinCount}개 · {course.distanceKm}km · {course.category}
+                  </Text>
+                </View>
+                <View className="items-end">
+                  <Pressable className="rounded-full p-1.5">
+                    <Ionicons name="bookmark-outline" size={18} color="#6B7280" />
+                  </Pressable>
+                  <View
+                    style={{
+                      marginTop: 4,
+                      backgroundColor: "#EFF6FF",
+                      borderRadius: 6,
+                      paddingVertical: 2,
+                      paddingHorizontal: 8,
+                    }}
+                  >
+                    <Text style={{ color: "#2563EB", fontSize: 11, fontWeight: "500" }}>인기</Text>
+                  </View>
+                  <Text style={{ marginTop: 4, fontSize: 12, fontWeight: "400", color: "#6B7280" }}>❤ {course.likes}</Text>
+                </View>
+              </Pressable>
+            ))}
           </View>
         </View>
-      </Modal>
+
+        <View className="mt-2">
+          <SectionHeader title="팔로잉 소식" actionLabel="전체" onPressAction={() => moveTab("Chat")} />
+          <View className="mt-3">
+            {followingNews.map((news) => (
+              <Pressable
+                key={news.id}
+                onPress={() => moveTab("Chat")}
+                className="mb-2.5 flex-row items-center rounded-[16px] p-3"
+                style={CARD_STYLE}
+              >
+                <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-blue-100">
+                  <Text style={{ fontSize: 13, fontWeight: "600", color: "#2563EB" }}>{news.user.slice(0, 1)}</Text>
+                </View>
+                <View className="min-w-0 flex-1">
+                  <Text style={{ fontSize: 13, fontWeight: "400", color: "#1A1A2E" }} numberOfLines={1}>
+                    <Text style={{ fontWeight: "600" }}>{news.user}</Text>이 {news.action}
+                  </Text>
+                  <Text style={{ marginTop: 2, fontSize: 12, fontWeight: "400", color: "#6B7280" }} numberOfLines={1}>
+                    {news.courseName}
+                  </Text>
+                </View>
+                <Text style={{ marginLeft: 8, fontSize: 12, fontWeight: "400", color: "#6B7280" }}>{news.ago}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      </ScrollView>
+
     </SafeAreaView>
   );
 }

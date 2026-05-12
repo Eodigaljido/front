@@ -5,6 +5,10 @@ export type MapMarkerPoint = {
   longitude: number;
   /** 핀 안에 표기할 숫자/텍스트 (예: 1,2,3) */
   label?: string;
+  /** 출발/경유/도착 구분 */
+  kind?: "start" | "waypoint" | "end";
+  /** 마커 강조 색상 (hex) */
+  color?: string;
 };
 
 export type MapRouteSegment = {
