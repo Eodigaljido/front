@@ -22,7 +22,10 @@ export const ProfileList = ({ size = 60 }: { size?: number }) => {
     if (!accessToken) return;
     getFriends(accessToken)
       .then(setFriends)
-      .catch((err) => console.error("친구 목록 조회 실패:", err));
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : "알 수 없는 오류";
+        console.error("친구 목록 불러오기 실패:", message);
+      });
   }, [accessToken]);
 
   return (
