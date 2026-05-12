@@ -32,23 +32,29 @@ import { createChatRoom } from "@/api/chat/chat";
 type Friend = { id: string; name: string; uuid: string };
 
 const AVATAR_COLORS = [
-  "#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4",
-  "#FFEAA7", "#DDA0DD", "#98D8C8", "#F7DC6F",
+  "#FF6B6B",
+  "#4ECDC4",
+  "#45B7D1",
+  "#96CEB4",
+  "#FFEAA7",
+  "#DDA0DD",
+  "#98D8C8",
+  "#F7DC6F",
 ];
 
 type PresetImage = { id: string; color: string; emoji: string };
 
 // 19개 프리셋 + 1개 로컬 피커 = 4×5 그리드
 const PRESET_IMAGES: PresetImage[] = [
-  { id: "p1",  color: "#4FC3F7", emoji: "🐧" },
-  { id: "p2",  color: "#F48FB1", emoji: "🤖" },
-  { id: "p3",  color: "#FF8A65", emoji: "🔥" },
-  { id: "p4",  color: "#81C784", emoji: "🗺️" },
-  { id: "p5",  color: "#CE93D8", emoji: "⭐" },
-  { id: "p6",  color: "#80DEEA", emoji: "🌊" },
-  { id: "p7",  color: "#A5D6A7", emoji: "🌿" },
-  { id: "p8",  color: "#FFCC02", emoji: "🌟" },
-  { id: "p9",  color: "#FF7043", emoji: "🎮" },
+  { id: "p1", color: "#4FC3F7", emoji: "🐧" },
+  { id: "p2", color: "#F48FB1", emoji: "🤖" },
+  { id: "p3", color: "#FF8A65", emoji: "🔥" },
+  { id: "p4", color: "#81C784", emoji: "🗺️" },
+  { id: "p5", color: "#CE93D8", emoji: "⭐" },
+  { id: "p6", color: "#80DEEA", emoji: "🌊" },
+  { id: "p7", color: "#A5D6A7", emoji: "🌿" },
+  { id: "p8", color: "#FFCC02", emoji: "🌟" },
+  { id: "p9", color: "#FF7043", emoji: "🎮" },
   { id: "p10", color: "#42A5F5", emoji: "🎯" },
   { id: "p11", color: "#AB47BC", emoji: "🎨" },
   { id: "p12", color: "#26C6DA", emoji: "🎵" },
@@ -81,7 +87,9 @@ export default function ChatCreatingScreen(): React.JSX.Element {
 
   // Step 1
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set());
+  const [selectedFriends, setSelectedFriends] = useState<Set<string>>(
+    new Set(),
+  );
   const [recentFriends, setRecentFriends] = useState<Friend[]>([]);
   const [allFriends, setAllFriends] = useState<Friend[]>([]);
   const [loadingFriends, setLoadingFriends] = useState(false);
@@ -97,13 +105,22 @@ export default function ChatCreatingScreen(): React.JSX.Element {
   useEffect(() => {
     if (!accessToken) return;
     setLoadingFriends(true);
-    Promise.all([
-      getFriendsRecent(accessToken),
-      getFriends(accessToken),
-    ])
+    Promise.all([getFriendsRecent(accessToken), getFriends(accessToken)])
       .then(([recent, all]) => {
-        setRecentFriends(recent.map((f) => ({ id: String(f.friendId), name: f.nickname, uuid: f.uuid })));
-        setAllFriends(all.map((f) => ({ id: String(f.friendId), name: f.nickname, uuid: f.uuid })));
+        setRecentFriends(
+          recent.map((f) => ({
+            id: String(f.friendId),
+            name: f.nickname,
+            uuid: f.uuid,
+          })),
+        );
+        setAllFriends(
+          all.map((f) => ({
+            id: String(f.friendId),
+            name: f.nickname,
+            uuid: f.uuid,
+          })),
+        );
       })
       .finally(() => setLoadingFriends(false));
   }, [accessToken]);
@@ -111,7 +128,7 @@ export default function ChatCreatingScreen(): React.JSX.Element {
   // ── 친구 초대 ────────────────────────────────────────────────────────────────
 
   const filteredRecent = recentFriends.filter((f) =>
-    f.name.includes(searchQuery)
+    f.name.includes(searchQuery),
   );
   const filteredAll = allFriends.filter((f) => f.name.includes(searchQuery));
 
@@ -145,6 +162,11 @@ export default function ChatCreatingScreen(): React.JSX.Element {
 
   const handleCreate = async () => {
     if (!accessToken) return;
+    const trimedName = roomName.trim();
+    if (trimedName.length === 0) {
+      Alert.alert("알림", "채팅방 이름을 입력해주세요.");
+      return;
+    }
     const allKnownFriends = [...recentFriends, ...allFriends];
     const selectedUuids = [...selectedFriends]
       .map((id) => allKnownFriends.find((f) => f.id === id)?.uuid)
@@ -154,7 +176,7 @@ export default function ChatCreatingScreen(): React.JSX.Element {
       : selectedUuids;
     setIsCreating(true);
     try {
-      await createChatRoom(accessToken, memberUuids, roomName, localImageUri);
+      await createChatRoom(accessToken, memberUuids, trimedName, localImageUri);
       navigation.goBack();
     } catch {
       Alert.alert("오류", "채팅방 생성에 실패했습니다.");
@@ -229,7 +251,10 @@ export default function ChatCreatingScreen(): React.JSX.Element {
 
   if (step === "invite") {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: "white" }} edges={["top"]}>
+      <SafeAreaView
+        style={{ flex: 1, backgroundColor: "white" }}
+        edges={["top"]}
+      >
         {/* 헤더 */}
         <View
           style={{
@@ -270,7 +295,9 @@ export default function ChatCreatingScreen(): React.JSX.Element {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={{ paddingHorizontal: 16, paddingTop: 20, paddingBottom: 40 }}>
+          <View
+            style={{ paddingHorizontal: 16, paddingTop: 20, paddingBottom: 40 }}
+          >
             {/* 제목 */}
             <Text
               style={{
@@ -312,7 +339,11 @@ export default function ChatCreatingScreen(): React.JSX.Element {
 
             {/* 친구 목록 */}
             {loadingFriends ? (
-              <ActivityIndicator size="small" color="#3B82F6" style={{ marginTop: 16 }} />
+              <ActivityIndicator
+                size="small"
+                color="#3B82F6"
+                style={{ marginTop: 16 }}
+              />
             ) : (
               <>
                 {/* 자주 연락한 친구 */}
@@ -381,15 +412,24 @@ export default function ChatCreatingScreen(): React.JSX.Element {
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text
-                          style={{ fontSize: 14, fontWeight: "600", color: "#111827" }}
+                          style={{
+                            fontSize: 14,
+                            fontWeight: "600",
+                            color: "#111827",
+                          }}
                         >
                           더 많은 친구 초대하기
                         </Text>
                         <Text
-                          style={{ fontSize: 11, color: "#9CA3AF", marginTop: 2 }}
+                          style={{
+                            fontSize: 11,
+                            color: "#9CA3AF",
+                            marginTop: 2,
+                          }}
                           numberOfLines={2}
                         >
-                          사용자를 검색하거나 링크를 초대하여 친구를 만들어보세요!
+                          사용자를 검색하거나 링크를 초대하여 친구를
+                          만들어보세요!
                         </Text>
                       </View>
                       <ChevronRight color="#9CA3AF" size={18} />
@@ -539,7 +579,10 @@ export default function ChatCreatingScreen(): React.JSX.Element {
                   style={{ width: CELL_SIZE, height: CELL_SIZE }}
                 />
               ) : (
-                <ImageIcon color="#9CA3AF" size={Math.round(CELL_SIZE * 0.35)} />
+                <ImageIcon
+                  color="#9CA3AF"
+                  size={Math.round(CELL_SIZE * 0.35)}
+                />
               )}
             </TouchableOpacity>
 
