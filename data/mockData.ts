@@ -258,21 +258,35 @@ export function getCourseMapCenter(courseId: string): { lat: number; lng: number
   return COURSE_MAP_CENTER[courseId] ?? DEFAULT_MAP_CENTER;
 }
 
-/** 경로 단계 클릭 시 이동할 임시 좌표 (코스 중심 기준 오프셋) */
-const STEP_DELTAS = [
-  { lat: 0, lng: 0 },
-  { lat: 0.0012, lng: -0.0011 },
-  { lat: -0.0014, lng: 0.0013 },
-  { lat: 0.0018, lng: 0.0016 },
-  { lat: -0.0019, lng: -0.0015 },
-];
-
-export function getCourseStepMapPoint(courseId: string, stepIndex: number): { lat: number; lng: number } {
+/**
+ * 경로 단계 좌표 생성 (목 데이터)
+ * 반복 패턴으로 인한 선 교차를 피하기 위해 단계 인덱스를 선형 보간한다.
+ */
+export function getCourseStepMapPoint(
+  courseId: string,
+  stepIndex: number,
+  totalSteps?: number,
+): { lat: number; lng: number } {
   const base = getCourseMapCenter(courseId);
-  const delta = STEP_DELTAS[stepIndex % STEP_DELTAS.length];
+  if (!totalSteps || totalSteps <= 1) {
+    const fallbackDeltas = [
+      { lat: 0, lng: 0 },
+      { lat: 0.0012, lng: -0.0011 },
+      { lat: -0.0014, lng: 0.0013 },
+      { lat: 0.0018, lng: 0.0016 },
+      { lat: -0.0019, lng: -0.0015 },
+    ];
+    const delta = fallbackDeltas[stepIndex % fallbackDeltas.length];
+    return { lat: base.lat + delta.lat, lng: base.lng + delta.lng };
+  }
+  const total = Math.max(2, totalSteps ?? 2);
+  const idx = Math.max(0, Math.min(stepIndex, total - 1));
+  const t = total <= 1 ? 0 : idx / (total - 1);
+  const startOffset = { lat: -0.0016, lng: -0.0014 };
+  const endOffset = { lat: 0.0016, lng: 0.0014 };
   return {
-    lat: base.lat + delta.lat,
-    lng: base.lng + delta.lng,
+    lat: base.lat + startOffset.lat + (endOffset.lat - startOffset.lat) * t,
+    lng: base.lng + startOffset.lng + (endOffset.lng - startOffset.lng) * t,
   };
 }
 

@@ -3,7 +3,7 @@ import axios from "axios";
 import { tokenStorage } from "../utils/tokenStorage";
 
 export const instance = axios.create({
-  baseURL: process.env.EXPO_PUBLIC_API_BASE_URL,
+  baseURL: String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").replace(/\/+$/, ""),
   headers: { "Content-Type": "application/json" },
   withCredentials: true,
 });
@@ -14,7 +14,15 @@ instance.interceptors.request.use(async config => {
     config.headers.Authorization = `Bearer ${token}`;
   }
   if (__DEV__) {
-    console.log('[REQ]', config.method?.toUpperCase(), config.baseURL + config.url, config.data);
+    const base = String(config.baseURL ?? "").replace(/\/+$/, "");
+    const url = String(config.url ?? "").replace(/^\/+/, "");
+    const hasAuth = Boolean((config.headers as any)?.Authorization);
+    console.log(
+      "[REQ]",
+      config.method?.toUpperCase(),
+      `${base}/${url}`,
+      { hasAuth, data: config.data },
+    );
   }
   return config;
 });
