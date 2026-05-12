@@ -4,9 +4,10 @@ import { InfoButton } from "./InfoButton";
 
 interface RoomHeaderProps {
   roomName?: string;
+  roomUuid: string;
 }
 
-export const RoomHeader = ({ roomName = "채팅방" }: RoomHeaderProps) => {
+export const RoomHeader = ({ roomName = "채팅방", roomUuid }: RoomHeaderProps) => {
   return (
     <View
       className="w-full bg-white flex-row items-center mt-10 px-4"
@@ -21,7 +22,7 @@ export const RoomHeader = ({ roomName = "채팅방" }: RoomHeaderProps) => {
         <Text className="text-black text-lg font-bold">{roomName}</Text>
       </View>
       <View className="flex-1" />
-      <InfoButton />
+      <InfoButton roomUuid={roomUuid} roomName={roomName} />
     </View>
   );
 };
