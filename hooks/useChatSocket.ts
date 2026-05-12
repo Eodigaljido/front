@@ -6,7 +6,7 @@ import { ChatMessage, sendMessage as sendMessageHttp } from "@/api/chat/chat";
 
 // SockJS는 http/https URL 사용 (ws:// 아님)
 const STOMP_URL =
-  (process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://3.36.85.213:8080") +
+  (process.env.EXPO_PUBLIC_API_BASE_URL ?? process.env.EXPO_SOCKET_URL) +
   "/ws/chat";
 
 export type ChatSocketEvent =
@@ -41,7 +41,7 @@ export function useChatSocket(
   // Stable string key so the effect only re-runs when UUIDs actually change
   const roomUuidKey = Array.isArray(roomUuid)
     ? [...roomUuid].filter(Boolean).sort().join(",")
-    : roomUuid ?? "";
+    : (roomUuid ?? "");
 
   useEffect(() => {
     if (!accessToken || !roomUuidKey) return;
@@ -98,7 +98,9 @@ export function useChatSocket(
   const sendMessage = useCallback(
     async (content: string): Promise<void> => {
       if (!singleRoomUuid) {
-        throw new Error("메시지를 전송할 수 없습니다: 채팅방이 지정되지 않았습니다.");
+        throw new Error(
+          "메시지를 전송할 수 없습니다: 채팅방이 지정되지 않았습니다.",
+        );
       }
       if (clientRef.current?.connected) {
         clientRef.current.publish({
