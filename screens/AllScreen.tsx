@@ -84,14 +84,6 @@ export default function AllScreen(): React.JSX.Element {
       iconBg: "#e5e7eb",
       onPress: () => Alert.alert("준비 중", "알림 설정 기능은 곧 제공됩니다."),
     },
-    {
-      id: "modal-test",
-      title: "모달 테스트",
-      icon: "notifications-outline",
-      iconColor: "#6b7280",
-      iconBg: "#e5e7eb",
-      onPress: () => navigation.navigate("BottomSheet"),
-    },
   ];
 
   const renderMenuSection = (items: MenuItem[]) => (
