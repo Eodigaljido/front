@@ -1,15 +1,29 @@
 import { View, Text, Image, ScrollView } from "react-native";
+import { getFriends } from "@/api/friend/index";
+import { useAuthStore } from "@/store/authStore";
+import { useEffect, useState } from "react";
+
+export interface FriendListItem {
+  friendId: number;
+  uuid: string;
+  nickname: string;
+  profileImageUrl: string;
+  isDefaultImage: boolean;
+}
 
 export const ProfileList = ({ size = 60 }: { size?: number }) => {
-  const names = ["김태호", "송주영", "박건형", "박창연", "류지우", "김민수"];
-  const imageUrls = [
-    "https://avatars.githubusercontent.com/u/108007761?v=4",
-    "https://avatars.githubusercontent.com/u/162583068?v=4",
-    "https://avatars.githubusercontent.com/u/162693556?v=4",
-    "https://avatars.githubusercontent.com/u/140193710?v=4",
-    "https://avatars.githubusercontent.com/u/126925788?v=4",
-    "https://avatars.githubusercontent.com/u/3747645?v=4",
-  ];
+  const [friends, setFriends] = useState<
+    Awaited<ReturnType<typeof getFriends>>
+  >([]);
+
+  const accessToken = useAuthStore((s) => s.accessToken);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    getFriends(accessToken)
+      .then(setFriends)
+      .catch((err) => console.error("친구 목록 조회 실패:", err));
+  }, [accessToken]);
 
   return (
     <ScrollView
@@ -22,17 +36,17 @@ export const ProfileList = ({ size = 60 }: { size?: number }) => {
       }}
     >
       <View className="flex-row gap-5">
-        {names.map((name, index) => (
-          <View key={index} className="items-center">
+        {friends.map((friend) => (
+          <View key={friend.friendId} className="items-center">
             <Image
               source={{
-                uri: imageUrls[index],
+                uri: friend.profileImageUrl,
               }}
               className="rounded-full mt-5 border-2 border-gray-300"
               style={{ width: size, height: size }}
             />
             <Text className="text-sm font-semibold mt-3 text-gray-700">
-              {name}
+              {friend.nickname}
             </Text>
           </View>
         ))}
