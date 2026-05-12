@@ -5,51 +5,72 @@ import {
   View,
   Text,
   ScrollView,
+  RefreshControl,
   Pressable,
   Dimensions,
-  ImageBackground,
+  Image,
   StyleSheet,
+  Animated,
   ActivityIndicator,
+  PanResponder,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import Svg, { Polyline, Circle } from "react-native-svg";
+import { LinearGradient } from "expo-linear-gradient";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import type { RootTabParamList } from "../App";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
-import { useMockData } from "../context/MockDataContext";
-import { getPopularNearbyCourses } from "../data/mockData";
+import * as Haptics from "expo-haptics";
+import { fetchFollowingNews, fetchHomeCourses } from "../api/courses";
+import { useAuthStore } from "../store/authStore";
 import {
   fetchIntegratedWeather,
   type IntegratedWeatherResponse,
 } from "../data/integratedWeatherApi";
-import AppMapView from "../components/AppMapView";
 
 type HomeNavProp = BottomTabNavigationProp<RootTabParamList, "Home">;
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const HORIZONTAL_MARGIN = 16;
-const FEATURE_CARD_WIDTH = SCREEN_WIDTH * 0.62;
+const RECENT_CARD_WIDTH = SCREEN_WIDTH * 0.78;
+const HEADER_HEIGHT = 50;
 
-const PAGE_BG = "#F2F2F2";
+const PAGE_BG = "#F0F5FF";
 
 const CARD_STYLE = {
-  backgroundColor: "#fff",
-  borderRadius: 22,
-  padding: 16,
-  shadowColor: "#000",
-  shadowOffset: { width: 0, height: 8 },
-  shadowOpacity: 0.06,
-  shadowRadius: 16,
-  elevation: 4,
-  borderWidth: 1,
-  borderColor: "rgba(0,0,0,0.05)",
+  backgroundColor: "#FFFFFF",
+  borderRadius: 16,
+  borderWidth: 0.5,
+  borderColor: "rgba(37,99,235,0.1)",
 };
 
 const WEATHER_AUTO_REFRESH_MS = 10 * 60 * 1000;
 const WEATHER_FETCH_TIMEOUT_MS = 12_000;
 const LOCATION_TIMEOUT_MS = 7000;
+const REFRESH_GUARD_TIMEOUT_MS = 15_000;
+const REFRESH_SPINNER_MAX_MS = 3_000;
+const PULL_INDICATOR_HIDDEN_Y = -84;
+const PULL_INDICATOR_MAX_DRAG = 76;
+const PULL_TRIGGER_DISTANCE = 44;
+// 새로고침 제스처는 날씨 파트(상단 영역)에서 시작한 경우에만 허용
+const PULL_CAPTURE_TOP_LIMIT = 260;
 const DEFAULT_WEATHER_LOCATION = "서울 강남구";
+const WEATHER_ICON_IMAGES = {
+  sunny: require("../assets/Weather/Sunny.png"),
+  partly_cloudy: require("../assets/Weather/PartlyCloudy.png"),
+  cloudy: require("../assets/Weather/PartlyCloudy.png"),
+  rainy: require("../assets/Weather/Rainy.png"),
+  shower: require("../assets/Weather/RainThunder.png"),
+  sleet: require("../assets/Weather/Snowy.png"),
+  snowy: require("../assets/Weather/Snowy.png"),
+} as const;
+
+function getWeatherIconSource(iconKey?: string) {
+  const key = String(iconKey ?? "").toLowerCase() as keyof typeof WEATHER_ICON_IMAGES;
+  return WEATHER_ICON_IMAGES[key] ?? WEATHER_ICON_IMAGES.partly_cloudy;
+}
 
 function formatFetchedAt(iso?: string): string {
   if (!iso) return "";
@@ -87,6 +108,27 @@ function buildWeatherLocationQuery(
   return joined || DEFAULT_WEATHER_LOCATION;
 }
 
+function getWeatherMoodMessage(weather?: IntegratedWeatherResponse["current"]): string {
+  if (!weather) return "오늘 코스를 천천히 고르기 좋은 날씨네요!";
+  const temp = Number.isFinite(weather.temperature) ? weather.temperature : 18;
+  const rain = Number.isFinite(weather.precipitation1h) ? weather.precipitation1h : 0;
+  const desc = String(weather.weatherDesc ?? "").toLowerCase();
+
+  if (rain >= 1 || desc.includes("비")) {
+    return "오늘은 실내 코스로 여유롭게 즐기기 좋은 날씨네요!";
+  }
+  if (temp >= 28) {
+    return "오늘은 그늘 많은 짧은 산책 코스가 딱 좋은 날씨네요!";
+  }
+  if (temp <= 5) {
+    return "오늘은 따뜻하게 입고 가까운 코스를 즐기기 좋은 날씨네요!";
+  }
+  if (desc.includes("맑") || desc.includes("sun")) {
+    return "오늘은 야외 산책 코스를 즐기기 좋은 날씨네요!";
+  }
+  return "오늘은 가볍게 이동하며 코스를 둘러보기 좋은 날씨네요!";
+}
+
 function SectionHeader({
   title,
   actionLabel,
@@ -98,11 +140,11 @@ function SectionHeader({
 }) {
   return (
     <View className="flex-row items-center justify-between">
-      <Text className="text-lg font-extrabold text-gray-900">{title}</Text>
+      <Text style={{ fontSize: 15, fontWeight: "600", color: "#1A1A2E" }}>{title}</Text>
       {actionLabel ? (
         <Pressable hitSlop={12} onPress={onPressAction}>
           <View className="flex-row items-center">
-            <Text className="text-sm font-semibold text-blue-600">
+            <Text style={{ fontSize: 13, fontWeight: "400", color: "#6B7280" }}>
               {actionLabel}
             </Text>
             <Ionicons name="chevron-forward" size={16} color="#2563eb" />
@@ -115,45 +157,117 @@ function SectionHeader({
   );
 }
 
+function getTagStyle(tag: string) {
+  if (tag === "카페") return { bg: "#FEF3C7", color: "#92400E" };
+  if (tag === "골목") return { bg: "#EDE9FE", color: "#4338CA" };
+  if (tag === "산책") return { bg: "#D1FAE5", color: "#065F46" };
+  if (tag === "맛집") return { bg: "#FEE2E2", color: "#991B1B" };
+  return { bg: "#DBEAFE", color: "#1D4ED8" };
+}
+
+function getCategoryTint(category: string) {
+  return "#DBEAFE";
+}
+
 export default function HomeScreen(): React.JSX.Element {
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<HomeNavProp>();
-  const { savedCourseIds, publicCourseIds } = useMockData();
-  const popularCourses = getPopularNearbyCourses(3);
+  const authUser = useAuthStore((s: any) => s.user);
+  const [popularCourses, setPopularCourses] = useState<any[]>([]);
+  const [followingNewsApi, setFollowingNewsApi] = useState<any[]>([]);
 
   const [weatherLoading, setWeatherLoading] = useState(true);
   const [weatherError, setWeatherError] = useState<string | null>(null);
   const [integrated, setIntegrated] = useState<IntegratedWeatherResponse | null>(
     null,
   );
+  const [refreshing, setRefreshing] = useState(false);
+  const [showPullIndicator, setShowPullIndicator] = useState(false);
   const [heroLocationLabel, setHeroLocationLabel] = useState("위치 확인 중...");
-  /** 지도 중심·마커 (GPS 또는 주소 지오코딩) */
-  const [mapCoords, setMapCoords] = useState<{
-    latitude: number;
-    longitude: number;
-  } | null>(null);
-
   const weatherLocationRef = useRef("");
+  const pullDownY = useRef(new Animated.Value(PULL_INDICATOR_HIDDEN_Y)).current;
+  const pullProgress = useRef(new Animated.Value(0)).current;
+  const pullDistanceRef = useRef(0);
+  const refreshingRef = useRef(false);
 
-  const applyGeocodedMapFallback = useCallback(async () => {
-    try {
-      const geo = await Location.geocodeAsync(DEFAULT_WEATHER_LOCATION);
-      const g = geo?.[0];
-      if (
-        g &&
-        typeof g.latitude === "number" &&
-        typeof g.longitude === "number"
-      ) {
-        setMapCoords({ latitude: g.latitude, longitude: g.longitude });
-      }
-    } catch {
-      setMapCoords({ latitude: 37.4979, longitude: 127.0276 });
-    }
+  useEffect(() => {
+    let mounted = true;
+    fetchHomeCourses(6)
+      .then((courses) => {
+        if (mounted) setPopularCourses(courses);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    fetchFollowingNews(3)
+      .then((items) => {
+        if (mounted && items.length > 0) setFollowingNewsApi(items);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const weatherSubtitle = useMemo(
     () => formatFetchedAt(integrated?.fetchedAt),
     [integrated?.fetchedAt],
   );
+  const weatherMoodMessage = useMemo(
+    () => getWeatherMoodMessage(integrated?.current),
+    [integrated?.current],
+  );
+  const weatherHighlights = useMemo(() => {
+    const c = integrated?.current;
+    if (!c) return ["체감 --°", "습도 --%", "미세 --"];
+    return [
+      `체감 ${Math.round(c.feelsLike)}°`,
+      `습도 ${Math.round(c.humidity)}%`,
+      `미세 ${integrated?.air?.pm10Grade ?? "--"}`,
+    ];
+  }, [integrated?.air?.pm10Grade, integrated?.current]);
+  const recentCourses = useMemo(
+    () =>
+      popularCourses.slice(0, 3).map((course, idx) => ({
+        id: `recent-${course.id}`,
+        title: course.title,
+        waypoints: course.routeSteps.slice(0, 3).map((step) => step.name),
+        pinCount: course.routeSteps.length,
+        distanceKm: Number((course.overallDurationMinutes / 55).toFixed(1)),
+        tags: idx % 2 === 0 ? ["카페", "골목"] : ["맛집", "산책"],
+      })),
+    [popularCourses],
+  );
+  const trendingCourses = useMemo(
+    () =>
+      popularCourses.slice(0, 3).map((course, idx) => ({
+        id: `trend-${course.id}`,
+        title: course.title,
+        author: `${course.region}러 ${idx + 1}`,
+        likes: Math.max(12, Math.round(course.views / 8)),
+        pinCount: course.routeSteps.length,
+        distanceKm: Number((course.overallDurationMinutes / 55).toFixed(1)),
+        category: course.category,
+      })),
+    [popularCourses],
+  );
+  const followingNewsFallback = useMemo(
+    () =>
+      trendingCourses.slice(0, 3).map((item, idx) => ({
+        id: `feed-${item.id}`,
+        user: item.author,
+        action: idx % 2 === 0 ? "새 코스를 공개했어요" : "코스를 완주했어요",
+        courseName: item.title,
+        ago: idx === 0 ? "9분 전" : idx === 1 ? "1시간 전" : "3시간 전",
+      })),
+    [trendingCourses],
+  );
+  const followingNews = followingNewsApi.length > 0 ? followingNewsApi : followingNewsFallback;
 
   const precipHumidityChip = useMemo(() => {
     const c = integrated?.current;
@@ -233,7 +347,6 @@ export default function HomeScreen(): React.JSX.Element {
           if (!cancelledRef?.value) {
             setHeroLocationLabel("위치 권한 미허용");
             await fetchWeather(cancelledRef, DEFAULT_WEATHER_LOCATION);
-            await applyGeocodedMapFallback();
           }
           return;
         }
@@ -252,11 +365,6 @@ export default function HomeScreen(): React.JSX.Element {
 
         if (cancelledRef?.value) return;
 
-        setMapCoords({
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-        });
-
         const addr = await Location.reverseGeocodeAsync({
           latitude: pos.coords.latitude,
           longitude: pos.coords.longitude,
@@ -270,11 +378,10 @@ export default function HomeScreen(): React.JSX.Element {
         if (!cancelledRef?.value) {
           setHeroLocationLabel("위치 확인 실패");
           await fetchWeather(cancelledRef, DEFAULT_WEATHER_LOCATION);
-          await applyGeocodedMapFallback();
         }
       }
     },
-    [applyGeocodedMapFallback, fetchWeather],
+    [fetchWeather],
   );
 
   useEffect(() => {
@@ -285,345 +392,470 @@ export default function HomeScreen(): React.JSX.Element {
     };
   }, []);
 
+  const handlePullToRefresh = useCallback(async () => {
+    if (refreshingRef.current) return;
+    try {
+      await Haptics.selectionAsync();
+    } catch {}
+    refreshingRef.current = true;
+    setRefreshing(true);
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+    const spinnerTimer = setTimeout(() => {
+      // 3초 이상 걸리면 로딩 UI는 숨김(작업은 계속 진행)
+      setRefreshing(false);
+    }, REFRESH_SPINNER_MAX_MS);
+    try {
+      await Promise.race([
+        (async () => {
+          await resolveCurrentLocation();
+          await fetchWeather(undefined, undefined, { silent: true });
+        })(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("새로고침 시간 초과")), REFRESH_GUARD_TIMEOUT_MS),
+        ),
+      ]);
+      try {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch {}
+    } catch {
+      // 시간 초과 또는 위치/네트워크 지연 시에도 로더가 고정되지 않도록 무조건 종료한다.
+      try {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      } catch {}
+    } finally {
+      clearTimeout(spinnerTimer);
+      refreshingRef.current = false;
+      setRefreshing(false);
+    }
+  }, [resolveCurrentLocation, fetchWeather]);
+
   const displayLocation =
     integrated?.location?.trim() || heroLocationLabel || "위치 확인 중...";
+  const contentTopPadding = insets.top + HEADER_HEIGHT;
+  const contentBottomPadding = insets.bottom + 120;
+  const openRouteCreate = useCallback(() => {
+    (navigation.getParent() as any)?.navigate("RouteCreate");
+  }, [navigation]);
+  const moveTab = useCallback(
+    (tab: keyof RootTabParamList) => {
+      navigation.navigate(tab);
+    },
+    [navigation],
+  );
+
+  const pullPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, gestureState) =>
+          !refreshing &&
+          gestureState.y0 <= insets.top + PULL_CAPTURE_TOP_LIMIT &&
+          gestureState.dy > 6 &&
+          Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.1,
+        onPanResponderMove: (_, gestureState) => {
+          const d = Math.max(0, Math.min(PULL_INDICATOR_MAX_DRAG, gestureState.dy * 0.55));
+          pullDistanceRef.current = d;
+          setShowPullIndicator(d > 0);
+          pullDownY.setValue(PULL_INDICATOR_HIDDEN_Y + d);
+          pullProgress.setValue(d / PULL_INDICATOR_MAX_DRAG);
+        },
+        onPanResponderRelease: () => {
+          const shouldRefresh = pullDistanceRef.current >= PULL_TRIGGER_DISTANCE;
+          pullDistanceRef.current = 0;
+          Animated.spring(pullDownY, {
+            toValue: PULL_INDICATOR_HIDDEN_Y,
+            useNativeDriver: true,
+            tension: 70,
+            friction: 9,
+          }).start();
+          Animated.timing(pullProgress, {
+            toValue: 0,
+            duration: 120,
+            useNativeDriver: true,
+          }).start();
+          if (!shouldRefresh) setShowPullIndicator(false);
+          if (shouldRefresh) handlePullToRefresh();
+        },
+        onPanResponderTerminate: () => {
+          pullDistanceRef.current = 0;
+          Animated.spring(pullDownY, {
+            toValue: PULL_INDICATOR_HIDDEN_Y,
+            useNativeDriver: true,
+            tension: 70,
+            friction: 9,
+          }).start();
+          Animated.timing(pullProgress, {
+            toValue: 0,
+            duration: 120,
+            useNativeDriver: true,
+          }).start();
+          setShowPullIndicator(false);
+        },
+      }),
+    [handlePullToRefresh, insets.top, pullDownY, pullProgress, refreshing],
+  );
 
   return (
-    <SafeAreaView
-      className="flex-1"
-      style={{ backgroundColor: PAGE_BG }}
-      edges={["top"]}
-    >
+    <SafeAreaView className="flex-1" style={{ backgroundColor: PAGE_BG }} edges={["top"]}>
+      <View
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 30,
+          height: insets.top + HEADER_HEIGHT,
+          paddingTop: insets.top + 2,
+          paddingHorizontal: HORIZONTAL_MARGIN,
+          backgroundColor: "rgba(240,245,255,0.96)",
+          borderBottomWidth: 0.5,
+          borderBottomColor: "rgba(37,99,235,0.08)",
+        }}
+      >
+        <View className="flex-row items-center justify-between">
+          <Pressable
+            className="flex-row items-center rounded-full px-3 py-2"
+            style={{ backgroundColor: "#dbeafe" }}
+          >
+            <Ionicons name="location" size={14} color="#1d4ed8" />
+            <Text className="mx-1.5 text-xs font-semibold text-blue-800">{displayLocation}</Text>
+            <Ionicons name="chevron-down" size={13} color="#1d4ed8" />
+          </Pressable>
+          <View className="flex-row items-center">
+            <Pressable
+              className="mr-2 h-9 w-9 items-center justify-center rounded-full bg-white"
+              onPress={() => navigation.navigate("SharedRoute", { openFilter: true })}
+            >
+              <Ionicons name="search-outline" size={20} color="#1a1a2e" />
+            </Pressable>
+            <Pressable
+              className="h-9 w-9 items-center justify-center rounded-full bg-white"
+              onPress={() => navigation.navigate("Chat")}
+            >
+              <Ionicons name="notifications-outline" size={20} color="#1a1a2e" />
+            </Pressable>
+          </View>
+        </View>
+      </View>
+
       <ScrollView
         className="flex-1"
         showsVerticalScrollIndicator={false}
-        nestedScrollEnabled
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handlePullToRefresh}
+            tintColor="#2563EB"
+            colors={["#2563EB"]}
+            size="large"
+            progressBackgroundColor="#ffffff"
+            progressViewOffset={insets.top + HEADER_HEIGHT + 22}
+            title="새로고침 중..."
+            titleColor="#2563EB"
+          />
+        }
         contentContainerStyle={{
-          paddingBottom: 120,
+          paddingTop: contentTopPadding,
+          paddingBottom: contentBottomPadding,
           paddingHorizontal: HORIZONTAL_MARGIN,
         }}
       >
-        {/* 상단 날씨: 카드 없이 페이지 배경에 직접 */}
-        <View className="pt-1">
-          <View className="flex-row items-start justify-between">
-            <Text
-              className="flex-1 pr-3 text-sm font-medium leading-5 text-gray-800"
-              numberOfLines={2}
-            >
-              {displayLocation}
-            </Text>
-            <Pressable hitSlop={14} accessibilityLabel="알림">
-              <Ionicons name="notifications-outline" size={24} color="#111827" />
-            </Pressable>
-          </View>
-
-          <View className="mt-2 flex-row items-start justify-between">
-            <View className="min-w-0 flex-1 pr-3">
-              {weatherLoading && !integrated ? (
-                <View className="mt-2 flex-row items-center">
-                  <ActivityIndicator size="small" color="#2563eb" />
-                  <Text className="ml-2 text-sm text-gray-500">불러오는 중…</Text>
-                </View>
-              ) : (
-                <Text className="text-[52px] font-extrabold leading-[56px] text-gray-900">
-                  {integrated?.current != null
-                    ? `${Math.round(integrated.current.temperature)}°`
-                    : "--°"}
-                </Text>
-              )}
-              <View
-                className="mt-3 self-start rounded-full px-3 py-2"
-                style={{ backgroundColor: "#E8E8ED" }}
-              >
-                <Text className="text-xs font-semibold text-gray-700">
-                  {precipHumidityChip}
-                </Text>
-              </View>
-              {integrated?.current?.weatherDesc ? (
-                <Text className="mt-2 text-sm font-semibold text-sky-800">
-                  {integrated.current.weatherDesc}
-                </Text>
-              ) : null}
-              {integrated?.air ? (
-                <Text className="mt-1.5 text-xs text-gray-500">
-                  대기{" "}
-                  <Text className="font-semibold text-gray-700">
-                    미세 {integrated.air.pm10Grade}
-                  </Text>
-                  {" · "}
-                  <Text className="font-semibold text-gray-700">
-                    초미세 {integrated.air.pm25Grade}
-                  </Text>
-                  {" · "}
-                  <Text className="font-semibold text-gray-700">
-                    통합 {integrated.air.aqiGrade}
-                  </Text>
-                </Text>
-              ) : null}
-              {weatherSubtitle ? (
-                <Text className="mt-1 text-[11px] text-gray-400">
-                  {weatherSubtitle}
-                  {integrated?.stale ? " · 이전 데이터" : ""}
-                </Text>
-              ) : integrated?.stale ? (
-                <Text className="mt-1 text-[11px] text-amber-600">
-                  이전 데이터 표시 중
-                </Text>
-              ) : null}
-            </View>
-
-            <View className="items-end" style={{ width: 92 }}>
-              <View
-                className="items-center justify-center overflow-hidden rounded-2xl"
+        <LinearGradient
+          colors={["#2563EB", "#3B82F6"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          className=""
+          style={{
+            borderRadius: 20,
+            marginHorizontal: 0,
+            minHeight: 168,
+            paddingHorizontal: 16,
+            paddingVertical: 16,
+          }}
+        >
+          <View className="flex-row justify-between">
+            <View className="flex-1 pr-3">
+              <Text className="text-sm font-semibold text-blue-100">
+                {authUser?.nickname ? `${authUser.nickname}님, 반가워요` : "반가워요"}
+              </Text>
+              <Text style={{ marginTop: 4, fontSize: 22, fontWeight: "600", lineHeight: 30, color: "#fff" }}>
+                오늘은 어디를 걸어볼까요?
+              </Text>
+              <Text style={{ marginTop: 4, fontSize: 13, fontWeight: "400", color: "#dbeafe" }}>{weatherMoodMessage}</Text>
+              <Pressable
+                onPress={openRouteCreate}
+                className="mt-4 self-start active:opacity-90"
                 style={{
-                  width: 88,
-                  height: 88,
-                  backgroundColor: "#D9D9D9",
+                  backgroundColor: "#2563EB",
+                  borderRadius: 10,
+                  paddingVertical: 9,
+                  paddingHorizontal: 18,
                 }}
               >
-                <Text
-                  className="px-2 text-center text-[11px] font-bold text-gray-600"
-                  numberOfLines={4}
-                >
-                  {integrated?.current?.weatherDesc
-                    ? `3D 아이콘\n(${integrated.current.weatherDesc})`
-                    : "3D 아이콘\n(추가 예정)"}
-                </Text>
+                <Text style={{ color: "#ffffff", fontSize: 13, fontWeight: "600" }}>새 코스 만들기</Text>
+              </Pressable>
+            </View>
+            <View className="items-end justify-end">
+              <View
+                style={{
+                  width: 72,
+                  height: 72,
+                  borderRadius: 999,
+                  backgroundColor: "rgba(255,255,255,0.22)",
+                  position: "absolute",
+                  right: 0,
+                  bottom: 0,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {/* TODO: 캐릭터 이미지로 교체 예정 */}
+                {(() => {
+                  const source = require("../assets/ruty.png");
+                  if (!source) return null;
+                  return (
+                    <Image
+                      source={source}
+                      resizeMode="contain"
+                      style={{ width: 56, height: 56 }}
+                    />
+                  );
+                })()}
               </View>
             </View>
           </View>
+        </LinearGradient>
 
-          {weatherError ? (
-            <Text className="mt-2 text-xs text-rose-600">{weatherError}</Text>
-          ) : null}
-        </View>
-
-        {/* 지도 (상단 라벨 없음, 임베드용 최소 UI) */}
-        <View
-          className="mt-5 overflow-hidden rounded-3xl"
-          style={{ height: 200, backgroundColor: "#e8eaed" }}
-        >
-          {mapCoords ? (
-            <AppMapView
-              chromeless
-              latitude={mapCoords.latitude}
-              longitude={mapCoords.longitude}
-              level={4}
-              markers={[
-                {
-                  latitude: mapCoords.latitude,
-                  longitude: mapCoords.longitude,
-                  label: "현재",
-                },
-              ]}
-              allowTap
-              style={{ width: "100%", height: 200 }}
-            />
-          ) : (
-            <View className="flex-1 items-center justify-center px-4" style={{ minHeight: 200 }}>
-              <ActivityIndicator size="small" color="#64748b" />
-              <Text className="mt-2 text-center text-xs text-gray-500">
-                위치를 불러오면 지도가 표시됩니다.
+        <View className="mt-5 flex-row items-center justify-between px-4 py-3" style={CARD_STYLE}>
+          <View className="min-w-0 flex-1 pr-2">
+            <View className="flex-row items-center">
+              <Image
+                source={getWeatherIconSource(integrated?.current?.weatherIcon)}
+                style={{ width: 24, height: 24 }}
+              />
+              <Text style={{ marginLeft: 8, color: "#1A1A2E", fontSize: 22, fontWeight: "600" }}>
+                {integrated?.current ? `${Math.round(integrated.current.temperature)}°` : "--°"}
+              </Text>
+              <Text style={{ marginLeft: 8, color: "#6B7280", fontSize: 13, fontWeight: "400" }}>
+                {integrated?.current?.weatherDesc ?? "날씨 확인 중"}
               </Text>
             </View>
-          )}
-        </View>
-
-        {/* 저장 / 공개 코스 */}
-        <View className="mt-5 gap-3">
-          <Pressable
-            onPress={() => navigation.navigate("MyRoute")}
-            className="active:opacity-95"
+            <Text style={{ marginTop: 4, color: "#6B7280", fontSize: 12, fontWeight: "400" }} numberOfLines={1}>
+              {weatherHighlights.join(" · ")}
+            </Text>
+          </View>
+          <View
             style={{
+              backgroundColor: "#EFF6FF",
+              paddingVertical: 5,
+              paddingHorizontal: 10,
               borderRadius: 20,
-              backgroundColor: "#fff",
-              borderWidth: 1,
-              borderColor: "rgba(37, 99, 235, 0.14)",
-              paddingVertical: 16,
-              paddingHorizontal: 16,
-              shadowColor: "#1e3a8a",
-              shadowOffset: { width: 0, height: 6 },
-              shadowOpacity: 0.07,
-              shadowRadius: 14,
-              elevation: 3,
+              maxWidth: 120,
+              flexShrink: 0,
             }}
           >
-            <View className="flex-row items-center">
-              <View
-                className="h-12 w-12 items-center justify-center rounded-2xl"
-                style={{ backgroundColor: "#eff6ff" }}
-              >
-                <Ionicons name="bookmark" size={22} color="#2563eb" />
-              </View>
-              <View className="ml-3 flex-1 min-w-0">
-                <Text className="text-base font-extrabold text-gray-900">
-                  저장한 코스
-                </Text>
-                <Text className="mt-0.5 text-xs text-gray-500">
-                  내가 담아 둔 루트를 모아 볼 수 있어요
-                </Text>
-              </View>
-              <View className="items-end mr-1">
-                <Text className="text-2xl font-extrabold tabular-nums" style={{ color: "#1d4ed8" }}>
-                  {savedCourseIds.length}
-                </Text>
-                <Text className="text-[10px] font-semibold text-gray-400">개</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color="#cbd5e1" />
-            </View>
-          </Pressable>
-
-          <Pressable
-            onPress={() => navigation.navigate("SharedRoute")}
-            className="active:opacity-95"
-            style={{
-              borderRadius: 20,
-              backgroundColor: "#fff",
-              borderWidth: 1,
-              borderColor: "rgba(22, 163, 74, 0.16)",
-              paddingVertical: 16,
-              paddingHorizontal: 16,
-              shadowColor: "#14532d",
-              shadowOffset: { width: 0, height: 6 },
-              shadowOpacity: 0.07,
-              shadowRadius: 14,
-              elevation: 3,
-            }}
-          >
-            <View className="flex-row items-center">
-              <View
-                className="h-12 w-12 items-center justify-center rounded-2xl"
-                style={{ backgroundColor: "#ecfdf5" }}
-              >
-                <Ionicons name="paper-plane" size={20} color="#059669" />
-              </View>
-              <View className="ml-3 flex-1 min-w-0">
-                <Text className="text-base font-extrabold text-gray-900">
-                  공개한 코스
-                </Text>
-                <Text className="mt-0.5 text-xs text-gray-500">
-                  다른 사람에게 보여 주는 루트예요
-                </Text>
-              </View>
-              <View className="items-end mr-1">
-                <Text className="text-2xl font-extrabold tabular-nums" style={{ color: "#047857" }}>
-                  {publicCourseIds.length}
-                </Text>
-                <Text className="text-[10px] font-semibold text-gray-400">개</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color="#cbd5e1" />
-            </View>
-          </Pressable>
+            <Text style={{ color: "#2563EB", fontSize: 12, fontWeight: "500" }} numberOfLines={1}>
+              코스 추천일 ☀️
+            </Text>
+          </View>
         </View>
+        {weatherError ? <Text className="mt-1 text-xs text-rose-600">{weatherError}</Text> : null}
 
-        {/* 주변 인기 코스 */}
-        <View style={{ marginTop: 22 }}>
-          <SectionHeader
-            title="주변 인기 코스"
-            actionLabel="자세히 보기"
-            onPressAction={() =>
-              navigation.navigate("SharedRoute", {
-                openFilter: true,
-                openAsPopular: true,
-              })
-            }
-          />
-          <Text className="mt-1 text-xs text-gray-500">
-            현재 지역을 기반으로 추천하는 코스예요!
-          </Text>
+        <View style={{ marginTop: 20 }}>
+          <View style={{ marginBottom: 12 }}>
+            <SectionHeader title="내 최근 코스" actionLabel="전체 보기" onPressAction={() => navigation.navigate("MyRoute")} />
+          </View>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{
-              marginTop: 12,
-              paddingRight: HORIZONTAL_MARGIN,
-              gap: 12,
-            }}
-            style={{
-              marginLeft: -HORIZONTAL_MARGIN,
-              paddingLeft: HORIZONTAL_MARGIN,
-            }}
+            snapToInterval={RECENT_CARD_WIDTH + 12}
+            decelerationRate="fast"
+            contentContainerStyle={{ paddingTop: 12, paddingRight: 8 }}
           >
-            {popularCourses.map((course) => (
+            {recentCourses.map((course) => (
               <Pressable
                 key={course.id}
-                style={{ width: FEATURE_CARD_WIDTH }}
-                onPress={() =>
-                  navigation.navigate("SharedRoute", {
-                    viewCourseId: course.id,
-                    openAsPopular: true,
-                  })
-                }
+                onPress={() => navigation.navigate("MyRoute")}
+                className="mr-3 rounded-[16px] p-3 active:opacity-95"
+                style={{ width: RECENT_CARD_WIDTH, ...CARD_STYLE }}
               >
-                <View style={[CARD_STYLE, { padding: 0, overflow: "hidden" }]}>
-                  <View style={{ height: 88, backgroundColor: "#111827" }}>
-                    <ImageBackground
-                      source={require("../assets/banner.jpg")}
-                      resizeMode="cover"
-                      style={{ width: "100%", height: "100%" }}
-                      imageStyle={{ opacity: 0.85 }}
-                    >
-                      <View
-                        style={{
-                          ...StyleSheet.absoluteFillObject,
-                          backgroundColor: "rgba(0,0,0,0.35)",
-                        }}
-                      />
-                      <View className="flex-1 justify-end px-4 pb-3">
-                        <View className="flex-row items-center justify-between">
-                          <View className="rounded-full bg-white/15 px-2.5 py-1">
-                            <Text className="text-[11px] font-semibold text-white">
-                              {course.region} · {course.category}
-                            </Text>
-                          </View>
-                          <View className="flex-row items-center">
-                            <Ionicons
-                              name="eye-outline"
-                              size={14}
-                              color="#fff"
-                            />
-                            <Text className="ml-1 text-[11px] font-semibold text-white/90">
-                              {course.views}
-                            </Text>
-                          </View>
+                <View
+                  style={{
+                    height: 86,
+                    borderRadius: 12,
+                    backgroundColor: "#DBEAFE",
+                    borderWidth: 0.5,
+                    borderColor: "#c7d2fe",
+                    overflow: "hidden",
+                  }}
+                >
+                  <Svg width="100%" height="100%" viewBox="0 0 300 120">
+                    <Polyline
+                      points="60,88 150,34 240,56"
+                      fill="none"
+                      stroke="#2563EB"
+                      strokeWidth="5"
+                      strokeLinejoin="round"
+                      strokeLinecap="round"
+                      opacity="0.35"
+                    />
+                    <Circle cx="60" cy="88" r="10" fill="#fff" stroke="#2563EB" strokeWidth="5" />
+                    <Circle cx="150" cy="34" r="10" fill="#fff" stroke="#2563EB" strokeWidth="5" />
+                    <Circle cx="240" cy="56" r="10" fill="#fff" stroke="#2563EB" strokeWidth="5" />
+                  </Svg>
+
+                  <View style={{ position: "absolute", left: 10, bottom: 8, flexDirection: "row" }}>
+                    {course.tags.slice(0, 2).map((tag) => {
+                      const tagStyle = getTagStyle(tag);
+                      return (
+                        <View
+                          key={`${course.id}-${tag}`}
+                          style={{
+                            marginRight: 6,
+                            backgroundColor: tagStyle.bg,
+                            paddingHorizontal: 8,
+                            paddingVertical: 3,
+                            borderRadius: 999,
+                          }}
+                        >
+                          <Text style={{ color: tagStyle.color, fontSize: 11, fontWeight: "500" }}>{tag}</Text>
                         </View>
-                      </View>
-                    </ImageBackground>
+                      );
+                    })}
                   </View>
-                  <View className="px-4 pb-4 pt-3">
-                    <Text
-                      className="text-sm font-extrabold text-gray-900"
-                      numberOfLines={2}
-                    >
-                      {course.title}
-                    </Text>
-                    <View className="mt-2 flex-row items-center">
-                      <View className="rounded bg-green-100 px-2 py-0.5">
-                        <Text className="text-[11px] font-semibold text-green-700">
-                          {course.departure}
-                        </Text>
-                      </View>
-                      <Ionicons
-                        name="arrow-forward"
-                        size={14}
-                        color="#9ca3af"
-                        style={{ marginHorizontal: 6 }}
-                      />
-                      <View className="rounded bg-red-100 px-2 py-0.5">
-                        <Text className="text-[11px] font-semibold text-red-700">
-                          {course.arrival}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
+                </View>
+                <Text style={{ marginTop: 12, fontSize: 14, fontWeight: "600", color: "#1A1A2E" }} numberOfLines={1}>
+                  {course.title}
+                </Text>
+                <Text style={{ marginTop: 4, fontSize: 13, fontWeight: "400", color: "#6B7280" }} numberOfLines={1}>
+                  {course.waypoints.join(" · ")}
+                </Text>
+                <Text style={{ marginTop: 4, fontSize: 12, fontWeight: "400", color: "#6B7280" }}>
+                  핀 {course.pinCount}개 · {course.distanceKm}km
+                </Text>
+                <View className="mt-3 flex-row">
+                  <Pressable
+                    className="mr-2"
+                    style={{
+                      backgroundColor: "transparent",
+                      borderWidth: 1,
+                      borderColor: "#D1D5DB",
+                      borderRadius: 10,
+                      paddingVertical: 9,
+                      paddingHorizontal: 18,
+                    }}
+                  >
+                    <Text style={{ color: "#6B7280", fontSize: 13, fontWeight: "400" }}>공유</Text>
+                  </Pressable>
+                  <Pressable
+                    style={{
+                      backgroundColor: "#2563EB",
+                      borderRadius: 10,
+                      paddingVertical: 9,
+                      paddingHorizontal: 18,
+                    }}
+                  >
+                    <Text style={{ color: "#ffffff", fontSize: 13, fontWeight: "600" }}>보기</Text>
+                  </Pressable>
                 </View>
               </Pressable>
             ))}
+            <Pressable
+              onPress={openRouteCreate}
+              className="items-center justify-center rounded-[18px] p-3"
+              style={{
+                width: RECENT_CARD_WIDTH * 0.58,
+                borderWidth: 1.5,
+                borderColor: "#93c5fd",
+                borderStyle: "dashed",
+                backgroundColor: "#f8fbff",
+              }}
+            >
+              <Ionicons name="add-circle-outline" size={28} color="#2563EB" />
+              <Text style={{ marginTop: 8, fontSize: 13, fontWeight: "600", color: "#2563EB" }}>새 코스 만들기</Text>
+            </Pressable>
           </ScrollView>
         </View>
 
-        <View style={{ height: 10 }} />
+        <View style={{ marginTop: 20 }}>
+          <View style={{ marginBottom: 12 }}>
+            <SectionHeader title="지금 인기 코스" actionLabel="더 보기" onPressAction={() => navigation.navigate("SharedRoute")} />
+          </View>
+          <View className="mt-3">
+            {trendingCourses.map((course) => (
+              <Pressable
+                key={course.id}
+                onPress={() => navigation.navigate("SharedRoute")}
+                className="mb-3 flex-row items-center rounded-[16px] p-3 active:opacity-95"
+                style={CARD_STYLE}
+              >
+                <View
+                  className="mr-3 h-12 w-12 items-center justify-center rounded-xl"
+                  style={{ backgroundColor: getCategoryTint(course.category) }}
+                >
+                  <Ionicons name="map-outline" size={22} color="#2563EB" />
+                </View>
+                <View className="min-w-0 flex-1">
+                  <Text style={{ fontSize: 14, fontWeight: "600", color: "#1A1A2E" }} numberOfLines={1}>
+                    {course.title}
+                  </Text>
+                  <Text style={{ marginTop: 2, fontSize: 13, fontWeight: "400", color: "#6B7280" }}>🙂 {course.author}</Text>
+                  <Text style={{ marginTop: 2, fontSize: 12, fontWeight: "400", color: "#6B7280" }}>
+                    핀 {course.pinCount}개 · {course.distanceKm}km · {course.category}
+                  </Text>
+                </View>
+                <View className="items-end">
+                  <Pressable className="rounded-full p-1.5">
+                    <Ionicons name="bookmark-outline" size={18} color="#6B7280" />
+                  </Pressable>
+                  <View
+                    style={{
+                      marginTop: 4,
+                      backgroundColor: "#EFF6FF",
+                      borderRadius: 6,
+                      paddingVertical: 2,
+                      paddingHorizontal: 8,
+                    }}
+                  >
+                    <Text style={{ color: "#2563EB", fontSize: 11, fontWeight: "500" }}>인기</Text>
+                  </View>
+                  <Text style={{ marginTop: 4, fontSize: 12, fontWeight: "400", color: "#6B7280" }}>❤ {course.likes}</Text>
+                </View>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
+        <View className="mt-2">
+          <SectionHeader title="팔로잉 소식" actionLabel="전체" onPressAction={() => moveTab("Chat")} />
+          <View className="mt-3">
+            {followingNews.map((news) => (
+              <Pressable
+                key={news.id}
+                onPress={() => moveTab("Chat")}
+                className="mb-2.5 flex-row items-center rounded-[16px] p-3"
+                style={CARD_STYLE}
+              >
+                <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-blue-100">
+                  <Text style={{ fontSize: 13, fontWeight: "600", color: "#2563EB" }}>{news.user.slice(0, 1)}</Text>
+                </View>
+                <View className="min-w-0 flex-1">
+                  <Text style={{ fontSize: 13, fontWeight: "400", color: "#1A1A2E" }} numberOfLines={1}>
+                    <Text style={{ fontWeight: "600" }}>{news.user}</Text>이 {news.action}
+                  </Text>
+                  <Text style={{ marginTop: 2, fontSize: 12, fontWeight: "400", color: "#6B7280" }} numberOfLines={1}>
+                    {news.courseName}
+                  </Text>
+                </View>
+                <Text style={{ marginLeft: 8, fontSize: 12, fontWeight: "400", color: "#6B7280" }}>{news.ago}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
       </ScrollView>
+
     </SafeAreaView>
   );
 }

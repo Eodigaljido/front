@@ -1,6 +1,15 @@
 // @ts-nocheck
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { View, Text, Pressable, Modal, StyleSheet, Animated, Dimensions } from 'react-native';
+import {
+  View,
+  Text,
+  Pressable,
+  Modal,
+  StyleSheet,
+  Animated,
+  Dimensions,
+  ScrollView,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // prettier-ignore
@@ -36,7 +45,14 @@ export default function FilterBottomSheet({
   onApply,
 }: FilterBottomSheetProps) {
   const insets = useSafeAreaInsets();
-  const sheetOffY = useMemo(() => Math.min(420, Dimensions.get('window').height * 0.5), []);
+  const windowH = Dimensions.get('window').height;
+  const sheetMaxH = useMemo(() => Math.min(windowH * 0.9, 720), [windowH]);
+  /** 헤더·핸들·하단 버튼 줄 확보 후 칩 영역만 스크롤 */
+  const filterScrollMaxH = useMemo(
+    () => Math.max(160, sheetMaxH - 200),
+    [sheetMaxH],
+  );
+  const sheetOffY = useMemo(() => Math.min(420, windowH * 0.5), [windowH]);
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const sheetTranslateY = useRef(new Animated.Value(sheetOffY)).current;
   const [renderModal, setRenderModal] = useState(false);
@@ -93,79 +109,140 @@ export default function FilterBottomSheet({
           <Pressable style={{ flex: 1 }} onPress={onClose} />
         </Animated.View>
         <Animated.View style={{ transform: [{ translateY: sheetTranslateY }] }}>
-          <View className="rounded-t-3xl bg-gray-100 pt-5 pb-8" style={{ paddingHorizontal: 20 }}>
-            <Text className="mb-4 text-xl font-bold text-black">필터</Text>
-
-            <Text className="mb-2 text-sm font-medium text-gray-600">카테고리</Text>
-            <View className="flex-row flex-wrap gap-2 mb-5">
-              {CATEGORIES.map(cat => (
-                <Pressable
-                  key={cat}
-                  onPress={() => onCategoryToggle(cat)}
-                  className={`rounded-full px-4 py-2.5 ${selectedCategory === cat ? 'bg-green-600' : 'bg-gray-200'}`}
-                >
-                  <Text
-                    className={`text-sm ${selectedCategory === cat ? 'font-semibold text-white' : 'text-gray-600'}`}
-                  >
-                    {cat}
-                  </Text>
-                </Pressable>
-              ))}
+          <View
+            className="rounded-t-3xl bg-[#F8FBFF] pt-3 pb-2"
+            style={{
+              backgroundColor: "#F8FBFF",
+              paddingHorizontal: 18,
+              maxHeight: sheetMaxH,
+              borderTopWidth: 0.5,
+              borderColor: "rgba(37,99,235,0.15)",
+            }}
+          >
+            <View className="items-center pb-2">
+              <View className="h-1.5 w-12 rounded-full bg-blue-100" />
             </View>
 
-            <Text className="mb-2 text-sm font-medium text-gray-600">지역</Text>
-            <View className="flex-row flex-wrap gap-2 mb-5">
-              {REGIONS.map(region => (
-                <Pressable
-                  key={region}
-                  onPress={() => onRegionToggle(region)}
-                  className={`rounded-full px-4 py-2.5 ${selectedRegion === region ? 'bg-green-600' : 'bg-gray-200'}`}
-                >
-                  <Text
-                    className={`text-sm ${selectedRegion === region ? 'font-semibold text-white' : 'text-gray-600'}`}
-                  >
-                    {region}
-                  </Text>
-                </Pressable>
-              ))}
+            <View className="mb-4 flex-row items-center justify-between">
+              <Text className="text-[20px] font-semibold text-[#1A1A2E]">필터</Text>
+              <Pressable
+                onPress={onClose}
+                className="h-9 w-9 items-center justify-center rounded-full bg-white"
+                style={{ borderWidth: 0.5, borderColor: "rgba(37,99,235,0.15)" }}
+              >
+                <Text className="text-base font-bold text-gray-500">×</Text>
+              </Pressable>
             </View>
 
-            <Text className="mb-2 text-sm font-medium text-gray-600">정렬기준</Text>
-            <View className="flex-row flex-wrap gap-2 mb-6">
-              {SORT_OPTIONS.map(opt => (
-                <Pressable
-                  key={opt}
-                  onPress={() => onSortToggle(opt)}
-                  className={`rounded-full px-4 py-2.5 ${selectedSort === opt ? 'bg-green-600' : 'bg-gray-200'}`}
-                >
-                  <Text
-                    className={`text-sm ${selectedSort === opt ? 'font-semibold text-white' : 'text-gray-600'}`}
+            <ScrollView
+              style={{ maxHeight: filterScrollMaxH }}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled
+            >
+              <Text className="mb-2 text-xs font-semibold tracking-wide text-slate-400">카테고리</Text>
+              <View className="mb-5 flex-row flex-wrap gap-2">
+                {CATEGORIES.map(cat => (
+                  (() => {
+                    const selected = selectedCategory === cat;
+                    return (
+                  <Pressable
+                    key={cat}
+                    onPress={() => onCategoryToggle(cat)}
+                    className="rounded-full border px-4 py-2.5"
+                    style={{
+                      borderColor: selected ? '#2563EB' : '#dbeafe',
+                      backgroundColor: selected ? '#2563EB' : '#ffffff',
+                    }}
                   >
-                    {opt}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
+                    <Text
+                      className="text-sm font-medium"
+                      style={{ color: selected ? '#ffffff' : '#4b5563' }}
+                    >
+                      {cat}
+                    </Text>
+                  </Pressable>
+                    );
+                  })()
+                ))}
+              </View>
 
-            <View className="flex-row gap-3">
+              <Text className="mb-2 text-xs font-semibold tracking-wide text-slate-400">지역</Text>
+              <View className="mb-5 flex-row flex-wrap gap-2">
+                {REGIONS.map(region => (
+                  (() => {
+                    const selected = selectedRegion === region;
+                    return (
+                  <Pressable
+                    key={region}
+                    onPress={() => onRegionToggle(region)}
+                    className="rounded-full border px-4 py-2.5"
+                    style={{
+                      borderColor: selected ? '#2563EB' : '#dbeafe',
+                      backgroundColor: selected ? '#2563EB' : '#ffffff',
+                    }}
+                  >
+                    <Text
+                      className="text-sm font-medium"
+                      style={{ color: selected ? '#ffffff' : '#4b5563' }}
+                    >
+                      {region}
+                    </Text>
+                  </Pressable>
+                    );
+                  })()
+                ))}
+              </View>
+
+              <Text className="mb-2 text-xs font-semibold tracking-wide text-slate-400">정렬기준</Text>
+              <View className="mb-2 flex-row flex-wrap gap-2">
+                {SORT_OPTIONS.map(opt => (
+                  (() => {
+                    const selected = selectedSort === opt;
+                    return (
+                  <Pressable
+                    key={opt}
+                    onPress={() => onSortToggle(opt)}
+                    className="rounded-full border px-4 py-2.5"
+                    style={{
+                      borderColor: selected ? '#2563EB' : '#dbeafe',
+                      backgroundColor: selected ? '#2563EB' : '#ffffff',
+                    }}
+                  >
+                    <Text
+                      className="text-sm font-medium"
+                      style={{ color: selected ? '#ffffff' : '#4b5563' }}
+                    >
+                      {opt}
+                    </Text>
+                  </Pressable>
+                    );
+                  })()
+                ))}
+              </View>
+            </ScrollView>
+
+            <View className="mt-3 flex-row border-t border-blue-100 pt-3">
               <Pressable
                 onPress={onReset}
-                className="items-center flex-1 py-3 bg-gray-200 rounded-xl"
+                className="items-center rounded-xl border border-gray-300 bg-white py-3"
+                style={{ width: '48%' }}
               >
-                <Text className="font-medium text-gray-700">초기화</Text>
+                <Text className="text-[13px] font-normal text-gray-600">초기화</Text>
               </Pressable>
               <Pressable
                 onPress={() => {
                   onApply();
                   onClose();
                 }}
-                className="items-center flex-1 py-3 bg-gray-200 rounded-xl"
+                className="items-center rounded-xl bg-[#2563EB] py-3"
+                style={{ width: '48%', marginLeft: '4%' }}
               >
-                <Text className="font-medium text-gray-700">적용하기</Text>
+                <Text className="text-[13px] font-semibold text-white">적용</Text>
               </Pressable>
             </View>
           </View>
-          <View style={{ height: Math.max(insets.bottom, 0), backgroundColor: '#f3f4f6' }} />
+          <View style={{ height: Math.max(insets.bottom, 0), backgroundColor: '#F8FBFF' }} />
         </Animated.View>
       </View>
     </Modal>

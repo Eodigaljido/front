@@ -29,6 +29,11 @@ import {
   type CourseReview,
 } from "../data/mockData";
 import { useMockData } from "../context/MockDataContext";
+import {
+  fetchSharedCourses,
+  saveSharedCourse,
+  submitSharedCourseReview,
+} from "../api/courses";
 import AppMapView from "../components/AppMapView";
 import { fetchMergedDirectionsPolyline } from "../data/googleDirectionsApi";
 import FilterBottomSheet, {
@@ -53,12 +58,27 @@ const TABS: { id: TabId; label: string }[] = [
 ];
 
 const CARD_STYLE = {
-  shadowColor: "#000",
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.08,
-  shadowRadius: 8,
-  elevation: 3,
+  borderWidth: 0.5,
+  borderColor: "rgba(37,99,235,0.12)",
+  borderRadius: 16,
+  backgroundColor: "#fff",
 };
+
+function simplifyRoutePath(
+  path: { latitude: number; longitude: number }[] | null | undefined,
+  maxPoints = 20,
+): { latitude: number; longitude: number }[] | undefined {
+  if (!path || path.length === 0) return undefined;
+  if (path.length <= maxPoints) return path;
+  const first = path[0];
+  const last = path[path.length - 1];
+  const inner = path.slice(1, -1);
+  const keepInner = Math.max(0, maxPoints - 2);
+  if (keepInner <= 0) return [first, last];
+  const step = Math.max(1, Math.ceil(inner.length / keepInner));
+  const sampled = inner.filter((_, idx) => idx % step === 0).slice(0, keepInner);
+  return [first, ...sampled, last];
+}
 
 function mergeSharedCourseWithExtraReviews(
   base: CourseItem,
@@ -94,7 +114,7 @@ function CourseCard({
       style={CARD_STYLE}
     >
       <View className="flex-row border-b border-gray-100 p-3.5">
-        <View className="h-[80px] w-[80px] shrink-0 overflow-hidden rounded-xl bg-gray-100">
+        <View className="h-[80px] w-[80px] shrink-0 overflow-hidden rounded-xl bg-blue-50">
           {item.thumbnail ? (
             <Image
               source={{ uri: item.thumbnail }}
@@ -102,8 +122,8 @@ function CourseCard({
               resizeMode="cover"
             />
           ) : (
-            <View className="h-full w-full items-center justify-center bg-gray-100">
-              <Ionicons name="image-outline" size={28} color="#d1d5db" />
+            <View className="h-full w-full items-center justify-center bg-blue-50">
+              <Ionicons name="image-outline" size={24} color="#60a5fa" />
             </View>
           )}
         </View>
@@ -122,14 +142,14 @@ function CourseCard({
       </View>
 
       <View className="flex-row items-center px-3.5 py-2.5">
-        <View className="rounded-md bg-green-500 px-2 py-1">
+        <View className="rounded-md bg-blue-600 px-2 py-1">
           <Text className="text-[11px] font-semibold text-white">출발</Text>
         </View>
         <Text className="ml-2 text-[13px] text-gray-900" numberOfLines={1}>
           {item.departure}
         </Text>
         <View className="mx-2 h-3 w-px bg-gray-300" />
-        <View className="rounded-md bg-red-500 px-2 py-1">
+        <View className="rounded-md bg-slate-500 px-2 py-1">
           <Text className="text-[11px] font-semibold text-white">도착</Text>
         </View>
         <Text
@@ -150,6 +170,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
     useMockData();
 
   const [activeTab, setActiveTab] = useState<TabId>("all");
+  const [coursesData, setCoursesData] = useState<CourseItem[]>(MOCK_COURSES);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterVisible, setFilterVisible] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -179,6 +200,18 @@ export default function SharedRouteScreen(): React.JSX.Element {
   );
   const viewingCourseIdRef = useRef<string | null>(null);
   viewingCourseIdRef.current = viewingCourseId;
+
+  useEffect(() => {
+    let mounted = true;
+    fetchSharedCourses()
+      .then((courses) => {
+        if (mounted && courses.length > 0) setCoursesData(courses);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (viewingCourseId) setDetailModalMounted(true);
@@ -253,14 +286,14 @@ export default function SharedRouteScreen(): React.JSX.Element {
       setCourseDetailPathLoading(false);
       return;
     }
-    const course = MOCK_COURSES.find((c) => c.id === viewingCourseId);
+    const course = coursesData.find((c) => c.id === viewingCourseId);
     if (!course || course.routeSteps.length < 2) {
       setCourseDetailMergedPath(null);
       setCourseDetailPathLoading(false);
       return;
     }
     const stepPoints = course.routeSteps.map((_, i) => {
-      const p = getCourseStepMapPoint(course.id, i);
+      const p = getCourseStepMapPoint(course.id, i, course.routeSteps.length);
       return { latitude: p.lat, longitude: p.lng };
     });
     const ac = new AbortController();
@@ -269,7 +302,6 @@ export default function SharedRouteScreen(): React.JSX.Element {
     fetchMergedDirectionsPolyline({
       points: stepPoints,
       mode: "transit",
-      transitType: "subway",
       signal: ac.signal,
     })
       .then((path) => {
@@ -281,10 +313,10 @@ export default function SharedRouteScreen(): React.JSX.Element {
         if (!ac.signal.aborted) setCourseDetailPathLoading(false);
       });
     return () => ac.abort();
-  }, [viewingCourseId]);
+  }, [viewingCourseId, coursesData]);
 
   const filteredCourses = useMemo(() => {
-    let list = [...MOCK_COURSES];
+    let list = [...coursesData];
 
     if (activeTab === "date")
       list = list.filter((c) => c.category === "데이트");
@@ -323,7 +355,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
     }
 
     return list;
-  }, [activeTab, searchQuery, selectedCategory, selectedRegion, selectedSort]);
+  }, [activeTab, searchQuery, selectedCategory, selectedRegion, selectedSort, coursesData]);
 
   const handleCategoryToggle = (cat: string) => {
     setSelectedCategory((prev) => (prev === cat ? null : cat));
@@ -336,50 +368,22 @@ export default function SharedRouteScreen(): React.JSX.Element {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-white" edges={["top"]}>
+    <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={["top"]}>
       {/* 헤더 배너 - 이미지 배경 + 내부 흐림(오버레이) */}
-      <View className="overflow-hidden">
-        <ImageBackground
-          source={require("../assets/banner.jpg")}
-          resizeMode="cover"
-          style={{ width: "100%", minHeight: 100 }}
-          imageStyle={{ opacity: 0.9 }}
+      <View className="px-4 pt-2 pb-2">
+        <View
+          className="rounded-2xl px-4 py-4"
+          style={{ backgroundColor: "#2563EB" }}
         >
-          {/* 흐림 효과용 반투명 오버레이 */}
-          <View
-            style={{
-              ...StyleSheet.absoluteFillObject,
-              backgroundColor: "rgba(0,0,0,0.35)",
-            }}
-          />
-          <View
-            className="px-5 pb-5 pt-2 flex-row items-center"
-            style={{ zIndex: 1, minHeight: 100 }}
-          >
-            <Text className="text-2xl font-bold text-white">공유 코스</Text>
-            <View
-              style={{
-                width: 1,
-                height: 30,
-                backgroundColor: "rgba(255,255,255,0.9)",
-                marginHorizontal: 16,
-                alignItems: "center",
-              }}
-            />
-            <View className="flex-1 justify-center">
-              <Text className="text-sm text-white opacity-95">
-                다른 유저의 경로를 구경하고
-              </Text>
-              <Text className="mt-0.5 text-sm text-white opacity-95">
-                같은 코스를 걸어 보아요!
-              </Text>
-            </View>
-          </View>
-        </ImageBackground>
+          <Text className="text-xl font-semibold text-white">공유 코스</Text>
+          <Text className="mt-1 text-xs text-blue-100">
+            다른 유저의 경로를 탐색하고 저장해 보세요
+          </Text>
+        </View>
       </View>
 
       {/* 검색 + 필터 */}
-      <View className="flex-row items-center gap-2 border-b border-gray-100 px-4 py-3">
+      <View className="flex-row items-center gap-2 px-4 py-3">
         <View className="flex-1 flex-row items-center rounded-xl bg-gray-100 px-4 py-2.5">
           <Ionicons name="search-outline" size={20} color="#9ca3af" />
           <TextInput
@@ -399,14 +403,14 @@ export default function SharedRouteScreen(): React.JSX.Element {
       </View>
 
       {/* 탭 - 세로 높이 고정으로 불필요한 빈 공간 제거 */}
-      <View className="border-b border-gray-100" style={{ height: 40 }}>
+      <View className="px-4 pb-1" style={{ height: 44 }}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{
-            paddingHorizontal: 16,
+            paddingHorizontal: 0,
             paddingVertical: 6,
-            gap: 20,
+            gap: 10,
             alignItems: "center",
           }}
           style={{ flexGrow: 0 }}
@@ -416,14 +420,16 @@ export default function SharedRouteScreen(): React.JSX.Element {
               key={tab.id}
               onPress={() => setActiveTab(tab.id)}
               style={{
-                borderBottomWidth: 2,
-                borderBottomColor:
-                  activeTab === tab.id ? "#ea580c" : "transparent",
-                paddingBottom: 2,
+                borderWidth: 1,
+                borderColor: activeTab === tab.id ? "#2563EB" : "#dbeafe",
+                backgroundColor: activeTab === tab.id ? "#2563EB" : "#ffffff",
+                borderRadius: 999,
+                paddingHorizontal: 12,
+                paddingVertical: 5,
               }}
             >
               <Text
-                className={`text-sm font-medium ${activeTab === tab.id ? "text-orange-600" : "text-gray-500"}`}
+                className={`text-xs font-medium ${activeTab === tab.id ? "text-white" : "text-gray-600"}`}
               >
                 {tab.label}
               </Text>
@@ -512,11 +518,11 @@ export default function SharedRouteScreen(): React.JSX.Element {
             >
               <View
                 className="overflow-hidden rounded-t-3xl"
-                style={{ maxHeight: "100%", backgroundColor: "#0f172a" }}
+                style={{ maxHeight: "100%", backgroundColor: "#F8FBFF" }}
               >
                 {viewingCourseId &&
                   (() => {
-                    const courseBase = MOCK_COURSES.find(
+                    const courseBase = coursesData.find(
                       (c) => c.id === viewingCourseId,
                     );
                     if (!courseBase) return null;
@@ -535,15 +541,20 @@ export default function SharedRouteScreen(): React.JSX.Element {
                       | undefined =
                       course.routeSteps.length >= 1
                         ? course.routeSteps.map((_, i) => {
-                            const p = getCourseStepMapPoint(course.id, i);
+                            const p = getCourseStepMapPoint(
+                              course.id,
+                              i,
+                              course.routeSteps.length,
+                            );
                             return { latitude: p.lat, longitude: p.lng };
                           })
                         : undefined;
-                    const polylinePath =
-                      courseDetailMergedPath &&
-                      courseDetailMergedPath.length >= 2
+                    // 실경로가 있으면 단순화해서 사용하고, 없으면 경유지 연결선으로 대체
+                    const polylinePath = simplifyRoutePath(
+                      courseDetailMergedPath && courseDetailMergedPath.length >= 2
                         ? courseDetailMergedPath
-                        : pathPts;
+                        : pathPts,
+                    );
                     const startStepName =
                       course.routeSteps[0]?.name ?? course.departure;
                     const endStepName =
@@ -555,17 +566,28 @@ export default function SharedRouteScreen(): React.JSX.Element {
                             latitude: pt.latitude,
                             longitude: pt.longitude,
                             label: `${i + 1}`,
+                            kind:
+                              i === 0
+                                ? "start"
+                                : i === pathPts.length - 1
+                                  ? "end"
+                                  : "waypoint",
+                            color:
+                              i === 0
+                                ? "#2563EB"
+                                : i === pathPts.length - 1
+                                  ? "#EF4444"
+                                  : "#64748B",
                           }))
                         : undefined;
-                    const mapLevel =
-                      polylinePath && polylinePath.length >= 2 ? 5 : 4;
+                    const mapLevel = polylinePath && polylinePath.length >= 2 ? 4 : 4;
 
                     return (
                       <>
                         {/* 상단: 어두운 영역 + 지도 */}
                         <View
                           style={{
-                            backgroundColor: "#0f172a",
+                            backgroundColor: "#EEF5FF",
                             paddingHorizontal: 0,
                             paddingTop: 14,
                             paddingBottom: 14,
@@ -573,18 +595,18 @@ export default function SharedRouteScreen(): React.JSX.Element {
                             borderTopRightRadius: 24,
                             overflow: "hidden",
                             borderBottomWidth: StyleSheet.hairlineWidth,
-                            borderBottomColor: "#1e293b",
+                            borderBottomColor: "rgba(37,99,235,0.15)",
                           }}
                         >
                           <View className="mb-2 flex-row items-center justify-between px-4">
-                            <Text className="text-sm font-semibold text-white/90">
+                            <Text className="text-sm font-semibold text-[#1A1A2E]">
                               코스 위치
                             </Text>
                             <Pressable onPress={closeCourseDetail} hitSlop={12}>
                               <Ionicons
                                 name="close"
                                 size={26}
-                                color="#e2e8f0"
+                                color="#64748b"
                               />
                             </Pressable>
                           </View>
@@ -594,9 +616,9 @@ export default function SharedRouteScreen(): React.JSX.Element {
                               marginHorizontal: 10,
                               borderRadius: 14,
                               overflow: "hidden",
-                              backgroundColor: "#0f172a",
-                              borderWidth: 2,
-                              borderColor: "#0f172a",
+                              backgroundColor: "#dbeafe",
+                              borderWidth: 1,
+                              borderColor: "#bfdbfe",
                               position: "relative",
                             }}
                           >
@@ -606,7 +628,6 @@ export default function SharedRouteScreen(): React.JSX.Element {
                               longitude={mapCenter.lng}
                               level={mapLevel}
                               allowTap={false}
-                              avoidLineOverlap
                               path={
                                 polylinePath && polylinePath.length >= 1
                                   ? polylinePath
@@ -632,17 +653,17 @@ export default function SharedRouteScreen(): React.JSX.Element {
                                   paddingHorizontal: 10,
                                   paddingVertical: 6,
                                   borderRadius: 10,
-                                  backgroundColor: "rgba(15,23,42,0.82)",
+                                  backgroundColor: "rgba(255,255,255,0.92)",
                                 }}
                               >
                                 <ActivityIndicator
                                   size="small"
-                                  color="#e2e8f0"
+                                  color="#2563eb"
                                 />
                                 <Text
                                   style={{
                                     fontSize: 11,
-                                    color: "#e2e8f0",
+                                    color: "#2563eb",
                                     fontWeight: "600",
                                   }}
                                 >
@@ -651,7 +672,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
                               </View>
                             ) : null}
                           </View>
-                          <Text className="mt-2 px-4 text-[11px] font-medium text-slate-300">
+                          <Text className="mt-2 px-4 text-[11px] font-medium text-slate-500">
                             {pathPts && pathPts.length >= 2
                               ? `선 방향: 1번(${startStepName}) → ${pathPts.length}번(${endStepName})`
                               : "선 방향: 출발 지점 기준"}
@@ -672,14 +693,17 @@ export default function SharedRouteScreen(): React.JSX.Element {
                               코스 상세
                             </Text>
                             <Pressable
-                              onPress={() => {
+                              onPress={async () => {
+                                const ok = await saveSharedCourse(course.id);
                                 addSavedCourse(course.id);
                                 Alert.alert(
                                   "추가됨",
-                                  "내 루트에 추가되었습니다.",
+                                  ok
+                                    ? "내 루트에 추가되었습니다."
+                                    : "로컬 저장으로 추가되었습니다.",
                                 );
                               }}
-                              className="flex-row items-center rounded-xl bg-emerald-600 px-3 py-2 active:opacity-90"
+                              className="flex-row items-center rounded-lg bg-[#2563EB] px-3 py-2 active:opacity-90"
                             >
                               <Ionicons
                                 name="add-circle-outline"
@@ -762,7 +786,11 @@ export default function SharedRouteScreen(): React.JSX.Element {
                                 key={step.id}
                                 onPress={() => {
                                   setMapFocus(
-                                    getCourseStepMapPoint(course.id, index),
+                                    getCourseStepMapPoint(
+                                      course.id,
+                                      index,
+                                      course.routeSteps.length,
+                                    ),
                                   );
                                   setSelectedStepId(step.id);
                                 }}
@@ -966,20 +994,30 @@ export default function SharedRouteScreen(): React.JSX.Element {
                       </Text>
                     </Pressable>
                     <Pressable
-                      onPress={() => {
+                      onPress={async () => {
                         if (!reviewCourseId) return;
                         const t = reviewBody.trim();
                         if (!t) {
                           Alert.alert("알림", "후기 내용을 입력해 주세요.");
                           return;
                         }
+                        const ok = await submitSharedCourseReview(reviewCourseId, {
+                          userName: reviewUserName,
+                          rating: reviewRating,
+                          text: t,
+                        });
                         addSharedCourseReview(reviewCourseId, {
                           userName: reviewUserName,
                           rating: reviewRating,
                           text: t,
                         });
                         setReviewComposerOpen(false);
-                        Alert.alert("등록됨", "리뷰가 등록되었습니다.");
+                        Alert.alert(
+                          "등록됨",
+                          ok
+                            ? "리뷰가 등록되었습니다."
+                            : "서버 등록은 실패했지만 로컬에는 반영되었습니다.",
+                        );
                       }}
                       className="flex-1 items-center rounded-xl bg-amber-500 py-3 active:opacity-90"
                     >

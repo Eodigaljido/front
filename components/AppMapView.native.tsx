@@ -11,6 +11,8 @@ type Props = {
   level?: number;
   /** WebView·임베드에서 지도 기본 UI·표기 최소화 */
   chromeless?: boolean;
+  /** false면 지도 제스처(드래그/줌/회전) 비활성화 */
+  interactive?: boolean;
   allowTap?: boolean;
   avoidLineOverlap?: boolean;
   path?: MapPathPoint[];
@@ -98,6 +100,7 @@ function AppMapViewExpoGoogleMapsImpl({
   longitude = 126.978,
   level = 8,
   chromeless = false,
+  interactive = true,
   allowTap = true,
   path,
   segments,
@@ -154,6 +157,7 @@ function AppMapViewExpoGoogleMapsImpl({
         coordinates: { latitude: c.latitude, longitude: c.longitude },
         title: c.label ? `${c.label}` : undefined,
         subtitle: c.label ? " " : undefined,
+        tintColor: c.color,
         isTappable: allowTap,
       }));
     }
@@ -191,7 +195,7 @@ function AppMapViewExpoGoogleMapsImpl({
         id: s.id,
         coordinates: toCoordinates(s.points),
         color: s.color || ROUTE_COLOR,
-        width: s.width ?? 5,
+        width: s.width ?? 4,
         geodesic: true,
         lineDashPattern: s.dashed ? [8, 8] : undefined,
       }));
@@ -202,7 +206,7 @@ function AppMapViewExpoGoogleMapsImpl({
         id: "route",
         coordinates: lineCoords,
         color: ROUTE_COLOR,
-        width: 5,
+        width: 4,
         geodesic: true,
       },
     ];
@@ -223,6 +227,10 @@ function AppMapViewExpoGoogleMapsImpl({
         zoomControlsEnabled: !chromeless,
         scaleBarEnabled: !chromeless,
         indoorLevelPickerEnabled: false,
+        scrollGesturesEnabled: interactive,
+        zoomGesturesEnabled: interactive,
+        rotationGesturesEnabled: interactive,
+        tiltGesturesEnabled: interactive,
       }}
       properties={chromeless ? { selectionEnabled: false } : undefined}
     />

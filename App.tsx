@@ -101,7 +101,7 @@ function TabBarGlassBackground() {
 
 function TabNavigator() {
   const insets = useSafeAreaInsets();
-  const bottomPad = Math.max(insets.bottom, Platform.OS === 'ios' ? 10 : 12);
+  const bottomPad = Math.max(insets.bottom, Platform.OS === 'ios' ? 8 : 10);
 
   // tabBar 콜백을 useCallback으로 안정화 — bottomPad가 바뀔 때만 재생성
   const renderTabBar = useCallback(
@@ -151,10 +151,10 @@ function TabNavigator() {
         tabBarBackground: TabBarGlassBackground,
         tabBarStyle: {
           position: 'relative' as const,
-          height: 56 + insets.bottom,
-          paddingHorizontal: 4,
+          height: 64,
+          paddingHorizontal: 2,
           paddingTop: 6,
-          paddingBottom: Math.max(insets.bottom, 6),
+          paddingBottom: 8,
           backgroundColor: 'transparent',
           borderTopWidth: 0,
           elevation: Platform.OS === 'android' ? 14 : 0,
@@ -166,15 +166,19 @@ function TabNavigator() {
         },
         tabBarLabelStyle: {
           ...TEXT_STYLE.tabLabelInactive,
-          marginTop: 1,
+          fontSize: 11,
+          lineHeight: 14,
+          marginTop: 0,
           marginBottom: 0,
         },
         tabBarActiveLabelStyle: {
           ...TEXT_STYLE.tabLabelActive,
+          fontSize: 11,
+          lineHeight: 14,
         },
         tabBarItemStyle: {
-          paddingTop: 0,
-          paddingBottom: 0,
+          paddingTop: 1,
+          paddingBottom: 1,
           justifyContent: 'center' as const,
         },
       }),

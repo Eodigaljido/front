@@ -13,6 +13,8 @@ type Props = {
   level?: number;
   /** true면 기본 UI·출처 컨트롤 등을 최대한 숨김(임베드용) */
   chromeless?: boolean;
+  /** false면 지도 제스처(드래그/줌/회전) 비활성화 */
+  interactive?: boolean;
   /** false면 탭 클릭(POI/마커 선택 등)만 막고, 드래그/줌은 유지 */
   allowTap?: boolean;
   /** true면 겹치는 구간을 미세 오프셋해 선이 덜 겹치게 표시 */
@@ -32,7 +34,11 @@ function levelToGoogleZoom(level: number): number {
   return Math.max(8, Math.min(18, 20 - lv));
 }
 
-function buildGoogleBootstrapHtml(apiKey: string, chromeless: boolean): string {
+function buildGoogleBootstrapHtml(
+  apiKey: string,
+  chromeless: boolean,
+  interactive: boolean,
+): string {
   const chromelessOpts = chromeless
     ? `
         disableDefaultUI: true,
@@ -81,6 +87,12 @@ function buildGoogleBootstrapHtml(apiKey: string, chromeless: boolean): string {
         fullscreenControl: false,
         ${chromelessOpts}
       });
+      map.setOptions({
+        draggable: ${interactive ? "true" : "false"},
+        scrollwheel: ${interactive ? "true" : "false"},
+        disableDoubleClickZoom: ${interactive ? "false" : "true"},
+        gestureHandling: ${interactive ? "'auto'" : "'none'"},
+      });
 
       window.__applyRoute = function (spec) {
         if (!spec || !map) return;
@@ -123,7 +135,7 @@ function buildGoogleBootstrapHtml(apiKey: string, chromeless: boolean): string {
         var linePath = pathPts.map(function (c) {
           return { lat: Number(c.lat), lng: Number(c.lng) };
         });
-        if (avoidLineOverlap) {
+        if (avoidLineOverlap && linePath.length >= 24) {
           linePath = separateOverlap(linePath);
         }
         var markerPath = stopPts.length
@@ -144,7 +156,7 @@ function buildGoogleBootstrapHtml(apiKey: string, chromeless: boolean): string {
             var segPath = (seg.points || []).map(function (c) {
               return { lat: Number(c.lat), lng: Number(c.lng) };
             });
-            if (avoidLineOverlap) {
+            if (avoidLineOverlap && segPath.length >= 24) {
               segPath = separateOverlap(segPath);
             }
             if (segPath.length < 2) continue;
@@ -154,7 +166,7 @@ function buildGoogleBootstrapHtml(apiKey: string, chromeless: boolean): string {
               geodesic: true,
               strokeColor: seg.color || '#2563eb',
               strokeOpacity: seg.dashed ? 0 : 0.94,
-              strokeWeight: Number(seg.width) || 5,
+              strokeWeight: Number(seg.width) || 4,
               icons: seg.dashed
                 ? [
                     {
@@ -163,19 +175,7 @@ function buildGoogleBootstrapHtml(apiKey: string, chromeless: boolean): string {
                       repeat: '20px',
                     },
                   ]
-                : [
-                    {
-                      icon: {
-                        path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                        strokeOpacity: 0,
-                        fillOpacity: 0.95,
-                        fillColor: '#ffffff',
-                        scale: 2.8,
-                      },
-                      offset: '10%',
-                      repeat: '42px',
-                    },
-                  ],
+                : [],
               map: map,
             });
             polylines.push(poly);
@@ -187,20 +187,8 @@ function buildGoogleBootstrapHtml(apiKey: string, chromeless: boolean): string {
             geodesic: true,
             strokeColor: '#2563eb',
             strokeOpacity: 0.92,
-            strokeWeight: 5,
-            icons: [
-              {
-                icon: {
-                  path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                  strokeOpacity: 0,
-                  fillOpacity: 0.95,
-                  fillColor: '#ffffff',
-                  scale: 2.6,
-                },
-                offset: '10%',
-                repeat: '46px',
-              },
-            ],
+            strokeWeight: 4,
+            icons: [],
             map: map,
           });
           polylines.push(polyline);
@@ -212,15 +200,31 @@ function buildGoogleBootstrapHtml(apiKey: string, chromeless: boolean): string {
                 return { lat: p.lat, lng: p.lng };
               });
           markerSource.forEach(function (pos, idx) {
+            var markerColor =
+              pos.color ||
+              (pos.kind === 'start'
+                ? '#2563eb'
+                : pos.kind === 'end'
+                  ? '#ef4444'
+                  : '#64748b');
+            var markerScale = pos.kind === 'start' || pos.kind === 'end' ? 8.5 : 7.2;
             var m = new google.maps.Marker({
               position: { lat: Number(pos.lat), lng: Number(pos.lng) },
               map: map,
               clickable: allowTap,
+              icon: {
+                path: google.maps.SymbolPath.CIRCLE,
+                fillColor: markerColor,
+                fillOpacity: 1,
+                strokeColor: '#ffffff',
+                strokeWeight: 2,
+                scale: markerScale,
+              },
               label: pos.label
                 ? {
                     text: String(pos.label),
                     color: '#ffffff',
-                    fontSize: '13px',
+                    fontSize: '12px',
                     fontWeight: '700',
                   }
                 : undefined,
@@ -293,10 +297,24 @@ function toLatLngJson(points: MapPathPoint[] | undefined): { lat: number; lng: n
     .map((p) => ({ lat: p.latitude, lng: p.longitude }));
 }
 
-function toMarkerJson(points: MapMarkerPoint[] | undefined): { lat: number; lng: number; label?: string }[] {
+function toMarkerJson(
+  points: MapMarkerPoint[] | undefined,
+): {
+  lat: number;
+  lng: number;
+  label?: string;
+  kind?: "start" | "waypoint" | "end";
+  color?: string;
+}[] {
   return (points ?? [])
     .filter((p) => p && typeof p.latitude === 'number' && typeof p.longitude === 'number')
-    .map((p) => ({ lat: p.latitude, lng: p.longitude, label: p.label }));
+    .map((p) => ({
+      lat: p.latitude,
+      lng: p.longitude,
+      label: p.label,
+      kind: p.kind,
+      color: p.color,
+    }));
 }
 
 function toSegmentsJson(segments: MapRouteSegment[] | undefined) {
@@ -316,6 +334,7 @@ export default function GoogleMapWebView({
   longitude = 126.978,
   level = 8,
   chromeless = false,
+  interactive = true,
   allowTap = true,
   avoidLineOverlap = false,
   path,
@@ -332,8 +351,9 @@ export default function GoogleMapWebView({
   const markersJson = useMemo(() => JSON.stringify(toMarkerJson(markers)), [markers]);
 
   const bootstrapHtml = useMemo(
-    () => (apiKey ? buildGoogleBootstrapHtml(apiKey, chromeless) : ''),
-    [apiKey, chromeless],
+    () =>
+      apiKey ? buildGoogleBootstrapHtml(apiKey, chromeless, interactive) : '',
+    [apiKey, chromeless, interactive],
   );
 
   const webRef = useRef(null);
