@@ -1,5 +1,9 @@
 import { View, Text, TouchableOpacity, Image } from "react-native";
-import { useNavigation, NavigationProp, useFocusEffect } from "@react-navigation/native";
+import {
+  useNavigation,
+  NavigationProp,
+  useFocusEffect,
+} from "@react-navigation/native";
 import { getChatRooms, ChatRoom as ChatRoomType } from "@/api/chat/chat";
 import { useCallback, useState } from "react";
 import { useAuthStore } from "@/store/authStore";
@@ -47,8 +51,8 @@ export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
   useChatSocket(
     chatRooms.map((r) => r.uuid),
     (event: ChatSocketEvent) => {
-      if (event.eventType === "MESSAGE_CREATED") {
-        getChatRooms(accessToken!).then(setChatRooms).catch(console.error);
+      if (event.eventType === "MESSAGE_CREATED" && accessToken) {
+        getChatRooms(accessToken).then(setChatRooms).catch(console.error);
       }
     },
   );
