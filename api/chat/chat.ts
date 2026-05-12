@@ -102,6 +102,17 @@ export async function editMessage(
   return res.data;
 }
 
+// 채팅방 나가기
+export async function leaveChatRoom(
+  accessToken: string,
+  roomUuid: string,
+): Promise<void> {
+  await instance.delete(`/chats/${roomUuid}/me`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// 채팅방 생성
 export async function createChatRoom(
   accessToken: string,
   memberUuids: string[],
@@ -110,10 +121,33 @@ export async function createChatRoom(
 ): Promise<ChatRoom> {
   const body: Record<string, unknown> = { name, memberUuids };
   if (image != null) body.image = image;
-  const res = await instance.post<ChatRoom>(
-    "/chats",
-    body,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
-  );
+  const res = await instance.post<ChatRoom>("/chats", body, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
   return res.data;
+}
+
+// 채팅방 삭제 (방장만 가능)
+export async function deleteChatRoom(
+  accessToken: string,
+  roomUuid: string,
+): Promise<void> {
+  await instance.delete(`/chats/${roomUuid}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+// 채팅방 이름 변경
+export async function renameChatRoom(
+  accessToken: string,
+  roomUuid: string,
+  newName: string,
+): Promise<void> {
+  await instance.patch(
+    `/chats/${roomUuid}/name`,
+    { name: newName },
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
 }
