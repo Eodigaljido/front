@@ -116,12 +116,10 @@ export const ChatRoomScreen = () => {
   useEffect(() => {
     if (!accessToken) return;
 
-    try {
-      markAsRead(accessToken, roomUuid);
-      console.log("채팅방 읽음 처리 완료");
-    } catch (err) {
-      console.error("읽음 처리 실패:", err);
-    }
+    // 읽음 처리 실패해도 치명적이지 않으므로 에러는 로그만 남김
+    markAsRead(accessToken, roomUuid).catch((err) => {
+      console.error("채팅방 읽음 처리 실패:", err);
+    });
   }, [accessToken, roomUuid]);
 
   useEffect(() => {
@@ -375,7 +373,8 @@ function TypingText({ text }: { text: string }) {
   return (
     <View style={typingStyles.container}>
       <Text style={typingStyles.text}>
-        {base}{DOTS[dotIndex]}
+        {base}
+        {DOTS[dotIndex]}
       </Text>
     </View>
   );
