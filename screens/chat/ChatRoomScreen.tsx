@@ -224,7 +224,7 @@ export const ChatRoomScreen = () => {
     <>
       <StatusBar style="dark" />
       <View className="flex-1 bg-white">
-        <RoomHeader roomName={roomName} />
+        <RoomHeader roomName={roomName} roomUuid={roomUuid} />
         <KeyboardAwareScrollView
           ref={scrollViewRef}
           className="flex-1"
