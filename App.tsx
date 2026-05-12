@@ -10,29 +10,28 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TEXT_STYLE } from './styles/textStyles';
 
-import { MockDataProvider } from "./context/MockDataContext";
-import HomeScreen from "./screens/HomeScreen";
-import SharedRouteScreen from "./screens/SharedRouteScreen";
-import MyRouteScreen from "./screens/MyRouteScreen";
-import AllScreen from "./screens/AllScreen";
-import OnBoardStart from "./screens/onboard/OnBoardStart";
-import AreaOnBoard from "./screens/onboard/AreaOnBoard";
-import AgeOnBoard from "./screens/onboard/AgeOnBoard";
-import ActivityOnBoard from "./screens/onboard/ActivityOnBoard";
-import GenderOnBoard from "./screens/onboard/GenderOnBoard";
-import OnBoardEnd from "./screens/onboard/OnBoardEnd";
-import { ChatRoomScreen } from "./screens/ChatRoomScreen";
-import ChatHomeScreen from "./screens/chat/ChatHomeScreen";
-import LoginScreen from "./screens/LoginScreen";
-import SignupScreen from "./screens/SignupScreen";
-import RouteCreateScreen from "./screens/RouteCreateScreen";
-import ProfileSettingsScreen from "./screens/ProfileSettingsScreen";
+import { MockDataProvider } from './context/MockDataContext';
+import HomeScreen from './screens/HomeScreen';
+import SharedRouteScreen from './screens/SharedRouteScreen';
+import MyRouteScreen from './screens/MyRouteScreen';
+import AllScreen from './screens/AllScreen';
+import OnBoardStart from './screens/onboard/OnBoardStart';
+import AreaOnBoard from './screens/onboard/AreaOnBoard';
+import AgeOnBoard from './screens/onboard/AgeOnBoard';
+import ActivityOnBoard from './screens/onboard/ActivityOnBoard';
+import GenderOnBoard from './screens/onboard/GenderOnBoard';
+import OnBoardEnd from './screens/onboard/OnBoardEnd';
+import { ChatRoomScreen } from './screens/ChatRoomScreen';
+import ChatHomeScreen from './screens/chat/ChatHomeScreen';
+import LoginScreen from './screens/LoginScreen';
+import SignupScreen from './screens/SignupScreen';
+import FindAccountScreen from './screens/FindAccountScreen';
+import RouteCreateScreen from './screens/RouteCreateScreen';
+import ProfileSettingsScreen from './screens/ProfileSettingsScreen';
 
 export type RootTabParamList = {
   Home: undefined;
-  SharedRoute:
-    | { openFilter?: boolean; openAsPopular?: boolean; viewCourseId?: string }
-    | undefined;
+  SharedRoute: { openFilter?: boolean; openAsPopular?: boolean; viewCourseId?: string } | undefined;
   MyRoute: undefined;
   Chat: undefined;
   All: undefined;
@@ -52,6 +51,7 @@ export type RootStackParamList = {
   // Auth 관련
   Login: undefined;
   Signup: undefined;
+  FindAccount: undefined;
   OnBoardStart: undefined;
   AreaOnBoard: undefined;
   AgeOnBoard: undefined;
@@ -139,7 +139,11 @@ function TabNavigator() {
               minHeight: 28,
             }}
           >
-            <Ionicons name={TAB_ICONS[route.name as keyof RootTabParamList]} size={24} color={color} />
+            <Ionicons
+              name={TAB_ICONS[route.name as keyof RootTabParamList]}
+              size={24}
+              color={color}
+            />
           </View>
         ),
         tabBarActiveTintColor: TAB_ACCENT,
@@ -153,10 +157,10 @@ function TabNavigator() {
           paddingBottom: 8,
           backgroundColor: 'transparent',
           borderTopWidth: 0,
-          elevation: Platform.OS === "android" ? 14 : 0,
-          shadowColor: "#0f172a",
+          elevation: Platform.OS === 'android' ? 14 : 0,
+          shadowColor: '#0f172a',
           shadowOffset: { width: 0, height: 8 },
-          shadowOpacity: Platform.OS === "ios" ? 0.12 : 0.18,
+          shadowOpacity: Platform.OS === 'ios' ? 0.12 : 0.18,
           shadowRadius: 20,
           borderRadius: 22,
         },
@@ -183,33 +187,46 @@ function TabNavigator() {
 
   return (
     <Tab.Navigator initialRouteName="Home" tabBar={renderTabBar} screenOptions={screenOptions}>
-      <Tab.Screen name="Home" component={HomeScreen} options={{ headerShown: false, tabBarLabel: '홈' }} />
+      <Tab.Screen
+        name="Home"
+        component={HomeScreen}
+        options={{ headerShown: false, tabBarLabel: '홈' }}
+      />
       <Tab.Screen
         name="SharedRoute"
         component={SharedRouteScreen}
         options={{ headerShown: false, tabBarLabel: '공유 루트' }}
       />
-      <Tab.Screen name="MyRoute" component={MyRouteScreen} options={{ headerShown: false, tabBarLabel: '내 루트' }} />
+      <Tab.Screen
+        name="MyRoute"
+        component={MyRouteScreen}
+        options={{ headerShown: false, tabBarLabel: '내 루트' }}
+      />
       <Tab.Screen
         name="Chat"
         component={ChatHomeScreen}
         options={{ headerShown: false, title: '채팅', tabBarLabel: '채팅' }}
       />
-      <Tab.Screen name="All" component={AllScreen} options={{ headerShown: false, title: '전체', tabBarLabel: '전체' }} />
+      <Tab.Screen
+        name="All"
+        component={AllScreen}
+        options={{ headerShown: false, title: '전체', tabBarLabel: '전체' }}
+      />
     </Tab.Navigator>
   );
 }
 
 export default function App(): React.JSX.Element {
   const [isReady, setIsReady] = useState(false);
-  const restoreSession = useAuthStore((s) => s.restoreSession);
+  const restoreSession = useAuthStore(s => s.restoreSession);
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated);
   useEffect(() => {
     restoreSession().finally(() => setIsReady(true));
   }, []);
 
   if (!isReady) {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" />
       </View>
     );
@@ -222,8 +239,8 @@ export default function App(): React.JSX.Element {
           <NavigationContainer>
             <StatusBar style="auto" />
             <Stack.Navigator
-              initialRouteName="Login"
               screenOptions={{ headerShown: false }}
+              initialRouteName={isAuthenticated ? 'Tabs' : 'Login'}
             >
               <Stack.Screen name="Login" component={LoginScreen} />
               <Stack.Screen name="Signup" component={SignupScreen} />
@@ -236,6 +253,8 @@ export default function App(): React.JSX.Element {
               <Stack.Screen name="ActivityOnBoard" component={ActivityOnBoard} />
               <Stack.Screen name="GenderOnBoard" component={GenderOnBoard} />
               <Stack.Screen name="OnBoardEnd" component={OnBoardEnd} />
+              <Stack.Screen name="FindAccount" component={FindAccountScreen} />
+              {/* <Stack.Screen name="Start" component={StartScreen} /> */}
               <Stack.Screen name="ChatRoomScreen" component={ChatRoomScreen} />
             </Stack.Navigator>
           </NavigationContainer>

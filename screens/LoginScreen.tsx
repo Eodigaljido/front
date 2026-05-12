@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,30 +9,29 @@ import {
   ScrollView,
   Platform,
   ActivityIndicator,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
-import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { RootStackParamList } from "../App";
-import { usePasswordMask } from "../hooks/usePasswordMask";
-import { useAuthStore } from "../store/authStore";
-import { getOnboardingStatus } from "../api/onboard";
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../App';
+import { usePasswordMask } from '../hooks/usePasswordMask';
+import { useAuthStore } from '../store/authStore';
+import { getOnboardingStatus } from '../api/onboard';
 import {
   isTestAutoLoginEnabled,
   TEST_AUTO_LOGIN_IDENTIFIER,
   TEST_AUTO_LOGIN_PASSWORD,
-} from "../constants/testLogin";
+} from '../constants/testLogin';
 
-type LoginNavProp = NativeStackNavigationProp<RootStackParamList, "Login">;
+type LoginNavProp = NativeStackNavigationProp<RootStackParamList, 'Login'>;
 
 export default function LoginScreen() {
   const navigation = useNavigation<LoginNavProp>();
-  const [identifier, setIdentifier] = useState("");
-  const [loginError, setLoginError] = useState("");
+  const [identifier, setIdentifier] = useState('');
+  const [loginError, setLoginError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { displayPassword, realPasswordRef, handleInput, maskAll } =
-    usePasswordMask();
-  const loginStore = useAuthStore((s) => s.login);
+  const { displayPassword, realPasswordRef, handleInput, maskAll } = usePasswordMask();
+  const loginStore = useAuthStore(s => s.login);
   const passwordRef = useRef<TextInput>(null);
 
   useEffect(() => {
@@ -40,7 +39,7 @@ export default function LoginScreen() {
     let cancelled = false;
     setIdentifier(TEST_AUTO_LOGIN_IDENTIFIER);
     setIsLoading(true);
-    setLoginError("");
+    setLoginError('');
     (async () => {
       try {
         await loginStore({
@@ -53,14 +52,14 @@ export default function LoginScreen() {
         if (!completed) {
           navigation.reset({
             index: 0,
-            routes: [{ name: "OnBoardStart" }],
+            routes: [{ name: 'OnBoardStart' }],
           });
         } else {
-          navigation.reset({ index: 0, routes: [{ name: "Tabs" }] });
+          navigation.reset({ index: 0, routes: [{ name: 'Tabs' }] });
         }
       } catch {
         if (!cancelled) {
-          setLoginError("테스트 자동 로그인에 실패했습니다.");
+          setLoginError('테스트 자동 로그인에 실패했습니다.');
         }
       } finally {
         if (!cancelled) setIsLoading(false);
@@ -72,19 +71,16 @@ export default function LoginScreen() {
   }, [loginStore, navigation]);
 
   return (
-    <SafeAreaView className="flex-1 bg-white" edges={["top"]}>
+    <SafeAreaView className="flex-1 bg-white" edges={['top']}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <ScrollView
-          contentContainerStyle={{ flexGrow: 1 }}
-          keyboardShouldPersistTaps="handled"
-        >
+        <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
           <View className="items-center justify-center flex-1 px-10 bg-white">
             {/* 로고 */}
             <Image
-              source={require("@/assets/logo.png")}
+              source={require('@/assets/logo.png')}
               className="w-48 h-48 mb-3 rounded-2xl"
               resizeMode="contain"
             />
@@ -134,9 +130,9 @@ export default function LoginScreen() {
               activeOpacity={0.7}
               disabled={isLoading}
               onPress={async () => {
-                setLoginError("");
+                setLoginError('');
                 if (!identifier.trim() || !realPasswordRef.current) {
-                  setLoginError("아이디 혹은 비밀번호가 틀렸습니다.");
+                  setLoginError('아이디 혹은 비밀번호가 틀렸습니다.');
                   return;
                 }
                 setIsLoading(true);
@@ -150,13 +146,13 @@ export default function LoginScreen() {
                   if (!completed) {
                     navigation.reset({
                       index: 0,
-                      routes: [{ name: "OnBoardStart" }],
+                      routes: [{ name: 'OnBoardStart' }],
                     });
                   } else {
-                    navigation.reset({ index: 0, routes: [{ name: "Tabs" }] });
+                    navigation.reset({ index: 0, routes: [{ name: 'Tabs' }] });
                   }
                 } catch {
-                  setLoginError("아이디 혹은 비밀번호가 틀렸습니다.");
+                  setLoginError('아이디 혹은 비밀번호가 틀렸습니다.');
                 } finally {
                   setIsLoading(false);
                 }
@@ -171,14 +167,16 @@ export default function LoginScreen() {
             </TouchableOpacity>
 
             {/* 링크 */}
-            <View className="flex-row items-center gap-2 mt-2">
-              <Text className="text-sm text-gray-700">비밀번호 찾기</Text>
-              <Text className="text-base font-black text-gray-300">|</Text>
+            <View className="flex-row items-center gap-2 mt-4">
               <TouchableOpacity
-                activeOpacity={0.3}
-                onPress={() => navigation.navigate("Signup")}
+                activeOpacity={0.7}
+                onPress={() => navigation.navigate('FindAccount')}
               >
-                <Text className="text-sm text-gray-700">회원가입</Text>
+                <Text className="text-sm text-gray-700">계정을 잊으셨나요?</Text>
+              </TouchableOpacity>
+              <Text className="text-base font-black text-gray-300">|</Text>
+              <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('Signup')}>
+                <Text className="text-sm text-blue-500">회원가입</Text>
               </TouchableOpacity>
             </View>
 
@@ -189,8 +187,8 @@ export default function LoginScreen() {
                 className="items-center justify-center w-12 h-12 bg-[#ffeb00] rounded-full overflow-hidden"
               >
                 <Image
-                  style={{ width: "75%", height: "75%" }}
-                  source={require("@/assets/kakaotalk_sharing_btn/kakaotalk_sharing_btn_small.png")}
+                  style={{ width: '75%', height: '75%' }}
+                  source={require('@/assets/kakaotalk_sharing_btn/kakaotalk_sharing_btn_small.png')}
                   resizeMode="contain"
                 />
               </TouchableOpacity>
@@ -199,8 +197,8 @@ export default function LoginScreen() {
                 className="items-center justify-center w-12 h-12 bg-white border border-gray-200 rounded-full"
               >
                 <Image
-                  style={{ width: "50%", height: "50%" }}
-                  source={require("@/assets/Google_logo.png")}
+                  style={{ width: '50%', height: '50%' }}
+                  source={require('@/assets/Google_logo.png')}
                   resizeMode="contain"
                 />
               </TouchableOpacity>

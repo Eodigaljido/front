@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 import type { AuthUser } from '../api/auth';
-import { login as apiLogin, register as apiRegister } from '../api/auth';
+import { login as apiLogin, register as apiRegister, logout as apiLogout } from '../api/auth';
 import type { LoginRequest, RegisterRequest } from '../api/auth';
 import { tokenStorage } from '../utils/tokenStorage';
+import { instance as authApi } from '../api/axios';
 import { getMyProfile } from '../api/users';
 
 interface AuthState {
@@ -82,6 +83,14 @@ export const useAuthStore = create<AuthState>(set => ({
   },
 
   logout: async () => {
+    const refreshToken = await tokenStorage.getRefreshToken();
+    if (refreshToken) {
+      try {
+        await apiLogout(refreshToken);
+      } catch {
+        // 서버 오류가 나도 로컬 토큰은 반드시 제거
+      }
+    }
     await tokenStorage.clearTokens();
     set({ accessToken: null, refreshToken: null, user: null, isAuthenticated: false });
   },
@@ -89,22 +98,17 @@ export const useAuthStore = create<AuthState>(set => ({
   restoreSession: async () => {
     const accessToken = await tokenStorage.getAccessToken();
     const refreshToken = await tokenStorage.getRefreshToken();
-    if (accessToken && refreshToken) {
-      set({ accessToken, refreshToken, isAuthenticated: true });
-      try {
-        const me = await getMyProfile();
-        set({
-          user: {
-            id: (me as any).id ?? 0,
-            uuid: me.uuid,
-            userId: me.userId ?? '',
-            email: me.email ?? '',
-            nickname: me.nickname ?? '',
-            role: me.role ?? 'USER',
-          },
-        });
-      } catch {
-        // 프로필 로드 실패 시에도 토큰 세션은 유지
+    if (!accessToken || !refreshToken) return;
+
+    try {
+      const res = await authApi.get<AuthUser>('auth/me');
+      set({ accessToken, refreshToken, user: res.data, isAuthenticated: true });
+    } catch {
+      // 토큰은 있지만 /auth/me 실패(401 → 자동 갱신 후 재시도됨, 그 외 네트워크 오류 등)
+      // 갱신 성공 시 interceptor가 store를 업데이트하므로 여기선 토큰만 세팅
+      const stillValid = await tokenStorage.getAccessToken();
+      if (stillValid) {
+        set({ accessToken: stillValid, refreshToken, isAuthenticated: true });
       }
     }
   },
