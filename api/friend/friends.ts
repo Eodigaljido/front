@@ -8,6 +8,7 @@ export interface Friends {
   isDefaultImage: boolean;
 }
 
+// 친구 목록 조회
 export async function getFriends(accessToken: string): Promise<Friends[]> {
   const res = await instance.get<Friends[]>("/friends", {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -15,6 +16,7 @@ export async function getFriends(accessToken: string): Promise<Friends[]> {
   return res.data;
 }
 
+// 최근 대화한 친구 목록 조회
 export async function getFriendsRecent(
   accessToken: string,
 ): Promise<Friends[]> {
