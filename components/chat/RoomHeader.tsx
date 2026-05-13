@@ -13,16 +13,13 @@ export const RoomHeader = ({ roomName = "채팅방", roomUuid }: RoomHeaderProps
       className="w-full bg-white flex-row items-center mt-10 px-4"
       style={{ height: 80 }}
     >
-      <BackButton />
-      <View
-        className="absolute left-0 right-0 items-center justify-center"
-        style={{ height: 50 }}
-        pointerEvents="none"
-      >
-        <Text className="text-black text-lg font-bold">{roomName}</Text>
+      <View className="flex-1 items-start">
+        <BackButton />
       </View>
-      <View className="flex-1" />
-      <InfoButton roomUuid={roomUuid} roomName={roomName} />
+      <Text className="text-black text-lg font-bold">{roomName}</Text>
+      <View className="flex-1 items-end">
+        <InfoButton roomUuid={roomUuid} roomName={roomName} />
+      </View>
     </View>
   );
 };
