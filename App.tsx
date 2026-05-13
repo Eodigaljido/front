@@ -279,6 +279,7 @@ export default function App(): React.JSX.Element {
               <Stack.Screen name="OnBoardEnd" component={OnBoardEnd} />
               <Stack.Screen name="FindAccount" component={FindAccountScreen} />
               {/* <Stack.Screen name="Start" component={StartScreen} /> */}
+              <Stack.Screen name="ChatCreatingScreen" component={ChatCreatingScreen} />
               <Stack.Screen name="ChatRoomScreen" component={ChatRoomScreen} />
               <Stack.Screen name="ChatRoomInfoScreen" component={ChatRoomInfoScreen} />
             </Stack.Navigator>
