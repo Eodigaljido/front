@@ -1,12 +1,24 @@
 // @ts-nocheck
-import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+  useEffect,
+} from 'react';
 import type { UserSavedRoute } from '../data/userSavedRoute';
 import type { CourseReview } from '../data/mockData';
 
 type MockDataContextValue = {
   savedCourseIds: string[];
+  /** 메인 인기 코스에서 즐겨찾기한 공유 코스 id 순서(앞일수록 상단) */
+  favoriteCourseIds: string[];
   addSavedCourse: (id: string) => void;
   removeSavedCourse: (id: string) => void;
+  /** 인기 코스 북마크 토글 → 내 루트 저장 목록·즐겨찾기 순서에 반영 */
+  togglePopularFavorite: (courseId: string) => void;
   /** 공개한 코스 목 mock id (7개 등) */
   publicCourseIds: string[];
   /** 루트 제작에서 저장한 목 루트 */
@@ -24,10 +36,16 @@ type MockDataContextValue = {
 
 const MockDataContext = createContext<MockDataContextValue | null>(null);
 
-const MOCK_PUBLIC_IDS = ["1", "2", "4", "5", "6"];
+const MOCK_PUBLIC_IDS: string[] = [];
 
 export function MockDataProvider({ children }: { children: React.ReactNode }) {
-  const [savedCourseIds, setSavedCourseIds] = useState<string[]>(["1", "3"]);
+  const [savedCourseIds, setSavedCourseIds] = useState<string[]>([]);
+  const [favoriteCourseIds, setFavoriteCourseIds] = useState<string[]>([]);
+  const savedCourseIdsRef = useRef(savedCourseIds);
+  useEffect(() => {
+    savedCourseIdsRef.current = savedCourseIds;
+  }, [savedCourseIds]);
+
   const [userSavedRoutes, setUserSavedRoutes] = useState<UserSavedRoute[]>([]);
   const [extraSharedCourseReviews, setExtraSharedCourseReviews] = useState<
     Record<string, CourseReview[]>
@@ -39,6 +57,18 @@ export function MockDataProvider({ children }: { children: React.ReactNode }) {
 
   const removeSavedCourse = useCallback((id: string) => {
     setSavedCourseIds((prev) => prev.filter((x) => x !== id));
+    setFavoriteCourseIds((prev) => prev.filter((x) => x !== id));
+  }, []);
+
+  const togglePopularFavorite = useCallback((courseId: string) => {
+    const wasSaved = savedCourseIdsRef.current.includes(courseId);
+    if (wasSaved) {
+      setSavedCourseIds((s) => s.filter((x) => x !== courseId));
+      setFavoriteCourseIds((f) => f.filter((x) => x !== courseId));
+    } else {
+      setSavedCourseIds((s) => (s.includes(courseId) ? s : [...s, courseId]));
+      setFavoriteCourseIds((f) => [courseId, ...f.filter((x) => x !== courseId)]);
+    }
   }, []);
 
   const upsertUserRoute = useCallback((route: UserSavedRoute) => {
@@ -86,8 +116,10 @@ export function MockDataProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<MockDataContextValue>(
     () => ({
       savedCourseIds,
+      favoriteCourseIds,
       addSavedCourse,
       removeSavedCourse,
+      togglePopularFavorite,
       publicCourseIds: MOCK_PUBLIC_IDS,
       userSavedRoutes,
       upsertUserRoute,
@@ -96,7 +128,13 @@ export function MockDataProvider({ children }: { children: React.ReactNode }) {
       extraSharedCourseReviews,
       addSharedCourseReview,
     }),
-    [savedCourseIds, userSavedRoutes, extraSharedCourseReviews, getUserRoute],
+    [
+      savedCourseIds,
+      favoriteCourseIds,
+      userSavedRoutes,
+      extraSharedCourseReviews,
+      getUserRoute,
+    ],
   );
 
   return (
