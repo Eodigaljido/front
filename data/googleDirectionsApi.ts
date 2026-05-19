@@ -1,4 +1,5 @@
 import { getGoogleMapsWebServiceKey } from '../constants/googleMaps';
+import type { MapRouteSegment } from '../components/mapTypes';
 import {
   fetchKakaoNaviCarDirectionsLeg,
 } from './kakaoNaviDirectionsApi';
@@ -664,4 +665,93 @@ export async function fetchMergedDirectionsPolyline(opts: {
     }
   }
   return dedupeConsecutivePolyline(merged);
+}
+
+/** 코스 상세 — 경유지 확대 시 도보 경로 선 색 */
+export const COURSE_WALK_PATH_COLOR = '#f59e0b';
+
+async function walkingLegMapSegment(
+  from: LatLng,
+  to: LatLng,
+  id: string,
+  signal?: AbortSignal,
+): Promise<MapRouteSegment | null> {
+  try {
+    const leg = await fetchGoogleDirectionsLeg({
+      from,
+      to,
+      mode: 'walking',
+      signal,
+    });
+    const pts = (leg.path ?? []).filter(
+      (p) =>
+        p &&
+        Number.isFinite(p.latitude) &&
+        Number.isFinite(p.longitude),
+    );
+    if (pts.length >= 2) {
+      return {
+        id,
+        points: pts.map((p) => ({
+          latitude: p.latitude,
+          longitude: p.longitude,
+        })),
+        color: COURSE_WALK_PATH_COLOR,
+        width: 5,
+      };
+    }
+  } catch {
+    // API 실패 시 직선 폴백
+  }
+  if (haversineMeters(from, to) < 8) return null;
+  return {
+    id,
+    points: [
+      { latitude: from.latitude, longitude: from.longitude },
+      { latitude: to.latitude, longitude: to.longitude },
+    ],
+    color: COURSE_WALK_PATH_COLOR,
+    width: 4,
+    dashed: true,
+  };
+}
+
+/**
+ * 선택한 경유지 기준 이전·다음 구간 도보 경로 (Tmap/Google Directions).
+ * 코스 상세에서 경유지를 눌러 확대했을 때 주변 도보 동선 표시용.
+ */
+export async function fetchWalkingSegmentsAroundStep(opts: {
+  points: LatLng[];
+  stepIndex: number;
+  signal?: AbortSignal;
+}): Promise<MapRouteSegment[]> {
+  const { points, stepIndex, signal } = opts;
+  if (!points || points.length < 2 || stepIndex < 0 || stepIndex >= points.length) {
+    return [];
+  }
+
+  const tasks: Promise<MapRouteSegment | null>[] = [];
+  if (stepIndex > 0) {
+    tasks.push(
+      walkingLegMapSegment(
+        points[stepIndex - 1],
+        points[stepIndex],
+        `walk-in-${stepIndex}`,
+        signal,
+      ),
+    );
+  }
+  if (stepIndex < points.length - 1) {
+    tasks.push(
+      walkingLegMapSegment(
+        points[stepIndex],
+        points[stepIndex + 1],
+        `walk-out-${stepIndex}`,
+        signal,
+      ),
+    );
+  }
+
+  const results = await Promise.all(tasks);
+  return results.filter((s): s is MapRouteSegment => Boolean(s));
 }

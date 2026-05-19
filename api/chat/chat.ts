@@ -35,7 +35,7 @@ export async function getChatRooms(accessToken: string): Promise<ChatRoom[]> {
   const res = await instance.get<ChatRoom[]>("/chats", {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  return res.data;
+  return Array.isArray(res.data) ? res.data : [];
 }
 
 // 채팅방 메시지 조회

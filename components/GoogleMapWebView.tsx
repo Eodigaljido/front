@@ -11,6 +11,10 @@ type Props = {
   latitude?: number;
   longitude?: number;
   level?: number;
+  /** Google Maps zoom (8–20). 있으면 level보다 우선 */
+  zoom?: number;
+  /** false면 경로 전체 fitBounds 대신 lat/lng·zoom으로 카메라 고정 */
+  fitToRoute?: boolean;
   /** true면 기본 UI·출처 컨트롤 등을 최대한 숨김(임베드용) */
   chromeless?: boolean;
   /** false면 지도 제스처(드래그/줌/회전) 비활성화 */
@@ -34,21 +38,33 @@ function levelToGoogleZoom(level: number): number {
   return Math.max(8, Math.min(18, 20 - lv));
 }
 
+/** 지도 타일은 유지하고, 출처·로고 링크 영역만 숨김 (.gmnoprint 전체 숨기면 타일까지 사라짐) */
+const MAP_ATTRIBUTION_HIDE_CSS = `
+    .gm-style-cc,
+    .gm-style-moc,
+    .gm-style-pbc,
+    .gm-style a[href^="https://maps.google.com/maps"],
+    .gm-style a[href^="http://maps.google.com/maps"] {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
+`;
+
 function buildGoogleBootstrapHtml(
   apiKey: string,
   chromeless: boolean,
   interactive: boolean,
 ): string {
-  const chromelessOpts = chromeless
-    ? `
+  const chromelessOpts = `
         disableDefaultUI: true,
         zoomControl: false,
         clickableIcons: false,
         keyboardShortcuts: false,
         attributionControl: false,
         rotateControl: false,
-`
-    : "";
+`;
   return `<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -56,7 +72,7 @@ function buildGoogleBootstrapHtml(
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <style>
     html, body, #map { width:100%; height:100%; margin:0; padding:0; background:#e5e7eb; }
-    ${chromeless ? `.gm-style-cc, .gm-style a[href^="https://maps.google.com/maps"], .gm-style a[href^="http://maps.google.com/maps"] { display:none !important; }` : ""}
+    ${MAP_ATTRIBUTION_HIDE_CSS}
   </style>
   <script>
     var map = null;
@@ -78,6 +94,28 @@ function buildGoogleBootstrapHtml(
     window.__gmRelayout = relayoutMap;
     window.__pendingSpec = null;
 
+    function hideMapAttributionLayers() {
+      try {
+        var root = document.getElementById('map');
+        if (!root) return;
+        root.querySelectorAll('.gm-style-cc, .gm-style-moc, .gm-style-pbc').forEach(function (el) {
+          el.style.display = 'none';
+        });
+        root.querySelectorAll('a[href*="maps.google.com"]').forEach(function (el) {
+          el.style.display = 'none';
+        });
+        root.querySelectorAll('a, span, div').forEach(function (el) {
+          if (el.children && el.children.length > 0) return;
+          var t = String(el.textContent || '').trim();
+          if (!t || t.length > 64) return;
+          if (/^(©|지도\\s*데이터|map data|google|tmap|모빌리티)/i.test(t)) {
+            el.style.display = 'none';
+          }
+        });
+      } catch (e) {}
+    }
+    window.__hideMapAttribution = hideMapAttributionLayers;
+
     function gmInit() {
       map = new google.maps.Map(document.getElementById('map'), {
         center: { lat: 37.5665, lng: 126.978 },
@@ -87,6 +125,10 @@ function buildGoogleBootstrapHtml(
         fullscreenControl: false,
         ${chromelessOpts}
       });
+      if (google && google.maps && google.maps.event && map) {
+        google.maps.event.addListener(map, 'tilesloaded', hideMapAttributionLayers);
+      }
+      hideMapAttributionLayers();
       map.setOptions({
         draggable: ${interactive ? "true" : "false"},
         scrollwheel: ${interactive ? "true" : "false"},
@@ -128,10 +170,10 @@ function buildGoogleBootstrapHtml(
           }
           return out;
         }
-        var pathPts = spec.path || [];
-        var segments = spec.segments || [];
-        var stopPts = spec.stops && spec.stops.length ? spec.stops : [];
-        var markPts = spec.markers && spec.markers.length ? spec.markers : [];
+        var pathPts = Array.isArray(spec.path) ? spec.path : [];
+        var segments = Array.isArray(spec.segments) ? spec.segments : [];
+        var stopPts = Array.isArray(spec.stops) && spec.stops.length ? spec.stops : [];
+        var markPts = Array.isArray(spec.markers) && spec.markers.length ? spec.markers : [];
         var linePath = pathPts.map(function (c) {
           return { lat: Number(c.lat), lng: Number(c.lng) };
         });
@@ -196,9 +238,10 @@ function buildGoogleBootstrapHtml(
         if (anyLine) {
           var markerSource = markPts.length
             ? markPts
-            : markerPath.map(function (p) {
+            : (markerPath || []).map(function (p) {
                 return { lat: p.lat, lng: p.lng };
               });
+          if (!Array.isArray(markerSource)) markerSource = [];
           markerSource.forEach(function (pos, idx) {
             var markerColor =
               pos.color ||
@@ -248,7 +291,12 @@ function buildGoogleBootstrapHtml(
           markerSource.forEach(function (p) {
             bounds.extend({ lat: Number(p.lat), lng: Number(p.lng) });
           });
-          map.fitBounds(bounds, 48);
+          if (spec.fitToRoute === false) {
+            map.setCenter(defaultCenter);
+            map.setZoom(gZoom);
+          } else {
+            map.fitBounds(bounds, 48);
+          }
         } else if (linePath.length === 1) {
           map.setCenter(linePath[0]);
           map.setZoom(gZoom);
@@ -259,8 +307,11 @@ function buildGoogleBootstrapHtml(
           markers.push(new google.maps.Marker({ position: defaultCenter, map: map, clickable: allowTap }));
         }
         relayoutMap();
+        hideMapAttributionLayers();
         setTimeout(relayoutMap, 50);
         setTimeout(relayoutMap, 200);
+        setTimeout(hideMapAttributionLayers, 50);
+        setTimeout(hideMapAttributionLayers, 250);
       };
 
       [0, 80, 250, 600].forEach(function (ms) {
@@ -333,7 +384,9 @@ export default function GoogleMapWebView({
   latitude = 37.5665,
   longitude = 126.978,
   level = 8,
-  chromeless = false,
+  zoom: zoomProp,
+  fitToRoute = true,
+  chromeless = true,
   interactive = true,
   allowTap = true,
   avoidLineOverlap = false,
@@ -368,15 +421,23 @@ export default function GoogleMapWebView({
   const injectSpecJs = useCallback(() => {
     const lat = Number(latitude);
     const lng = Number(longitude);
-    const zoom = levelToGoogleZoom(level);
-    const pathArr = JSON.parse(pathJson);
-    const segmentsArr = JSON.parse(segmentsJson);
-    const stopsArr = JSON.parse(stopsJson);
-    const markersArr = JSON.parse(markersJson);
+    const zoom =
+      typeof zoomProp === "number" && Number.isFinite(zoomProp)
+        ? Math.max(8, Math.min(20, zoomProp))
+        : levelToGoogleZoom(level);
+    const pathParsed = JSON.parse(pathJson);
+    const segmentsParsed = JSON.parse(segmentsJson);
+    const stopsParsed = JSON.parse(stopsJson);
+    const markersParsed = JSON.parse(markersJson);
+    const pathArr = Array.isArray(pathParsed) ? pathParsed : [];
+    const segmentsArr = Array.isArray(segmentsParsed) ? segmentsParsed : [];
+    const stopsArr = Array.isArray(stopsParsed) ? stopsParsed : [];
+    const markersArr = Array.isArray(markersParsed) ? markersParsed : [];
     const spec = {
       lat,
       lng,
       zoom,
+      fitToRoute,
       allowTap,
       avoidLineOverlap,
       path: pathArr,
@@ -385,7 +446,7 @@ export default function GoogleMapWebView({
       markers: markersArr,
     };
     const embedded = JSON.stringify(JSON.stringify(spec));
-    const code = `(function(){try{var spec=JSON.parse(${embedded});if(window.__applyRoute)window.__applyRoute(spec);else window.__pendingSpec=spec;}catch(e){}true;})();`;
+    const code = `(function(){try{var spec=JSON.parse(${embedded});if(window.__applyRoute)window.__applyRoute(spec);else window.__pendingSpec=spec;if(window.__hideMapAttribution)window.__hideMapAttribution();}catch(e){}true;})();`;
     if (Platform.OS === 'web') {
       try {
         const w = iframeRef.current?.contentWindow;
@@ -396,7 +457,19 @@ export default function GoogleMapWebView({
       return;
     }
     webRef.current?.injectJavaScript(code);
-  }, [latitude, longitude, level, allowTap, avoidLineOverlap, pathJson, segmentsJson, stopsJson, markersJson]);
+  }, [
+    latitude,
+    longitude,
+    level,
+    zoomProp,
+    fitToRoute,
+    allowTap,
+    avoidLineOverlap,
+    pathJson,
+    segmentsJson,
+    stopsJson,
+    markersJson,
+  ]);
 
   useEffect(() => {
     if (!mapDomReadyRef.current && Platform.OS !== 'web') return;
@@ -413,7 +486,7 @@ export default function GoogleMapWebView({
     if (Platform.OS === 'web') return;
     requestAnimationFrame(() => {
       webRef.current?.injectJavaScript(
-        '(function(){try{if(window.__gmRelayout)window.__gmRelayout();}catch(e){}true;})();',
+        '(function(){try{if(window.__gmRelayout)window.__gmRelayout();if(window.__hideMapAttribution)window.__hideMapAttribution();}catch(e){}true;})();',
       );
     });
   }, []);

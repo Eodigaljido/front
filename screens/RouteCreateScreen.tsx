@@ -35,8 +35,14 @@ import {
   type KakaoKeywordSort,
 } from '../data/kakaoLocalApi';
 import { fetchGoogleDirectionsLeg, type DirectionsMode } from '../data/googleDirectionsApi';
+import {
+  createMyRoute,
+  fetchMyCourseDetail,
+  fetchSharedCourseDetail,
+  updateMyRoute,
+} from '../api/courses';
 import type { CourseItem } from '../data/mockData';
-import { MOCK_COURSES, getCourseStepMapPoint } from '../data/mockData';
+import { getCourseStepMapPoint } from '../data/mockData';
 
 type RouteStop = {
   id: string;
@@ -123,6 +129,22 @@ function legTransportLabel(mode: TransportMode, transitType?: TransitType): stri
   return transitType ? `대중교통(${TRANSIT_TYPE_LABELS[transitType]})` : TRANSPORT_LABELS.transit;
 }
 
+function pickFastestModeByKey(placeKey: string): TransportMode {
+  // 자동 기본 추천은 도보/대중교통 축에서만 판단한다.
+  // (개인차량/자전거는 사용자가 명시적으로 변경할 때만 적용)
+  const candidates: TransportMode[] = ['walk', 'transit'];
+  let best: TransportMode = 'transit';
+  let bestMinutes = Number.POSITIVE_INFINITY;
+  for (const mode of candidates) {
+    const minutes = estimateMinutes(mode, placeKey);
+    if (minutes < bestMinutes) {
+      best = mode;
+      bestMinutes = minutes;
+    }
+  }
+  return best;
+}
+
 /** 공유 루트 목 코스 → 루트 제작 정류장/구간 (저장 시 새 내 루트로 추가) */
 function seedRouteFromMockCourse(course: CourseItem): { stops: RouteStop[]; legs: RouteLeg[] } {
   const steps = course.routeSteps;
@@ -131,7 +153,10 @@ function seedRouteFromMockCourse(course: CourseItem): { stops: RouteStop[]; legs
   }
   if (steps.length === 1) {
     const s = steps[0];
-    const { lat, lng } = getCourseStepMapPoint(course.id, 0);
+    const { lat, lng } =
+      s.lat != null && s.lng != null
+        ? { lat: s.lat, lng: s.lng }
+        : getCourseStepMapPoint(course.id, 0);
     const stops: RouteStop[] = [
       {
         id: `seed-${uid()}-s`,
@@ -145,7 +170,7 @@ function seedRouteFromMockCourse(course: CourseItem): { stops: RouteStop[]; legs
         id: `seed-${uid()}-e`,
         kind: 'end',
         title: s.name,
-        timeLine: '도착 (목 데이터)',
+        timeLine: '도착',
         lat,
         lng,
       },
@@ -156,7 +181,10 @@ function seedRouteFromMockCourse(course: CourseItem): { stops: RouteStop[]; legs
     };
   }
   const stops: RouteStop[] = steps.map((step, index) => {
-    const { lat, lng } = getCourseStepMapPoint(course.id, index);
+    const { lat, lng } =
+      step.lat != null && step.lng != null
+        ? { lat: step.lat, lng: step.lng }
+        : getCourseStepMapPoint(course.id, index, steps.length);
     const isFirst = index === 0;
     const isLast = index === steps.length - 1;
     const kind = isFirst ? 'start' : isLast ? 'end' : 'via';
@@ -170,14 +198,35 @@ function seedRouteFromMockCourse(course: CourseItem): { stops: RouteStop[]; legs
     };
   });
   const legs: RouteLeg[] = [];
+  const existingLegs = Array.isArray((course as any).routeLegs) ? (course as any).routeLegs : [];
   for (let i = 0; i < stops.length - 1; i++) {
+    const existing = existingLegs[i];
+    const stepKey = `${course.id}-${steps[i]?.id ?? i}-${steps[i + 1]?.id ?? i + 1}`;
+    const autoMode = pickFastestModeByKey(stepKey);
+    const nextMode: TransportMode =
+      existing?.mode === 'walk' ||
+      existing?.mode === 'car' ||
+      existing?.mode === 'bike' ||
+      existing?.mode === 'transit'
+        ? existing.mode
+        : autoMode;
     legs.push({
       id: uid(),
-      mode: 'transit',
+      mode: nextMode,
       minutes: Math.max(
-        8,
-        Math.min(45, Math.round((steps[i].stayMinutes + steps[i + 1].stayMinutes) / 3)),
+        5,
+        Number(
+          existing?.minutes ??
+            Math.min(
+              45,
+              Math.max(
+                8,
+                Math.round((steps[i].stayMinutes + steps[i + 1].stayMinutes) / 3),
+              ),
+            ),
+        ),
       ),
+      transitType: nextMode === 'transit' ? (existing?.transitType ?? 'subway') : undefined,
     });
   }
   return { stops, legs };
@@ -218,7 +267,7 @@ function rebuildLegsForStops(
           }
         : {
             id: uid(),
-            mode: 'transit' as TransportMode,
+            mode: pickFastestModeByKey(`${a}->${b}`),
             minutes: syntheticLegMinutes(a, b),
           },
     );
@@ -567,7 +616,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const insets = useSafeAreaInsets();
-  const { upsertUserRoute, getUserRoute } = useMockData();
+  const { upsertUserRoute, getUserRoute, deleteUserRoute } = useMockData();
 
   const [stops, setStops] = useState<RouteStop[]>(() => ROUTE_CREATE_EMPTY_STOPS.map((s) => ({ ...s })));
 
@@ -655,11 +704,27 @@ export default function RouteCreateScreen(): React.JSX.Element {
 
   useFocusEffect(
     useCallback(() => {
+      let cancelled = false;
+
       const editId = route.params?.editRouteId as string | undefined;
-      const seedMockId = route.params?.seedMockCourseId as string | undefined;
+      const seedId = route.params?.seedMockCourseId as string | undefined;
       const collab =
         route.params?.collaborative === true ||
         (editId ? getUserRoute(editId)?.collaborative === true : false);
+
+      const applyEmptyRoute = () => {
+        setPersistedRouteId(null);
+        setRouteTitle("새 루트");
+        setStops(ROUTE_CREATE_EMPTY_STOPS.map((s) => ({ ...s })));
+        setLegs([]);
+        setActivity([
+          collab
+            ? "협업 세션 · 저장 시 서버에 반영됩니다."
+            : "개인 루트입니다. 저장 시 서버에 반영됩니다.",
+        ]);
+        setChatMessages(collab ? ROUTE_CREATE_INITIAL_CHAT : []);
+      };
+
       if (editId) {
         const r = getUserRoute(editId);
         if (r) {
@@ -672,8 +737,8 @@ export default function RouteCreateScreen(): React.JSX.Element {
               mode: normalizeLegMode(l.mode),
               minutes: l.minutes,
               transitType:
-                normalizeLegMode(l.mode) === 'transit'
-                  ? ((l as any).transitType ?? 'subway')
+                normalizeLegMode(l.mode) === "transit"
+                  ? ((l as any).transitType ?? "subway")
                   : undefined,
               directionsSummary: l.directionsSummary,
               directionsDetail: l.directionsDetail,
@@ -681,37 +746,92 @@ export default function RouteCreateScreen(): React.JSX.Element {
             })),
           );
           setActivity([
-            collab ? '공동 수정 루트를 불러왔습니다.' : '저장된 개인 루트를 불러왔습니다.',
+            collab
+              ? "공동 수정 루트를 불러왔습니다."
+              : "저장된 개인 루트를 불러왔습니다.",
           ]);
           setChatMessages(collab ? ROUTE_CREATE_INITIAL_CHAT : []);
-          return;
+          return () => {
+            cancelled = true;
+          };
         }
+
+        (async () => {
+          try {
+            const detail = await fetchMyCourseDetail(editId);
+            if (cancelled) return;
+            if (detail?.routeSteps?.length) {
+              const { stops: nextStops, legs: nextLegs } = seedRouteFromMockCourse(detail);
+              setPersistedRouteId(editId);
+              setRouteTitle(detail.title);
+              setStops(nextStops);
+              setLegs(nextLegs);
+              setActivity([
+                collab
+                  ? '서버에 저장된 공동 루트를 불러왔습니다.'
+                  : '서버에 저장된 코스를 불러왔습니다.',
+              ]);
+              setChatMessages(collab ? ROUTE_CREATE_INITIAL_CHAT : []);
+              return;
+            }
+            applyEmptyRoute();
+            setActivity([
+              '기기에 해당 루트가 없고, 서버에서도 코스 정보를 찾을 수 없습니다.',
+            ]);
+            setChatMessages([]);
+          } catch {
+            if (!cancelled) {
+              applyEmptyRoute();
+              setActivity(['코스를 불러오지 못했습니다.']);
+              setChatMessages([]);
+            }
+          }
+        })();
+        return () => {
+          cancelled = true;
+        };
       }
-      if (seedMockId) {
-        const c = MOCK_COURSES.find((x) => x.id === seedMockId);
-        if (c) {
-          const { stops: nextStops, legs: nextLegs } = seedRouteFromMockCourse(c);
-          setPersistedRouteId(null);
-          setRouteTitle(c.title);
-          setStops(nextStops);
-          setLegs(nextLegs);
-          setActivity([
-            '공유 루트에서 가져온 코스입니다. 수정 후 저장하면 내 루트에 새로 추가됩니다.',
-          ]);
-          setChatMessages([]);
-          return;
-        }
+
+      if (seedId) {
+        (async () => {
+          try {
+            const c = await fetchSharedCourseDetail(seedId);
+            if (cancelled) return;
+            if (!c) {
+              applyEmptyRoute();
+              setActivity([
+                "공유 코스를 불러오지 못했습니다. 서버에 등록된 코스인지 확인해 주세요.",
+              ]);
+              setChatMessages([]);
+              return;
+            }
+            const { stops: nextStops, legs: nextLegs } =
+              seedRouteFromMockCourse(c);
+            setPersistedRouteId(null);
+            setRouteTitle(c.title);
+            setStops(nextStops);
+            setLegs(nextLegs);
+            setActivity([
+              "공유 루트에서 가져온 코스입니다. 수정 후 저장하면 내 루트에 반영됩니다.",
+            ]);
+            setChatMessages([]);
+          } catch {
+            if (!cancelled) {
+              applyEmptyRoute();
+              setActivity(["공유 코스를 불러오지 못했습니다."]);
+              setChatMessages([]);
+            }
+          }
+        })();
+        return () => {
+          cancelled = true;
+        };
       }
-      setPersistedRouteId(null);
-      setRouteTitle('새 루트');
-      setStops(ROUTE_CREATE_EMPTY_STOPS.map((s) => ({ ...s })));
-      setLegs([]);
-      setActivity([
-        collab
-          ? '협업 세션 · 변경 사항은 저장 시 함께 반영됩니다.'
-          : '개인 루트입니다. 변경 사항은 저장 시 목 데이터에만 반영됩니다.',
-      ]);
-      setChatMessages(collab ? ROUTE_CREATE_INITIAL_CHAT : []);
+
+      applyEmptyRoute();
+      return () => {
+        cancelled = true;
+      };
     }, [
       route.params?.collaborative,
       route.params?.editRouteId,
@@ -1213,7 +1333,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
 
   const addStopToRoute = useCallback(() => {
     if (!selectedPlace) return;
-    const selectedMode: TransportMode = 'transit';
+    const selectedMode: TransportMode = pickFastestModeByKey(selectedPlace.id);
     const m = estimateMinutes(selectedMode, selectedPlace.id);
 
     if (searchTargetStopId) {
@@ -1364,7 +1484,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
 
     pushActivity(
       isCollaborative
-        ? `${MOCK_COLLABORATORS[0].name}님이 경유지 "${selectedPlace.name}"을(를) 추가했습니다.`
+        ? `경유지 "${selectedPlace.name}"을(를) 추가했습니다. (공동 편집)`
         : `경유지 "${selectedPlace.name}"을(를) 추가했습니다.`,
     );
     closeSearch();
@@ -1447,7 +1567,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
         {
           id: uid(),
           from: 'other',
-          name: MOCK_COLLABORATORS[2].name,
+          name: "멤버",
           text: '확인했어요!',
           at: Date.now(),
         },
@@ -1455,7 +1575,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
     }, 1200);
   };
 
-  const saveRoute = () => {
+  const saveRoute = async () => {
     if (stops[0]?.lat == null || stops[stops.length - 1]?.lat == null) {
       Alert.alert(
         '루트 미완성',
@@ -1465,13 +1585,10 @@ export default function RouteCreateScreen(): React.JSX.Element {
     }
     const title = routeTitle.trim() || '새 루트';
     const now = new Date().toISOString();
-    const id = persistedRouteId ?? `ur-${uid()}`;
-    const prev = getUserRoute(id);
-    upsertUserRoute({
-      id,
+    const localId = persistedRouteId ?? `ur-${uid()}`;
+    const prev = getUserRoute(localId) ?? getUserRoute(persistedRouteId ?? '');
+    const routePayload = {
       title,
-      createdAt: prev?.createdAt ?? now,
-      updatedAt: now,
       collaborative: isCollaborative,
       stops: stops.map((s) => ({
         id: s.id,
@@ -1490,11 +1607,62 @@ export default function RouteCreateScreen(): React.JSX.Element {
         directionsDetail: l.directionsDetail,
         distanceMeters: l.distanceMeters,
       })),
+    };
+
+    upsertUserRoute({
+      id: localId,
+      title,
+      createdAt: prev?.createdAt ?? now,
+      updatedAt: now,
+      collaborative: isCollaborative,
+      stops: routePayload.stops,
+      legs: routePayload.legs,
     });
-    setPersistedRouteId(id);
+
+    let apiSaved = false;
+    let effectiveId = localId;
+
+    if (persistedRouteId) {
+      apiSaved = await updateMyRoute(persistedRouteId, routePayload);
+      effectiveId = persistedRouteId;
+      if (apiSaved) {
+        upsertUserRoute({
+          id: persistedRouteId,
+          title,
+          createdAt: prev?.createdAt ?? now,
+          updatedAt: now,
+          collaborative: isCollaborative,
+          stops: routePayload.stops,
+          legs: routePayload.legs,
+        });
+      }
+    } else {
+      const serverId = await createMyRoute(routePayload);
+      apiSaved = Boolean(serverId);
+      if (serverId) {
+        effectiveId = serverId;
+        if (serverId !== localId) {
+          deleteUserRoute(localId);
+        }
+        upsertUserRoute({
+          id: serverId,
+          title,
+          createdAt: prev?.createdAt ?? now,
+          updatedAt: now,
+          collaborative: isCollaborative,
+          stops: routePayload.stops,
+          legs: routePayload.legs,
+        });
+      }
+    }
+
+    setPersistedRouteId(effectiveId);
+
     Alert.alert(
-      '저장됨 (목 데이터)',
-      `"${title}"\n경유 ${Math.max(0, stops.length - 2)}곳 · 구간 ${legs.length}개 · 총 ${totalMinutes}분\n내 루트 탭에서 확인·수정할 수 있어요.`,
+      apiSaved ? '저장됨' : '저장됨 (로컬 반영)',
+      apiSaved
+        ? `"${title}"\n경유 ${Math.max(0, stops.length - 2)}곳 · 구간 ${legs.length}개 · 총 ${totalMinutes}분\n백엔드와 동기화되었습니다.`
+        : `"${title}"\n경유 ${Math.max(0, stops.length - 2)}곳 · 구간 ${legs.length}개 · 총 ${totalMinutes}분\n백엔드 저장에 실패해 기기에만 반영되었습니다. 네트워크를 확인한 뒤 다시 저장해 주세요.`,
       [{ text: '확인', onPress: () => navigation.goBack() }],
     );
   };
@@ -1671,29 +1839,35 @@ export default function RouteCreateScreen(): React.JSX.Element {
           <View className="min-w-0 flex-1 flex-row items-center">
             {isCollaborative ? (
               <View className="flex-row items-center">
-                {MOCK_COLLABORATORS.map((c, i) => (
-                  <Image
-                    key={c.id}
-                    accessibilityLabel={`${c.name} 참여 중`}
-                    source={{
-                      uri: `https://i.pravatar.cc/96?u=${encodeURIComponent(c.id)}`,
-                    }}
-                    style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: 18,
-                      borderWidth: 2.5,
-                      borderColor: '#ffffff',
-                      marginLeft: i === 0 ? 0 : -12,
-                    }}
-                  />
-                ))}
+                {MOCK_COLLABORATORS.length > 0 ? (
+                  MOCK_COLLABORATORS.map((c, i) => (
+                    <Image
+                      key={c.id}
+                      accessibilityLabel={`${c.name} 참여 중`}
+                      source={{
+                        uri: `https://i.pravatar.cc/96?u=${encodeURIComponent(c.id)}`,
+                      }}
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 18,
+                        borderWidth: 2.5,
+                        borderColor: '#ffffff',
+                        marginLeft: i === 0 ? 0 : -12,
+                      }}
+                    />
+                  ))
+                ) : (
+                  <Text className="text-xs font-medium text-gray-500">
+                    공동 편집 · 멤버는 서버 연동 후 표시
+                  </Text>
+                )}
               </View>
             ) : (
               <Text className="text-xs font-medium text-gray-500">개인 루트</Text>
             )}
           </View>
-          <View className="flex-row gap-2">
+          <View className="flex-row items-center gap-2">
             {isCollaborative ? (
               <Pressable
                 onPress={() => setChatOpen(true)}
