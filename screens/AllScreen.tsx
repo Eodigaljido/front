@@ -1,11 +1,13 @@
 // @ts-nocheck
 import React, { useCallback, useState } from 'react';
-import { View, Text, Pressable, ScrollView, Alert } from 'react-native';
+import { View, Text, Pressable, ScrollView, Alert, Modal, ActivityIndicator, Clipboard } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 
 import type { RootTabParamList } from '../App';
 import { getMyProfile } from '../api/users';
+import { getMyFriendCode } from '../api/friend/friends';
 import { useAuthStore } from '../store/authStore';
 import MenuSection, { type MenuItem } from '../components/all/MenuSection';
 import ProfileCard from '../components/all/ProfileCard';
@@ -24,6 +26,9 @@ export default function AllScreen(): React.JSX.Element {
   const setUser = useAuthStore(s => s.setUser);
   const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
   const [sharedRouteCount, setSharedRouteCount] = useState<number>(27);
+  const [friendCode, setFriendCode] = useState<string | null>(null);
+  const [friendCodeVisible, setFriendCodeVisible] = useState(false);
+  const [friendCodeLoading, setFriendCodeLoading] = useState(false);
 
   const refreshMe = useCallback(async () => {
     try {
@@ -114,6 +119,21 @@ export default function AllScreen(): React.JSX.Element {
     },
   ];
 
+  const handleAddFriend = useCallback(async () => {
+    setFriendCodeVisible(true);
+    if (friendCode) return;
+    setFriendCodeLoading(true);
+    try {
+      const code = await getMyFriendCode();
+      setFriendCode(code);
+    } catch (e: any) {
+      setFriendCodeVisible(false);
+      Alert.alert('오류', e?.response?.data?.message ?? e?.message ?? '친구 코드를 불러오지 못했습니다.');
+    } finally {
+      setFriendCodeLoading(false);
+    }
+  }, [friendCode]);
+
   const avatarUri = profileImageUrl ?? 'https://i.pravatar.cc/100?img=5';
 
   return (
@@ -133,7 +153,7 @@ export default function AllScreen(): React.JSX.Element {
           email={authUser?.email}
           avatarUri={avatarUri}
           sharedRouteCount={sharedRouteCount}
-          onAddFriend={() => Alert.alert('친구 추가', '친구 추가 기능을 준비 중입니다.')}
+          onAddFriend={handleAddFriend}
           onProfileSettings={() => navigation.getParent()?.navigate('ProfileSettings')}
         />
 
@@ -160,6 +180,63 @@ export default function AllScreen(): React.JSX.Element {
           <Text className="text-[15px] font-semibold text-red-500">로그아웃</Text>
         </Pressable>
       </ScrollView>
+
+      <Modal
+        visible={friendCodeVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFriendCodeVisible(false)}
+      >
+        <Pressable
+          className="flex-1 items-center justify-center"
+          style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+          onPress={() => setFriendCodeVisible(false)}
+        >
+          <Pressable
+            onPress={e => e.stopPropagation()}
+            className="mx-8 rounded-2xl bg-white px-6 py-7"
+            style={{ width: 300 }}
+          >
+            <Pressable
+              onPress={() => setFriendCodeVisible(false)}
+              className="absolute top-4 right-4 h-8 w-8 items-center justify-center"
+            >
+              <Ionicons name="close" size={20} color="#9ca3af" />
+            </Pressable>
+
+            <Text className="mb-1 text-center text-lg font-bold text-gray-900">내 친구 코드</Text>
+            <Text className="mb-5 text-center text-xs text-gray-500">
+              이 코드를 친구에게 알려주세요.
+            </Text>
+
+            {friendCodeLoading ? (
+              <ActivityIndicator size="large" color="#2563eb" />
+            ) : (
+              <>
+                <View
+                  className="mb-4 items-center rounded-xl py-4"
+                  style={{ backgroundColor: '#EFF6FF' }}
+                >
+                  <Text style={{ fontSize: 32, fontWeight: '800', letterSpacing: 8, color: '#2563eb' }}>
+                    {friendCode}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => {
+                    Clipboard.setString(friendCode ?? '');
+                    Alert.alert('복사 완료', '친구 코드가 클립보드에 복사되었습니다.');
+                  }}
+                  className="flex-row items-center justify-center gap-1 rounded-xl py-3 active:opacity-80"
+                  style={{ backgroundColor: '#2563eb' }}
+                >
+                  <Ionicons name="copy-outline" size={15} color="#fff" />
+                  <Text className="text-sm font-semibold text-white">코드 복사</Text>
+                </Pressable>
+              </>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
