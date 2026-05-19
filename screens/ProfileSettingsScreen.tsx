@@ -369,7 +369,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
                   keyboardType="phone-pad"
                   className="flex-1 text-base font-semibold text-gray-900"
                 />
-                {phoneVerified ? (
+                {phoneVerified || (!!originalPhone && phone.trim() === originalPhone) ? (
                   <View className="flex-row items-center gap-1 px-3 py-1.5 rounded-lg" style={{ backgroundColor: '#dcfce7' }}>
                     <Ionicons name="checkmark-circle" size={14} color="#16a34a" />
                     <Text className="text-xs font-semibold text-green-700">인증완료</Text>
