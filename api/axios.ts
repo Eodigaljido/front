@@ -31,7 +31,8 @@ let isRefreshing = false;
 let refreshQueue: Array<(token: string) => void> = [];
 
 function processQueue(newToken: string) {
-  refreshQueue.forEach(resolve => resolve(newToken));
+  const queue = refreshQueue ?? [];
+  queue.forEach((resolve) => resolve(newToken));
   refreshQueue = [];
 }
 
