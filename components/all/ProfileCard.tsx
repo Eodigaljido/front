@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Pressable, Image } from 'react-native';
+import { View, Text, TouchableOpacity, Pressable, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 const CARD_STYLE = {
@@ -27,37 +27,32 @@ export default function ProfileCard({
   onProfileSettings,
 }: Props) {
   return (
-    <View style={CARD_STYLE} className="overflow-hidden">
+    <View style={CARD_STYLE}>
       <View className="px-4 py-4">
-        <View className="flex-row items-center justify-between">
-          <View className="flex-row items-center flex-1">
-            {avatarUri ? (
-              <Image
-                source={{ uri: avatarUri }}
-                style={{ width: 56, height: 56, borderRadius: 28 }}
-              />
-            ) : (
-              <View
-                className="rounded-full h-14 w-14 items-center justify-center"
-                style={{ backgroundColor: '#DBEAFE' }}
-              >
-                <Ionicons name="person" size={28} color="#2563EB" />
-              </View>
-            )}
-            <View className="flex-1 ml-3">
-              <Text className="text-[17px] font-bold text-gray-900">{nickname || '닉네임'}</Text>
-              <Text className="mt-0.5 text-sm text-gray-500">{email || ''}</Text>
+        <TouchableOpacity
+          className="flex-row items-center"
+          onPress={onProfileSettings}
+          activeOpacity={0.5}
+        >
+          {avatarUri ? (
+            <Image
+              source={{ uri: avatarUri }}
+              style={{ width: 56, height: 56, borderRadius: 28 }}
+            />
+          ) : (
+            <View
+              className="items-center justify-center rounded-full h-14 w-14"
+              style={{ backgroundColor: '#DBEAFE' }}
+            >
+              <Ionicons name="person" size={28} color="#2563EB" />
             </View>
+          )}
+          <View className="flex-1 ml-3">
+            <Text className="text-[17px] font-bold text-gray-900">{nickname || '닉네임'}</Text>
+            <Text className="mt-0.5 text-sm text-gray-500">{email || ''}</Text>
           </View>
-          <Pressable
-            onPress={onProfileSettings}
-            className="flex-row items-center px-3 py-2 rounded-lg active:opacity-90"
-            style={{ backgroundColor: '#EFF6FF' }}
-          >
-            <Ionicons name="settings-outline" size={13} color="#2563EB" />
-            <Text className="ml-1 text-xs font-semibold text-blue-600">프로필 설정</Text>
-          </Pressable>
-        </View>
+          <Ionicons name="chevron-forward" size={18} color="#9ca3af" />
+        </TouchableOpacity>
 
         <View
           className="flex-row items-center justify-between pt-4 mt-4"
