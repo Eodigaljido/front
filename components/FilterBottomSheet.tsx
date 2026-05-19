@@ -17,7 +17,15 @@ export const CATEGORIES = ['데이트', '친구모임', '맛집', '카페', '자
 // prettier-ignore
 export const REGIONS = ['서울', '경기', '인천', '부산', '대구', '대전', '광주', '울산', '세종', '제주'];
 // prettier-ignore
-export const SORT_OPTIONS = ['최신순', '인기순', '거리순', '추천순', '조회순', '저장순'];
+export const SORT_OPTIONS = [
+  '즐겨찾기순',
+  '최신순',
+  '인기순',
+  '거리순',
+  '추천순',
+  '조회순',
+  '저장순',
+];
 
 type FilterBottomSheetProps = {
   visible: boolean;

@@ -1,5 +1,5 @@
 // @ts-nocheck - NativeWind(className) 타입이 @types/react-native와 병합되지 않아 일시 비활성화
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -19,23 +19,33 @@ import {
   Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRoute } from "@react-navigation/native";
+import { useRoute, useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import {
-  MOCK_COURSES,
-  getCourseMapCenter,
-  getCourseStepMapPoint,
+  COURSE_DETAIL_MAP_OVERVIEW_LEVEL,
+  COURSE_DETAIL_MAP_STEP_FOCUS_ZOOM,
+  computeMapRouteFit,
+  courseRouteStepsToMapPath,
+  focusMapOnCourseStep,
+  getCourseMapCenterFromSteps,
+  type CourseDetailMapFocus,
   type CourseItem,
   type CourseReview,
 } from "../data/mockData";
+import type { DirectionsMode } from "../data/googleDirectionsApi";
 import { useMockData } from "../context/MockDataContext";
 import {
   fetchSharedCourses,
+  fetchSharedCourseDetail,
+  normalizeCourseList,
+  pickCourseSaveCount,
+  sortCoursesBySaveCount,
   saveSharedCourse,
   submitSharedCourseReview,
 } from "../api/courses";
 import AppMapView from "../components/AppMapView";
 import { fetchMergedDirectionsPolyline } from "../data/googleDirectionsApi";
+import { useCourseStepWalkingSegments } from "../hooks/useCourseStepWalkingSegments";
 import FilterBottomSheet, {
   CATEGORIES,
   REGIONS,
@@ -46,6 +56,7 @@ type SharedRouteParams = {
   openFilter?: boolean;
   openAsPopular?: boolean;
   viewCourseId?: string;
+  initialQuery?: string;
 };
 
 type TabId = "all" | "popular" | "date" | "friends";
@@ -85,7 +96,7 @@ function mergeSharedCourseWithExtraReviews(
   extras: CourseReview[] | undefined,
 ): CourseItem {
   const add = extras ?? [];
-  const merged = [...base.reviews, ...add].sort((a, b) =>
+  const merged = [...(base.reviews ?? []), ...add].sort((a, b) =>
     String(b.date).localeCompare(String(a.date)),
   );
   const rating =
@@ -166,31 +177,58 @@ function CourseCard({
 export default function SharedRouteScreen(): React.JSX.Element {
   const route = useRoute();
   const params = (route.params || {}) as SharedRouteParams;
-  const { addSavedCourse, addSharedCourseReview, extraSharedCourseReviews } =
+  const { addSavedCourse, addSharedCourseReview, extraSharedCourseReviews, savedCourseIds } =
     useMockData();
 
   const [activeTab, setActiveTab] = useState<TabId>("all");
-  const [coursesData, setCoursesData] = useState<CourseItem[]>(MOCK_COURSES);
+  const [coursesData, setCoursesData] = useState<CourseItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterVisible, setFilterVisible] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
   const [selectedSort, setSelectedSort] = useState<string | null>(null);
   const [viewingCourseId, setViewingCourseId] = useState<string | null>(null);
-  const [mapFocus, setMapFocus] = useState<{ lat: number; lng: number } | null>(
-    null,
-  );
+  const [mapFocus, setMapFocus] = useState<CourseDetailMapFocus | null>(null);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [courseDetailMergedPath, setCourseDetailMergedPath] = useState<
     { latitude: number; longitude: number }[] | null
   >(null);
+  const [sharedDetailCourseApi, setSharedDetailCourseApi] =
+    useState<CourseItem | null>(null);
   const [courseDetailPathLoading, setCourseDetailPathLoading] = useState(false);
+
+  const detailMapCourse = useMemo(() => {
+    if (!viewingCourseId) return null;
+    return (
+      (sharedDetailCourseApi?.id === viewingCourseId
+        ? sharedDetailCourseApi
+        : null) ?? coursesData.find((c) => c.id === viewingCourseId) ?? null
+    );
+  }, [viewingCourseId, sharedDetailCourseApi, coursesData]);
+  const detailMapStepPoints = useMemo(() => {
+    const detailSteps = Array.isArray(detailMapCourse?.routeSteps)
+      ? detailMapCourse.routeSteps
+      : [];
+    if (!detailMapCourse || detailSteps.length < 2) return null;
+    return courseRouteStepsToMapPath(detailMapCourse.id, detailSteps);
+  }, [detailMapCourse]);
+  const detailMapStepIds = useMemo(
+    () => detailMapCourse?.routeSteps?.map((s) => s.id) ?? [],
+    [detailMapCourse],
+  );
+  const { walkSegments: stepWalkSegments, walkLoading: stepWalkLoading } =
+    useCourseStepWalkingSegments(
+      detailMapStepPoints,
+      selectedStepId,
+      detailMapStepIds,
+    );
 
   const [reviewCourseId, setReviewCourseId] = useState<string | null>(null);
   const [reviewComposerOpen, setReviewComposerOpen] = useState(false);
   const [reviewUserName, setReviewUserName] = useState("나");
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewBody, setReviewBody] = useState("");
+  const [savingMyRoute, setSavingMyRoute] = useState(false);
   const [detailModalMounted, setDetailModalMounted] = useState(false);
   const detailBackdropOpacity = useRef(new Animated.Value(0)).current;
   const detailSheetTranslateY = useRef(new Animated.Value(500)).current;
@@ -201,17 +239,20 @@ export default function SharedRouteScreen(): React.JSX.Element {
   const viewingCourseIdRef = useRef<string | null>(null);
   viewingCourseIdRef.current = viewingCourseId;
 
-  useEffect(() => {
-    let mounted = true;
-    fetchSharedCourses()
-      .then((courses) => {
-        if (mounted && courses.length > 0) setCoursesData(courses);
-      })
-      .catch(() => {});
-    return () => {
-      mounted = false;
-    };
+  const reloadSharedCourses = useCallback(async () => {
+    try {
+      const courses = await fetchSharedCourses();
+      setCoursesData(normalizeCourseList(courses));
+    } catch {
+      setCoursesData([]);
+    }
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      reloadSharedCourses();
+    }, [reloadSharedCourses]),
+  );
 
   useEffect(() => {
     if (viewingCourseId) setDetailModalMounted(true);
@@ -265,7 +306,13 @@ export default function SharedRouteScreen(): React.JSX.Element {
     if (params?.openFilter) setFilterVisible(true);
     if (params?.openAsPopular) setSelectedSort("인기순");
     if (params?.viewCourseId) setViewingCourseId(params.viewCourseId);
-  }, [params?.openFilter, params?.openAsPopular, params?.viewCourseId]);
+    if (typeof params?.initialQuery === "string") setSearchQuery(params.initialQuery);
+  }, [
+    params?.openFilter,
+    params?.openAsPopular,
+    params?.viewCourseId,
+    params?.initialQuery,
+  ]);
 
   useEffect(() => {
     if (!viewingCourseId) {
@@ -276,8 +323,37 @@ export default function SharedRouteScreen(): React.JSX.Element {
       return;
     }
     setReviewComposerOpen(false);
-    setMapFocus(getCourseMapCenter(viewingCourseId));
     setSelectedStepId(null);
+    const course =
+      (sharedDetailCourseApi?.id === viewingCourseId
+        ? sharedDetailCourseApi
+        : null) ?? coursesData.find((c) => c.id === viewingCourseId);
+    setMapFocus(
+      course
+        ? {
+            ...getCourseMapCenterFromSteps(course),
+            level: COURSE_DETAIL_MAP_OVERVIEW_LEVEL,
+          }
+        : null,
+    );
+  }, [viewingCourseId, coursesData, sharedDetailCourseApi]);
+
+  useEffect(() => {
+    if (!viewingCourseId) {
+      setCourseDetailMergedPath(null);
+      setCourseDetailPathLoading(false);
+      setSharedDetailCourseApi(null);
+      return;
+    }
+    let mounted = true;
+    fetchSharedCourseDetail(viewingCourseId)
+      .then((course) => {
+        if (mounted && course) setSharedDetailCourseApi(course);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
   }, [viewingCourseId]);
 
   useEffect(() => {
@@ -286,22 +362,35 @@ export default function SharedRouteScreen(): React.JSX.Element {
       setCourseDetailPathLoading(false);
       return;
     }
-    const course = coursesData.find((c) => c.id === viewingCourseId);
-    if (!course || course.routeSteps.length < 2) {
+    const course =
+      (sharedDetailCourseApi?.id === viewingCourseId
+        ? sharedDetailCourseApi
+        : null) ?? coursesData.find((c) => c.id === viewingCourseId);
+    const routeSteps = Array.isArray(course?.routeSteps) ? course.routeSteps : [];
+    if (!course || routeSteps.length < 2) {
       setCourseDetailMergedPath(null);
       setCourseDetailPathLoading(false);
       return;
     }
-    const stepPoints = course.routeSteps.map((_, i) => {
-      const p = getCourseStepMapPoint(course.id, i, course.routeSteps.length);
-      return { latitude: p.lat, longitude: p.lng };
-    });
+    const stepPoints = courseRouteStepsToMapPath(course.id, routeSteps);
+    const legModes = (course.routeLegs ?? []).map((l) => l.mode);
+    let directionsMode: DirectionsMode = "driving";
+    if (legModes.length > 0 && legModes.every((m) => m === "walk")) {
+      directionsMode = "walking";
+    } else if (legModes.some((m) => m === "bike")) {
+      directionsMode = "bicycling";
+    } else if (
+      legModes.some((m) => m === "transit") &&
+      !legModes.some((m) => m === "car")
+    ) {
+      directionsMode = "transit";
+    }
     const ac = new AbortController();
     setCourseDetailPathLoading(true);
     setCourseDetailMergedPath(null);
     fetchMergedDirectionsPolyline({
       points: stepPoints,
-      mode: "transit",
+      mode: directionsMode,
       signal: ac.signal,
     })
       .then((path) => {
@@ -313,7 +402,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
         if (!ac.signal.aborted) setCourseDetailPathLoading(false);
       });
     return () => ac.abort();
-  }, [viewingCourseId, coursesData]);
+  }, [viewingCourseId, coursesData, sharedDetailCourseApi]);
 
   const filteredCourses = useMemo(() => {
     let list = [...coursesData];
@@ -323,7 +412,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
     else if (activeTab === "friends")
       list = list.filter((c) => c.category === "친구모임");
     else if (activeTab === "popular")
-      list = [...list].sort((a, b) => b.views - a.views);
+      list = sortCoursesBySaveCount(list);
 
     if (selectedCategory)
       list = list.filter((c) => c.category === selectedCategory);
@@ -333,24 +422,22 @@ export default function SharedRouteScreen(): React.JSX.Element {
     if (q) {
       list = list.filter(
         (c) =>
-          c.title.toLowerCase().includes(q) ||
-          c.meta.toLowerCase().includes(q) ||
-          c.departure.toLowerCase().includes(q) ||
-          c.arrival.toLowerCase().includes(q),
+          String(c.title ?? "").toLowerCase().includes(q) ||
+          String(c.meta ?? "").toLowerCase().includes(q) ||
+          String(c.departure ?? "").toLowerCase().includes(q) ||
+          String(c.arrival ?? "").toLowerCase().includes(q),
       );
     }
 
-    if (selectedSort === "인기순")
-      list = [...list].sort((a, b) => b.views - a.views);
+    if (selectedSort === "인기순" || selectedSort === "저장순")
+      list = sortCoursesBySaveCount(list);
+    else if (selectedSort === "즐겨찾기순")
+      list = sortCoursesBySaveCount(list);
     else if (selectedSort === "최신순")
       list = [...list].sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
     else if (selectedSort === "조회순")
       list = [...list].sort((a, b) => b.views - a.views);
-    else if (
-      selectedSort === "거리순" ||
-      selectedSort === "추천순" ||
-      selectedSort === "저장순"
-    ) {
+    else if (selectedSort === "거리순" || selectedSort === "추천순") {
       list = [...list].sort((a, b) => b.views - a.views);
     }
 
@@ -382,23 +469,53 @@ export default function SharedRouteScreen(): React.JSX.Element {
         </View>
       </View>
 
-      {/* 검색 + 필터 */}
-      <View className="flex-row items-center gap-2 px-4 py-3">
-        <View className="flex-1 flex-row items-center rounded-xl bg-gray-100 px-4 py-2.5">
-          <Ionicons name="search-outline" size={20} color="#9ca3af" />
+      {/* 검색 + 필터 — 배경과 분리된 카드형 검색바 */}
+      <View className="flex-row items-center gap-2.5 px-4 py-3">
+        <View
+          className="flex-1 flex-row items-center rounded-2xl bg-white px-3.5"
+          style={{
+            minHeight: 46,
+            paddingVertical: 10,
+            borderWidth: 1,
+            borderColor: "rgba(37,99,235,0.22)",
+            shadowColor: "#0f172a",
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.06,
+            shadowRadius: 8,
+            elevation: 3,
+          }}
+        >
+          <View
+            className="mr-2 h-9 w-9 items-center justify-center rounded-xl"
+            style={{ backgroundColor: "rgba(37,99,235,0.08)" }}
+          >
+            <Ionicons name="search" size={20} color="#2563EB" />
+          </View>
           <TextInput
-            placeholder="루트 이름, 장소 검색"
-            placeholderTextColor="#9ca3af"
+            placeholder="코스명 · 출발/도착 · 지역 검색"
+            placeholderTextColor="#64748b"
             value={searchQuery}
             onChangeText={setSearchQuery}
-            className="ml-2 flex-1 text-base text-gray-800"
+            className="flex-1 text-[15px] text-gray-900"
+            style={{ paddingVertical: 2 }}
+            clearButtonMode="while-editing"
           />
         </View>
         <Pressable
           onPress={() => setFilterVisible(true)}
-          className="h-10 w-10 items-center justify-center rounded-xl bg-gray-100"
+          className="h-[46px] w-[46px] items-center justify-center rounded-2xl bg-white active:opacity-90"
+          style={{
+            borderWidth: 1,
+            borderColor: "rgba(37,99,235,0.22)",
+            shadowColor: "#0f172a",
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.06,
+            shadowRadius: 8,
+            elevation: 3,
+          }}
+          accessibilityLabel="필터"
         >
-          <Ionicons name="options-outline" size={22} color="#374151" />
+          <Ionicons name="options-outline" size={23} color="#2563EB" />
         </Pressable>
       </View>
 
@@ -440,7 +557,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
 
       {/* 코스 리스트 */}
       <FlatList<CourseItem>
-        data={filteredCourses}
+        data={filteredCourses ?? []}
         keyExtractor={(item: CourseItem) => item.id}
         renderItem={({ item }: { item: CourseItem }) => (
           <CourseCard item={item} onPress={() => setViewingCourseId(item.id)} />
@@ -522,9 +639,11 @@ export default function SharedRouteScreen(): React.JSX.Element {
               >
                 {viewingCourseId &&
                   (() => {
-                    const courseBase = coursesData.find(
-                      (c) => c.id === viewingCourseId,
-                    );
+                    const courseBase =
+                      (sharedDetailCourseApi?.id === viewingCourseId
+                        ? sharedDetailCourseApi
+                        : null) ??
+                      coursesData.find((c) => c.id === viewingCourseId);
                     if (!courseBase) return null;
                     const course = mergeSharedCourseWithExtraReviews(
                       courseBase,
@@ -534,20 +653,12 @@ export default function SharedRouteScreen(): React.JSX.Element {
                     const hours = (course.overallDurationMinutes / 60).toFixed(
                       1,
                     );
-                    const mapCenter = mapFocus ?? getCourseMapCenter(course.id);
-
-                    const pathPts:
-                      | { latitude: number; longitude: number }[]
-                      | undefined =
-                      course.routeSteps.length >= 1
-                        ? course.routeSteps.map((_, i) => {
-                            const p = getCourseStepMapPoint(
-                              course.id,
-                              i,
-                              course.routeSteps.length,
-                            );
-                            return { latitude: p.lat, longitude: p.lng };
-                          })
+                    const routeSteps = Array.isArray(course.routeSteps)
+                      ? course.routeSteps
+                      : [];
+                    const pathPts =
+                      routeSteps.length >= 1
+                        ? courseRouteStepsToMapPath(course.id, routeSteps)
                         : undefined;
                     // 실경로가 있으면 단순화해서 사용하고, 없으면 경유지 연결선으로 대체
                     const polylinePath = simplifyRoutePath(
@@ -556,9 +667,9 @@ export default function SharedRouteScreen(): React.JSX.Element {
                         : pathPts,
                     );
                     const startStepName =
-                      course.routeSteps[0]?.name ?? course.departure;
+                      routeSteps[0]?.name ?? course.departure;
                     const endStepName =
-                      course.routeSteps[course.routeSteps.length - 1]?.name ??
+                      routeSteps[routeSteps.length - 1]?.name ??
                       course.arrival;
                     const mapMarkers =
                       pathPts && pathPts.length >= 1
@@ -580,7 +691,35 @@ export default function SharedRouteScreen(): React.JSX.Element {
                                   : "#64748B",
                           }))
                         : undefined;
-                    const mapLevel = polylinePath && polylinePath.length >= 2 ? 4 : 4;
+                    const stepMapFocused = Boolean(selectedStepId);
+                    const showWalkOnMap =
+                      stepMapFocused &&
+                      Boolean(stepWalkSegments && stepWalkSegments.length > 0);
+                    const fallbackCenter = getCourseMapCenterFromSteps(course);
+                    const fitPathForCamera =
+                      showWalkOnMap && stepWalkSegments?.length
+                        ? stepWalkSegments.flatMap((s) => s.points)
+                        : courseDetailMergedPath &&
+                            courseDetailMergedPath.length >= 2
+                          ? courseDetailMergedPath
+                          : pathPts;
+                    const mapRouteFit = computeMapRouteFit(
+                      fitPathForCamera ?? [],
+                      stepMapFocused
+                        ? {
+                            maxZoom: COURSE_DETAIL_MAP_STEP_FOCUS_ZOOM,
+                            paddingZoomOut: 0.5,
+                          }
+                        : { minZoom: 10, maxZoom: 16, paddingZoomOut: 0.9 },
+                    );
+                    const mapCenter =
+                      stepMapFocused && mapFocus
+                        ? mapFocus
+                        : mapRouteFit
+                          ? { lat: mapRouteFit.lat, lng: mapRouteFit.lng }
+                          : mapFocus ?? fallbackCenter;
+                    const mapZoom = mapRouteFit?.zoom;
+                    const mapFitToRoute = !mapRouteFit;
 
                     return (
                       <>
@@ -623,25 +762,35 @@ export default function SharedRouteScreen(): React.JSX.Element {
                             }}
                           >
                             <AppMapView
-                              key={`${course.id}-${mapCenter.lat}-${mapCenter.lng}-${polylinePath?.length ?? 0}-${courseDetailMergedPath?.length ?? 0}`}
+                              key={`${course.id}-${mapZoom ?? "f"}-${polylinePath?.length ?? 0}-${courseDetailMergedPath?.length ?? 0}-${stepMapFocused ? "step" : "route"}-${selectedStepId ?? "all"}`}
                               latitude={mapCenter.lat}
                               longitude={mapCenter.lng}
-                              level={mapLevel}
+                              level={8}
+                              zoom={mapZoom}
+                              fitToRoute={mapFitToRoute}
                               allowTap={false}
                               path={
-                                polylinePath && polylinePath.length >= 1
+                                !showWalkOnMap &&
+                                polylinePath &&
+                                polylinePath.length >= 1
                                   ? polylinePath
                                   : undefined
                               }
+                              segments={
+                                showWalkOnMap ? stepWalkSegments : undefined
+                              }
                               stops={
-                                polylinePath && polylinePath.length >= 1
+                                !showWalkOnMap &&
+                                polylinePath &&
+                                polylinePath.length >= 1
                                   ? polylinePath
                                   : undefined
                               }
                               markers={mapMarkers}
                               style={{ width: "100%", height: 200 }}
                             />
-                            {courseDetailPathLoading ? (
+                            {(courseDetailPathLoading ||
+                              (stepMapFocused && stepWalkLoading)) ? (
                               <View
                                 style={{
                                   position: "absolute",
@@ -667,15 +816,19 @@ export default function SharedRouteScreen(): React.JSX.Element {
                                     fontWeight: "600",
                                   }}
                                 >
-                                  경로 반영 중
+                                  {stepMapFocused && stepWalkLoading
+                                    ? "도보 경로 불러오는 중"
+                                    : "경로 반영 중"}
                                 </Text>
                               </View>
                             ) : null}
                           </View>
                           <Text className="mt-2 px-4 text-[11px] font-medium text-slate-500">
-                            {pathPts && pathPts.length >= 2
-                              ? `선 방향: 1번(${startStepName}) → ${pathPts.length}번(${endStepName})`
-                              : "선 방향: 출발 지점 기준"}
+                            {showWalkOnMap
+                              ? "주황색 선: 선택 구간 도보 경로"
+                              : pathPts && pathPts.length >= 2
+                                ? `선 방향: 1번(${startStepName}) → ${pathPts.length}번(${endStepName})`
+                                : "선 방향: 출발 지점 기준"}
                           </Text>
                         </View>
 
@@ -693,25 +846,68 @@ export default function SharedRouteScreen(): React.JSX.Element {
                               코스 상세
                             </Text>
                             <Pressable
+                              disabled={
+                                savingMyRoute || savedCourseIds.includes(course.id)
+                              }
                               onPress={async () => {
-                                const ok = await saveSharedCourse(course.id);
-                                addSavedCourse(course.id);
-                                Alert.alert(
-                                  "추가됨",
-                                  ok
-                                    ? "내 루트에 추가되었습니다."
-                                    : "로컬 저장으로 추가되었습니다.",
-                                );
+                                if (savedCourseIds.includes(course.id)) {
+                                  Alert.alert(
+                                    "안내",
+                                    "이미 내 루트에 저장된 코스입니다.",
+                                  );
+                                  return;
+                                }
+                                setSavingMyRoute(true);
+                                try {
+                                  const result = await saveSharedCourse(course.id);
+                                  if (result.ok) {
+                                    addSavedCourse(course.id);
+                                    Alert.alert(
+                                      "저장 완료",
+                                      "내 루트에 저장되었습니다.",
+                                    );
+                                  } else if (result.reason === "NOT_ON_SERVER") {
+                                    Alert.alert(
+                                      "서버에 코스가 없음",
+                                      "서버에 이 코스가 공유 코스로 등록되어 있지 않습니다.\n\n공유 코스 목록에서 불러온 코스인지 확인한 뒤 다시 시도해 주세요.",
+                                    );
+                                  } else {
+                                    Alert.alert(
+                                      "저장 실패",
+                                      "서버에 저장하지 못했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.",
+                                    );
+                                  }
+                                } finally {
+                                  setSavingMyRoute(false);
+                                }
                               }}
-                              className="flex-row items-center rounded-lg bg-[#2563EB] px-3 py-2 active:opacity-90"
+                              className="flex-row items-center rounded-lg px-3 py-2 active:opacity-90"
+                              style={{
+                                backgroundColor: savedCourseIds.includes(course.id)
+                                  ? "#93c5fd"
+                                  : "#2563EB",
+                                opacity:
+                                  savingMyRoute ||
+                                  savedCourseIds.includes(course.id)
+                                    ? 0.85
+                                    : 1,
+                              }}
                             >
-                              <Ionicons
-                                name="add-circle-outline"
-                                size={18}
-                                color="#fff"
-                              />
+                              {savingMyRoute ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                              ) : (
+                                <Ionicons
+                                  name="add-circle-outline"
+                                  size={18}
+                                  color="#fff"
+                                />
+                              )}
                               <Text className="ml-1 text-xs font-bold text-white">
-                                내 루트 추가
+                                {savedCourseIds.includes(course.id)
+                                  ? "내 루트에 있음"
+                                  : savingMyRoute
+                                    ? "저장 중…"
+                                    : "내 루트 추가"}
                               </Text>
                             </Pressable>
                           </View>
@@ -781,15 +977,24 @@ export default function SharedRouteScreen(): React.JSX.Element {
                             코스 경로
                           </Text>
                           <View className="mb-6 rounded-xl bg-gray-50 p-3">
-                            {course.routeSteps.map((step, index) => (
+                            {routeSteps.map((step, index) => (
                               <Pressable
                                 key={step.id}
                                 onPress={() => {
+                                  if (selectedStepId === step.id) {
+                                    setSelectedStepId(null);
+                                    setMapFocus({
+                                      ...getCourseMapCenterFromSteps(course),
+                                      level: COURSE_DETAIL_MAP_OVERVIEW_LEVEL,
+                                    });
+                                    return;
+                                  }
                                   setMapFocus(
-                                    getCourseStepMapPoint(
+                                    focusMapOnCourseStep(
+                                      step,
                                       course.id,
                                       index,
-                                      course.routeSteps.length,
+                                      routeSteps.length,
                                     ),
                                   );
                                   setSelectedStepId(step.id);
@@ -830,7 +1035,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
                           <Text className="mb-2 text-sm font-semibold text-gray-900">
                             이용자 후기
                           </Text>
-                          {course.reviews.length === 0 ? (
+                          {(course.reviews ?? []).length === 0 ? (
                             <View className="mb-2 rounded-xl bg-gray-50 p-3">
                               <Text className="text-xs text-gray-500">
                                 아직 등록된 후기가 없습니다. 코스를 다녀온 후 첫
@@ -839,7 +1044,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
                             </View>
                           ) : (
                             <View className="mb-2 rounded-xl bg-gray-50 p-3">
-                              {course.reviews.map((review) => (
+                              {(course.reviews ?? []).map((review) => (
                                 <View
                                   key={review.id}
                                   className="mb-3 last:mb-0"
@@ -884,8 +1089,8 @@ export default function SharedRouteScreen(): React.JSX.Element {
                           </Pressable>
 
                           <Text className="mt-1 text-[11px] text-gray-400">
-                            작성한 후기는 앱(목 데이터)에만 저장되며, 서버 연동
-                            시 동기화될 수 있어요.
+                            작성한 후기는 서버로 전송되며, 연결 실패 시에만 이 기기에
+                            임시 표시됩니다.
                           </Text>
                         </ScrollView>
                       </>
@@ -935,8 +1140,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
                     className="mt-1 text-xs text-gray-500"
                     numberOfLines={2}
                   >
-                    {MOCK_COURSES.find((c) => c.id === reviewCourseId)?.title ??
-                      ""}
+                    {coursesData.find((c) => c.id === reviewCourseId)?.title ?? ""}
                   </Text>
 
                   <Text className="mt-4 text-xs font-semibold text-gray-600">
