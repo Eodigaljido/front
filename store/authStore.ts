@@ -3,7 +3,6 @@ import type { AuthUser } from '../api/auth';
 import { login as apiLogin, register as apiRegister, logout as apiLogout } from '../api/auth';
 import type { LoginRequest, RegisterRequest } from '../api/auth';
 import { tokenStorage } from '../utils/tokenStorage';
-import { instance as authApi } from '../api/axios';
 import { getMyProfile } from '../api/users';
 
 interface AuthState {
@@ -103,11 +102,23 @@ export const useAuthStore = create<AuthState>(set => ({
     if (!accessToken || !refreshToken) return;
 
     try {
-      const res = await authApi.get<AuthUser>('auth/me');
-      set({ accessToken, refreshToken, user: res.data, isAuthenticated: true });
+      // Swagger/서버는 `GET /auth/me`가 아닐 수 있음 — 프로필은 `users/me` 사용
+      const me = await getMyProfile();
+      set({
+        accessToken,
+        refreshToken,
+        user: {
+          id: (me as any).id ?? 0,
+          uuid: me.uuid,
+          userId: me.userId ?? '',
+          email: me.email ?? '',
+          nickname: me.nickname ?? '',
+          role: me.role ?? 'USER',
+        },
+        isAuthenticated: true,
+      });
     } catch {
-      // 토큰은 있지만 /auth/me 실패(401 → 자동 갱신 후 재시도됨, 그 외 네트워크 오류 등)
-      // 갱신 성공 시 interceptor가 store를 업데이트하므로 여기선 토큰만 세팅
+      // 토큰은 있지만 프로필 조회 실패(401 → 인터셉터 갱신 후 재시도됨, 그 외 네트워크 오류 등)
       const stillValid = await tokenStorage.getAccessToken();
       if (stillValid) {
         set({ accessToken: stillValid, refreshToken, isAuthenticated: true });
