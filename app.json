@@ -12,12 +12,15 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.eodigaljido.app"
     },
     "runtimeVersion": {
       "policy": "sdkVersion"
     },
     "android": {
+      "package": "com.eodigaljido.app",
+      "versionCode": 3,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -38,6 +41,12 @@
         }
       ],
       "expo-maps"
-    ]
+    ],
+    "extra": {
+      "testLogin": "",
+      "eas": {
+        "projectId": "1a5b714b-8282-4fdf-822c-334de1c43038"
+      }
+    }
   }
 }
