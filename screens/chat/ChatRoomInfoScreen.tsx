@@ -54,22 +54,9 @@ type Member = {
 
 type Friend = { id: string; name: string };
 
-const MOCK_OWNER_UUID = "mock-owner-uuid";
+const MOCK_MEMBERS: Member[] = [];
 
-const MOCK_MEMBERS: Member[] = [
-  { uuid: MOCK_OWNER_UUID, nickname: "나", color: "#4FC3F7", isOwner: true },
-  { uuid: "mock-uuid-2", nickname: "이영희", color: "#F48FB1" },
-  { uuid: "mock-uuid-3", nickname: "박민준", color: "#81C784" },
-  { uuid: "mock-uuid-4", nickname: "최지은", color: "#CE93D8" },
-];
-
-const MOCK_FRIENDS: Friend[] = [
-  { id: "f1", name: "김도현" },
-  { id: "f2", name: "홍길동" },
-  { id: "f3", name: "정수아" },
-  { id: "f4", name: "배성민" },
-  { id: "f5", name: "윤서연" },
-];
+const MOCK_FRIENDS: Friend[] = [];
 
 const PRESET_IMAGES = [
   { id: "p1", color: "#4FC3F7", emoji: "🐧" },
@@ -188,17 +175,20 @@ export default function ChatRoomInfoScreen() {
   };
 
   const handleConfirmInvite = () => {
-    const newMembers: Member[] = [...selectedFriends].map((id) => {
-      const friend = MOCK_FRIENDS.find((f) => f.id === id)!;
-      return {
-        uuid: `invited-${id}`,
-        nickname: friend.name,
-        color:
-          FRIEND_COLORS[
-            parseInt(id.replace("f", ""), 10) % FRIEND_COLORS.length
-          ],
-      };
-    });
+    const newMembers: Member[] = [...selectedFriends]
+      .map((id) => {
+        const friend = MOCK_FRIENDS.find((f) => f.id === id);
+        if (!friend) return null;
+        return {
+          uuid: `invited-${id}`,
+          nickname: friend.name,
+          color:
+            FRIEND_COLORS[
+              parseInt(id.replace("f", ""), 10) % FRIEND_COLORS.length
+            ],
+        };
+      })
+      .filter((m): m is Member => m != null);
     setMembers((prev) => [...prev, ...newMembers]);
     setInviteModalVisible(false);
   };
