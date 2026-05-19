@@ -70,7 +70,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
       setAvatarUri(me.profileImageUrl || DEFAULT_AVATAR_URI);
       syncAuthUser(me);
     } catch (e: any) {
-      Alert.alert('오류', e?.message ?? '프로필을 불러오지 못했습니다.');
+      Alert.alert('오류', e?.response?.data?.message ?? e?.message ?? '프로필을 불러오지 못했습니다.');
     } finally {
       setLoadingProfile(false);
     }
@@ -111,7 +111,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
         syncAuthUser(updated);
       }
     } catch (e: any) {
-      Alert.alert('오류', e?.message ?? '이미지를 변경하지 못했습니다.');
+      Alert.alert('오류', e?.response?.data?.message ?? e?.message ?? '이미지를 변경하지 못했습니다.');
     } finally {
       setPickingImage(false);
     }
@@ -135,7 +135,8 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
       syncAuthUser(updated);
       Alert.alert('저장 완료', '프로필이 서버에 저장되었습니다.');
     } catch (e: any) {
-      Alert.alert('오류', e?.message ?? '프로필 저장에 실패했습니다.');
+      const msg = e?.response?.data?.message ?? e?.message ?? '프로필 저장에 실패했습니다.';
+      Alert.alert('오류', msg);
     } finally {
       setSaving(false);
     }
@@ -147,7 +148,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
       setAvatarUri(updated.profileImageUrl || DEFAULT_AVATAR_URI);
       syncAuthUser(updated);
     } catch (e: any) {
-      Alert.alert('오류', e?.message ?? '프로필 이미지를 삭제하지 못했습니다.');
+      Alert.alert('오류', e?.response?.data?.message ?? e?.message ?? '프로필 이미지를 삭제하지 못했습니다.');
     }
   }, [syncAuthUser]);
 
@@ -166,7 +167,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
               await logout();
               navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
             } catch (e: any) {
-              Alert.alert('오류', e?.message ?? '회원 탈퇴에 실패했습니다.');
+              Alert.alert('오류', e?.response?.data?.message ?? e?.message ?? '회원 탈퇴에 실패했습니다.');
             }
           },
         },
