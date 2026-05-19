@@ -1,9 +1,11 @@
 // @ts-nocheck
 import { instance } from "./axios";
-import { MOCK_COURSES, type CourseItem } from "../data/mockData";
+import type { CourseItem } from "../data/mockData";
 
 type ApiCourseLike = {
   id?: string | number;
+  uuid?: string;
+  courseId?: string | number;
   title?: string;
   name?: string;
   meta?: string;
@@ -18,12 +20,56 @@ type ApiCourseLike = {
   region?: string;
   createdAt?: string;
   views?: number;
+  saveCount?: number;
+  savedCount?: number;
+  bookmarkCount?: number;
+  saves?: number;
+  collectCount?: number;
+  save_count?: number;
   durationMinutes?: number;
   overallDurationMinutes?: number;
   rating?: number;
   reviewCount?: number;
-  steps?: Array<{ id?: string | number; name?: string; stayMinutes?: number }>;
-  routeSteps?: Array<{ id?: string | number; name?: string; stayMinutes?: number }>;
+  steps?: Array<{
+    id?: string | number;
+    name?: string;
+    title?: string;
+    stayMinutes?: number;
+    lat?: number;
+    lng?: number;
+  }>;
+  routeSteps?: Array<{
+    id?: string | number;
+    name?: string;
+    title?: string;
+    stayMinutes?: number;
+    lat?: number;
+    lng?: number;
+  }>;
+  /** Swagger PATCH/POST 본문과 동일 — 목록·상세에서 자주 사용 */
+  stops?: Array<{
+    id?: string | number;
+    sequence?: number;
+    kind?: string;
+    title?: string;
+    name?: string;
+    timeLine?: string;
+    stayMinutes?: number;
+    lat?: number;
+    lng?: number;
+  }>;
+  legs?: Array<{
+    id?: string | number;
+    mode?: string;
+    minutes?: number;
+    transitType?: "bus" | "subway" | "train";
+  }>;
+  routeLegs?: Array<{
+    id?: string | number;
+    mode?: string;
+    minutes?: number;
+    transitType?: "bus" | "subway" | "train";
+  }>;
   reviews?: Array<{
     id?: string | number;
     userName?: string;
@@ -33,74 +79,229 @@ type ApiCourseLike = {
   }>;
 };
 
+/** Swagger UI 기준 확정 경로만 사용 (빈 목록 시 fallback 호출로 404 로그가 쌓이지 않게 함) */
 const CANDIDATE_ENDPOINTS = {
-  home: [
-    "/api/home/courses",
-    "/api/courses/home",
-    "/api/courses/popular",
-    "/home/courses",
-    "/courses/home",
-    "/courses/popular",
-  ],
-  shared: [
-    "/api/courses/public",
-    "/api/shared/courses",
-    "/api/courses",
-    "/courses/public",
-    "/shared/courses",
-    "/courses",
-  ],
-  my: [
-    "/api/courses/my",
-    "/api/my/courses",
-    "/api/courses/saved",
-    "/courses/my",
-    "/my/courses",
-    "/courses/saved",
-  ],
+  home: ["/api/home/courses"],
+  shared: ["/api/courses/public"],
+  my: ["/api/courses/my"],
+};
+
+const DETAIL_CANDIDATE_ENDPOINTS = {
+  /** Swagger: GET /api/courses/{courseId} */
+  shared: (courseId: string) => [`/api/courses/${courseId}`],
+  /** Swagger: GET /api/courses/my/{courseId} 권장 */
+  my: (courseId: string) => [`/api/courses/my/${courseId}`],
 };
 
 function pickArrayPayload(data: any): any[] {
   if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.data)) return data.data;
+  if (data && typeof data === "object") {
+    if (Array.isArray(data.items)) return data.items;
+    const id = data.id ?? data.uuid ?? data.courseId;
+    if (id != null && (data.title != null || data.routeSteps != null)) {
+      return [data];
+    }
+  }
   if (Array.isArray(data?.items)) return data.items;
+  if (Array.isArray(data?.data?.items)) return data.data.items;
+  if (Array.isArray(data?.data)) return data.data;
   if (Array.isArray(data?.content)) return data.content;
   if (Array.isArray(data?.result)) return data.result;
+  if (Array.isArray(data?.courses)) return data.courses;
   return [];
 }
 
+/** Swagger `CourseItemResponse.id` / `MyCourseDetailResponse.uuid` */
+function normalizeServerCourseId(
+  raw: string | number | null | undefined,
+): string | null {
+  const s = String(raw ?? "").trim();
+  if (!s || s.startsWith("ur-")) return null;
+  return s;
+}
+
+function asArray<T>(value: T[] | null | undefined): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
+/** API·스냅샷 혼합 — 공유 코스 저장 횟수 */
+export function pickCourseSaveCount(raw: ApiCourseLike | CourseItem | null | undefined): number {
+  if (!raw || typeof raw !== "object") return 0;
+  const n = Number(
+    (raw as ApiCourseLike).saveCount ??
+      (raw as ApiCourseLike).savedCount ??
+      (raw as ApiCourseLike).bookmarkCount ??
+      (raw as ApiCourseLike).saves ??
+      (raw as ApiCourseLike).collectCount ??
+      (raw as ApiCourseLike).save_count ??
+      0,
+  );
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
+}
+
+/** 저장 수 내림차순 — 동점이면 조회수 */
+export function sortCoursesBySaveCount(courses: CourseItem[]): CourseItem[] {
+  return [...courses].sort((a, b) => {
+    const diff = pickCourseSaveCount(b) - pickCourseSaveCount(a);
+    if (diff !== 0) return diff;
+    return Number(b.views ?? 0) - Number(a.views ?? 0);
+  });
+}
+
+/** API·스냅샷 혼합 목록을 UI에서 안전하게 쓰도록 보정 */
+export function normalizeCourseList(
+  courses: CourseItem[] | null | undefined,
+): CourseItem[] {
+  if (!Array.isArray(courses)) return [];
+  return courses.filter(Boolean).map((c, idx) => {
+    const steps =
+      Array.isArray(c.routeSteps) && c.routeSteps.length > 0
+        ? c.routeSteps
+        : [{ id: `fb-${idx}`, name: "경유지", stayMinutes: 30 }];
+    return {
+      ...c,
+      meta: c.meta ?? "API 연동 코스",
+      category: c.category ?? "기타",
+      region: c.region ?? "지역 미정",
+      departure: c.departure ?? "출발지",
+      arrival: c.arrival ?? "도착지",
+      routeSteps: steps,
+      routeLegs: Array.isArray(c.routeLegs) ? c.routeLegs : [],
+      reviews: Array.isArray(c.reviews) ? c.reviews : [],
+    };
+  });
+}
+
 function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
-  const steps = (raw.routeSteps ?? raw.steps ?? []).map((s, sIdx) => ({
-    id: String(s.id ?? `${raw.id ?? idx}-s-${sIdx}`),
-    name: s.name ?? `경유지 ${sIdx + 1}`,
-    stayMinutes: Number(s.stayMinutes ?? 30),
+  if (!raw || typeof raw !== "object") {
+    return toCourseItem({}, idx);
+  }
+  /** 목록은 `id`, 상세는 `uuid` — Swagger 기준 `id` 우선 */
+  const rootId =
+    normalizeServerCourseId(raw.id) ??
+    normalizeServerCourseId(raw.uuid) ??
+    normalizeServerCourseId(raw.courseId) ??
+    `api-${idx}`;
+
+  const routeStepSource =
+    asArray(raw.routeSteps).length > 0 ? asArray(raw.routeSteps) : asArray(raw.steps);
+  const fromRouteSteps = routeStepSource.filter(Boolean).map((s, sIdx) => {
+    const sAny = s as {
+      lat?: number;
+      lng?: number;
+      latitude?: number;
+      longitude?: number;
+    };
+    const latRaw = sAny.lat ?? sAny.latitude;
+    const lngRaw = sAny.lng ?? sAny.longitude;
+    return {
+      id: String(s.id ?? `${rootId}-s-${sIdx}`),
+      name: String(s.name ?? s.title ?? `경유지 ${sIdx + 1}`),
+      stayMinutes: Number(s.stayMinutes ?? 30),
+      lat:
+        latRaw != null && !Number.isNaN(Number(latRaw)) ? Number(latRaw) : undefined,
+      lng:
+        lngRaw != null && !Number.isNaN(Number(lngRaw)) ? Number(lngRaw) : undefined,
+    };
+  });
+
+  let steps = fromRouteSteps;
+  if (steps.length === 0 && Array.isArray(raw.stops) && raw.stops.length > 0) {
+    const sorted = [...raw.stops].sort(
+      (a, b) => Number(a?.sequence ?? 0) - Number(b?.sequence ?? 0),
+    );
+    steps = sorted.map((s, sIdx) => ({
+      id: String(s.id ?? `${rootId}-s-${s.sequence ?? sIdx}`),
+      name: String(s.title ?? s.name ?? `경유지 ${sIdx + 1}`),
+      stayMinutes: Number(s.stayMinutes ?? 0),
+      lat: s.lat != null && !Number.isNaN(Number(s.lat)) ? Number(s.lat) : undefined,
+      lng: s.lng != null && !Number.isNaN(Number(s.lng)) ? Number(s.lng) : undefined,
+    }));
+  }
+
+  const legs = (
+    asArray(raw.routeLegs).length > 0 ? asArray(raw.routeLegs) : asArray(raw.legs)
+  ).map((l, lIdx) => ({
+    id: String(l.id ?? `${rootId}-l-${lIdx}`),
+    mode:
+      l.mode === "walk" || l.mode === "car" || l.mode === "bike" || l.mode === "transit"
+        ? l.mode
+        : "transit",
+    minutes: Math.max(1, Number(l.minutes ?? 10)),
+    transitType: l.transitType,
   }));
+
+  const sortedStops = Array.isArray(raw.stops)
+    ? [...raw.stops].sort((a, b) => Number(a?.sequence ?? 0) - Number(b?.sequence ?? 0))
+    : [];
+  const startByKind = sortedStops.find((s) => String(s?.kind ?? "").toLowerCase() === "start");
+  const endByKind = sortedStops.find((s) => String(s?.kind ?? "").toLowerCase() === "end");
+
+  const legMinutesSum = legs.reduce((acc, l) => acc + (Number.isFinite(l.minutes) ? l.minutes : 0), 0);
+  const overallFromFields = Number(raw.overallDurationMinutes ?? raw.durationMinutes ?? NaN);
+
+  const depFromKind = startByKind
+    ? String(startByKind.title ?? startByKind.name ?? "").trim()
+    : "";
+  const arrFromKind = endByKind
+    ? String(endByKind.title ?? endByKind.name ?? "").trim()
+    : "";
+  const depField = String(raw.departure ?? raw.startPlace ?? "").trim();
+  const arrField = String(raw.arrival ?? raw.endPlace ?? "").trim();
+
   return {
-    id: String(raw.id ?? `api-${idx}`),
+    id: rootId,
     title: raw.title ?? raw.name ?? "코스 제목",
     meta: raw.meta ?? raw.description ?? "API 연동 코스",
-    departure: raw.departure ?? raw.startPlace ?? steps[0]?.name ?? "출발지",
+    departure: depField || depFromKind || steps[0]?.name || "출발지",
     arrival:
-      raw.arrival ?? raw.endPlace ?? steps[steps.length - 1]?.name ?? "도착지",
+      arrField || arrFromKind || steps[steps.length - 1]?.name || "도착지",
     thumbnail: raw.thumbnail ?? raw.imageUrl ?? null,
     category: raw.category ?? "기타",
     region: raw.region ?? "지역 미정",
     createdAt: raw.createdAt ?? new Date().toISOString().slice(0, 10),
     views: Number(raw.views ?? 0),
+    saveCount: pickCourseSaveCount(raw),
     overallDurationMinutes: Number(
-      raw.overallDurationMinutes ?? raw.durationMinutes ?? 120,
+      Number.isFinite(overallFromFields) && overallFromFields > 0
+        ? overallFromFields
+        : legMinutesSum > 0
+          ? legMinutesSum
+          : 120,
     ),
     rating: Number(raw.rating ?? 4.5),
     reviewCount: Number(raw.reviewCount ?? 0),
     routeSteps: steps.length > 0 ? steps : [{ id: `s-${idx}-0`, name: "경유지", stayMinutes: 30 }],
-    reviews: (raw.reviews ?? []).map((r, rIdx) => ({
-      id: String(r.id ?? `${raw.id ?? idx}-r-${rIdx}`),
+    routeLegs: legs,
+    reviews: asArray(raw.reviews).map((r, rIdx) => ({
+      id: String(r.id ?? `${rootId}-r-${rIdx}`),
       userName: r.userName ?? "사용자",
       rating: Number(r.rating ?? 5),
       text: r.text ?? "",
       date: r.date ?? new Date().toISOString().slice(0, 10),
     })),
   };
+}
+
+async function fetchCourseDetailFromCandidates(
+  endpoints: string[],
+): Promise<CourseItem | null> {
+  for (const endpoint of endpoints) {
+    try {
+      const res = await instance.get(endpoint);
+      const data =
+        res.data?.data ??
+        res.data?.item ??
+        res.data?.result ??
+        res.data?.course ??
+        res.data;
+      if (!data || Array.isArray(data)) continue;
+      return toCourseItem(data, 0);
+    } catch {
+      // 다음 엔드포인트를 시도한다.
+    }
+  }
+  return null;
 }
 
 async function fetchCoursesFromCandidates(
@@ -111,8 +312,23 @@ async function fetchCoursesFromCandidates(
     try {
       const res = await instance.get(endpoint, { params });
       const arr = pickArrayPayload(res.data);
-      if (arr.length === 0) continue;
-      return arr.map((item, idx) => toCourseItem(item, idx));
+      // 200 + 빈 배열은 "데이터 없음"으로 확정. Swagger 단일 경로이므로 다음 후보를 호출하지 않는다.
+      if (arr.length === 0) return [];
+      return normalizeCourseList(
+        arr
+          .filter((item) => item != null && typeof item === "object")
+          .map((item, idx) => {
+            try {
+              return toCourseItem(item, idx);
+            } catch (e) {
+              if (__DEV__) {
+                console.warn("[toCourseItem] skip item", idx, e);
+              }
+              return null;
+            }
+          })
+          .filter((item): item is CourseItem => item != null),
+      );
     } catch {
       // 다음 엔드포인트를 시도한다.
     }
@@ -121,17 +337,33 @@ async function fetchCoursesFromCandidates(
 }
 
 export async function fetchHomeCourses(limit = 6): Promise<CourseItem[]> {
-  const courses = await fetchCoursesFromCandidates(CANDIDATE_ENDPOINTS.home, {
+  return fetchCoursesFromCandidates(CANDIDATE_ENDPOINTS.home, {
     limit,
   });
-  if (courses.length > 0) return courses;
-  return [...MOCK_COURSES].sort((a, b) => b.views - a.views).slice(0, limit);
 }
 
-export async function fetchSharedCourses(): Promise<CourseItem[]> {
-  const courses = await fetchCoursesFromCandidates(CANDIDATE_ENDPOINTS.shared);
-  if (courses.length > 0) return courses;
-  return MOCK_COURSES;
+/** 홈·인기 섹션 — 저장 수 기준 상위 코스 */
+export async function fetchPopularCoursesBySaves(limit = 6): Promise<CourseItem[]> {
+  const size = Math.max(limit, 20);
+  const fromPublic = await fetchCoursesFromCandidates(CANDIDATE_ENDPOINTS.shared, {
+    tab: "popular",
+    sort: "popular",
+    size,
+  });
+  const list =
+    fromPublic.length > 0
+      ? fromPublic
+      : await fetchCoursesFromCandidates(CANDIDATE_ENDPOINTS.home, {
+          limit: size,
+          sort: "popular",
+        });
+  return sortCoursesBySaveCount(list).slice(0, limit);
+}
+
+export async function fetchSharedCourses(
+  params?: Record<string, unknown>,
+): Promise<CourseItem[]> {
+  return fetchCoursesFromCandidates(CANDIDATE_ENDPOINTS.shared, params);
 }
 
 export async function fetchMyCourses(): Promise<CourseItem[]> {
@@ -140,55 +372,327 @@ export async function fetchMyCourses(): Promise<CourseItem[]> {
   return [];
 }
 
-export async function saveSharedCourse(courseId: string): Promise<boolean> {
-  const endpoints = [
-    `/api/courses/${courseId}/save`,
-    `/courses/${courseId}/save`,
-    `/api/courses/${courseId}/bookmark`,
-    `/courses/${courseId}/bookmark`,
-  ];
-  for (const endpoint of endpoints) {
+export async function fetchSharedCourseDetail(
+  courseId: string,
+): Promise<CourseItem | null> {
+  return fetchCourseDetailFromCandidates(
+    DETAIL_CANDIDATE_ENDPOINTS.shared(courseId),
+  );
+}
+
+export async function fetchMyCourseDetail(
+  courseId: string,
+): Promise<CourseItem | null> {
+  return fetchCourseDetailFromCandidates(DETAIL_CANDIDATE_ENDPOINTS.my(courseId));
+}
+
+export type SaveSharedCourseResult =
+  | { ok: true }
+  | { ok: false; reason: "NOT_ON_SERVER" | "OTHER" };
+
+/**
+ * Swagger: POST /api/courses/{courseId}/save
+ * 서버에 해당 공유 코스가 없으면 404 → 목(mock) ID로 저장 시도 시 실패함.
+ */
+export async function saveSharedCourse(courseId: string): Promise<SaveSharedCourseResult> {
+  const id = String(courseId ?? "").trim();
+  if (!id) return { ok: false, reason: "OTHER" };
+  const encoded = encodeURIComponent(id);
+
+  const candidates = [`/api/courses/${encoded}/save`];
+
+  let saw404 = false;
+  let sawOther = false;
+
+  for (const endpoint of candidates) {
     try {
-      await instance.post(endpoint);
-      return true;
-    } catch {}
+      await instance.post(endpoint, {});
+      return { ok: true };
+    } catch (e: any) {
+      const status = e?.response?.status;
+      if (status === 409) return { ok: true };
+      if (status === 404) {
+        saw404 = true;
+        if (__DEV__) {
+          console.warn("[saveSharedCourse]", endpoint, status, e?.response?.data);
+        }
+        continue;
+      }
+      sawOther = true;
+      if (__DEV__) {
+        console.warn("[saveSharedCourse]", endpoint, status, e?.response?.data);
+      }
+    }
   }
-  return false;
+
+  if (sawOther) return { ok: false, reason: "OTHER" };
+  if (saw404) return { ok: false, reason: "NOT_ON_SERVER" };
+  return { ok: false, reason: "OTHER" };
 }
 
 export async function submitSharedCourseReview(
   courseId: string,
   payload: { userName: string; rating: number; text: string },
 ): Promise<boolean> {
-  const endpoints = [
-    `/api/courses/${courseId}/reviews`,
-    `/courses/${courseId}/reviews`,
-    `/api/reviews/courses/${courseId}`,
-    `/reviews/courses/${courseId}`,
-  ];
-  for (const endpoint of endpoints) {
-    try {
-      await instance.post(endpoint, payload);
-      return true;
-    } catch {}
+  try {
+    await instance.post(`/api/courses/${courseId}/reviews`, payload);
+    return true;
+  } catch {
+    return false;
   }
-  return false;
 }
 
 export async function deleteMyCourse(courseId: string): Promise<boolean> {
-  const endpoints = [
-    `/api/courses/my/${courseId}`,
-    `/courses/my/${courseId}`,
-    `/api/courses/${courseId}`,
-    `/courses/${courseId}`,
-  ];
-  for (const endpoint of endpoints) {
-    try {
-      await instance.delete(endpoint);
-      return true;
-    } catch {}
+  try {
+    await instance.delete(`/api/courses/my/${courseId}`);
+    return true;
+  } catch {
+    return false;
   }
-  return false;
+}
+
+/** Swagger: GET /api/courses/my/sharing — 현재 공유(공개) 중인 내 코스 id 목록 */
+export async function fetchMySharingCourseIds(): Promise<string[]> {
+  try {
+    const res = await instance.get("/api/courses/my/sharing");
+    const arr = pickArrayPayload(res.data);
+    return arr
+      .map((raw: any) =>
+        normalizeServerCourseId(raw?.id ?? raw?.uuid ?? raw?.courseId),
+      )
+      .filter((id): id is string => Boolean(id));
+  } catch {
+    return [];
+  }
+}
+
+export type MyCourseStatus = "DRAFT" | "PUBLISHED";
+
+/** Swagger: PATCH /api/courses/my/{courseId}/status — DRAFT | PUBLISHED */
+export async function updateMyCourseStatus(
+  courseId: string,
+  status: MyCourseStatus,
+): Promise<boolean> {
+  const id = normalizeServerCourseId(courseId);
+  if (!id) return false;
+  try {
+    const res = await instance.patch(
+      `/api/courses/my/${encodeURIComponent(id)}/status`,
+      { status },
+    );
+    return res.status >= 200 && res.status < 300;
+  } catch (e: any) {
+    if (__DEV__) {
+      console.warn(
+        "[updateMyCourseStatus]",
+        status,
+        id,
+        e?.response?.status,
+        e?.response?.data,
+      );
+    }
+    return false;
+  }
+}
+
+/** Swagger: POST /api/courses/my/{courseId}/share — 내 루트 공유 활성화 (204) */
+export async function enableMyCourseSharing(courseId: string): Promise<boolean> {
+  const id = normalizeServerCourseId(courseId);
+  if (!id) return false;
+  try {
+    const res = await instance.post(
+      `/api/courses/my/${encodeURIComponent(id)}/share`,
+      {},
+    );
+    return res.status >= 200 && res.status < 300;
+  } catch (e: any) {
+    if (__DEV__) {
+      console.warn(
+        "[enableMyCourseSharing]",
+        id,
+        e?.response?.status,
+        e?.response?.data,
+      );
+    }
+    return false;
+  }
+}
+
+/** Swagger: DELETE /api/courses/my/{courseId}/share — 내 루트 공유 비활성화 (204) */
+export async function disableMyCourseSharing(courseId: string): Promise<boolean> {
+  const id = normalizeServerCourseId(courseId);
+  if (!id) return false;
+  try {
+    const res = await instance.delete(
+      `/api/courses/my/${encodeURIComponent(id)}/share`,
+    );
+    return res.status >= 200 && res.status < 300;
+  } catch (e: any) {
+    if (__DEV__) {
+      console.warn(
+        "[disableMyCourseSharing]",
+        id,
+        e?.response?.status,
+        e?.response?.data,
+      );
+    }
+    return false;
+  }
+}
+
+/**
+ * Swagger 공개 플로우: status → PUBLISHED 후 share 활성화
+ * (공유 코스 탭 노출 + 팔로잉 소식)
+ */
+export async function publishMyCourseToPublic(courseId: string): Promise<boolean> {
+  const id = normalizeServerCourseId(courseId);
+  if (!id) return false;
+  await updateMyCourseStatus(id, "PUBLISHED");
+  return enableMyCourseSharing(id);
+}
+
+/** 비공개: share 해제 후 DRAFT */
+export async function unpublishMyCourseFromPublic(courseId: string): Promise<boolean> {
+  const id = normalizeServerCourseId(courseId);
+  if (!id) return false;
+  const ok = await disableMyCourseSharing(id);
+  await updateMyCourseStatus(id, "DRAFT");
+  return ok;
+}
+
+export type UpsertMyRoutePayload = {
+  title: string;
+  collaborative: boolean;
+  stops: Array<{
+    id: string;
+    kind: "start" | "via" | "end";
+    title: string;
+    timeLine: string;
+    lat?: number;
+    lng?: number;
+  }>;
+  legs: Array<{
+    id: string;
+    mode: "walk" | "transit" | "car" | "bike";
+    minutes: number;
+    transitType?: "bus" | "subway" | "train";
+    directionsSummary?: string;
+    directionsDetail?: string;
+    distanceMeters?: number;
+  }>;
+};
+
+function extractMyCourseUuidFromResponse(data: any): string | null {
+  const d = data?.data ?? data?.result ?? data;
+  if (!d || typeof d !== "object") return null;
+  const v = d.id ?? d.uuid ?? d.courseId;
+  if (v == null) return null;
+  const s = String(v).trim();
+  return s.length ? s : null;
+}
+
+/** Swagger: POST /api/courses/my → 201 + `MyCourseDetailResponse`(uuid). 실패 시 null */
+export async function createMyRoute(payload: UpsertMyRoutePayload): Promise<string | null> {
+  try {
+    const res = await instance.post("/api/courses/my", payload);
+    return extractMyCourseUuidFromResponse(res.data);
+  } catch {
+    return null;
+  }
+}
+
+export async function updateMyRoute(
+  courseId: string,
+  payload: UpsertMyRoutePayload,
+): Promise<boolean> {
+  try {
+    await instance.patch(`/api/courses/my/${courseId}`, payload);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 로컬·서버 루트 → PATCH/POST 본문 */
+export function buildUpsertPayloadFromUserRoute(route: {
+  title: string;
+  collaborative?: boolean;
+  stops: UpsertMyRoutePayload["stops"];
+  legs: UpsertMyRoutePayload["legs"];
+}): UpsertMyRoutePayload {
+  return {
+    title: route.title,
+    collaborative: route.collaborative === true,
+    stops: route.stops.map((s) => ({
+      id: s.id,
+      kind: s.kind,
+      title: s.title,
+      timeLine: s.timeLine,
+      lat: s.lat,
+      lng: s.lng,
+    })),
+    legs: route.legs.map((l) => ({
+      id: l.id,
+      mode:
+        l.mode === "walk" || l.mode === "car" || l.mode === "bike" || l.mode === "transit"
+          ? l.mode
+          : "transit",
+      minutes: Math.max(1, Number(l.minutes ?? 10)),
+      transitType: l.transitType,
+      directionsSummary: l.directionsSummary,
+      directionsDetail: l.directionsDetail,
+      distanceMeters: l.distanceMeters,
+    })),
+  };
+}
+
+/** 기기 루트를 서버에 올리거나 갱신. 성공 시 서버 course id */
+export async function syncUserRouteToServer(route: {
+  id: string;
+  title: string;
+  collaborative?: boolean;
+  stops: UpsertMyRoutePayload["stops"];
+  legs: UpsertMyRoutePayload["legs"];
+}): Promise<string | null> {
+  const payload = buildUpsertPayloadFromUserRoute(route);
+  const id = String(route.id ?? "").trim();
+  const looksLocalOnly = id.startsWith("ur-");
+  if (id && !looksLocalOnly) {
+    const updated = await updateMyRoute(id, payload);
+    if (updated) return id;
+  }
+  return createMyRoute(payload);
+}
+
+export type ConvertToPublicResult =
+  | { ok: true; serverId: string; migratedFromLocalId?: string }
+  | { ok: false; reason: "UPLOAD_FAILED" | "SHARE_FAILED"; serverId?: string };
+
+/** 개인(내) 코스를 서버에 반영한 뒤 공유(공개) 코스로 전환 */
+export async function convertPersonalCourseToPublic(route: {
+  id: string;
+  title: string;
+  collaborative?: boolean;
+  stops: UpsertMyRoutePayload["stops"];
+  legs: UpsertMyRoutePayload["legs"];
+}): Promise<ConvertToPublicResult> {
+  const serverId = await syncUserRouteToServer(route);
+  if (!serverId) return { ok: false, reason: "UPLOAD_FAILED" };
+  const shared = await publishMyCourseToPublic(serverId);
+  if (!shared) return { ok: false, reason: "SHARE_FAILED", serverId };
+  const migratedFromLocalId =
+    String(route.id).startsWith("ur-") && serverId !== route.id ? route.id : undefined;
+  return { ok: true, serverId, migratedFromLocalId };
+}
+
+/** 이미 서버에 있는 내 코스만 공개 토글 (업로드 없음) */
+export async function setMyCoursePublic(
+  courseId: string,
+  isPublic: boolean,
+): Promise<boolean> {
+  return isPublic
+    ? publishMyCourseToPublic(courseId)
+    : unpublishMyCourseFromPublic(courseId);
 }
 
 export type FollowingNewsItem = {
@@ -200,20 +704,18 @@ export type FollowingNewsItem = {
 };
 
 export async function fetchFollowingNews(limit = 3): Promise<FollowingNewsItem[]> {
-  const endpoints = ["/api/following/news", "/following/news", "/api/feed/following"];
-  for (const endpoint of endpoints) {
-    try {
-      const res = await instance.get(endpoint, { params: { limit } });
-      const arr = pickArrayPayload(res.data);
-      if (arr.length === 0) continue;
-      return arr.slice(0, limit).map((n: any, idx: number) => ({
-        id: String(n.id ?? `news-${idx}`),
-        user: String(n.user ?? n.nickname ?? "사용자"),
-        action: String(n.action ?? "새 코스를 공개했어요"),
-        courseName: String(n.courseName ?? n.title ?? "코스"),
-        ago: String(n.ago ?? n.timeAgo ?? "방금"),
-      }));
-    } catch {}
+  try {
+    const res = await instance.get("/api/following/news", { params: { limit } });
+    const arr = pickArrayPayload(res.data);
+    if (arr.length === 0) return [];
+    return arr.slice(0, limit).map((n: any, idx: number) => ({
+      id: String(n.id ?? `news-${idx}`),
+      user: String(n.user ?? n.nickname ?? "사용자"),
+      action: String(n.action ?? "새 코스를 공개했어요"),
+      courseName: String(n.courseName ?? n.title ?? "코스"),
+      ago: String(n.ago ?? n.timeAgo ?? "방금"),
+    }));
+  } catch {
+    return [];
   }
-  return [];
 }
