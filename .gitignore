@@ -47,3 +47,9 @@ yarn-error.*
 *storybook.log
 storybook-static
 .env
+
+
+
+
+# documents (로컬 API·연동 메모 — GitHub 미업로드)
+docs/
