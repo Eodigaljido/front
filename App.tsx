@@ -32,10 +32,19 @@ import ChatRoomInfoScreen from './screens/chat/ChatRoomInfoScreen';
 import RouteCreateScreen from './screens/RouteCreateScreen';
 import ProfileSettingsScreen from './screens/ProfileSettingsScreen';
 import FindAccountScreen from './screens/FindAccountScreen';
+import FollowingNewsScreen from './screens/FollowingNewsScreen';
+import NotificationCenterScreen from './screens/NotificationCenterScreen';
 
 export type RootTabParamList = {
   Home: undefined;
-  SharedRoute: { openFilter?: boolean; openAsPopular?: boolean; viewCourseId?: string } | undefined;
+  SharedRoute:
+    | {
+        openFilter?: boolean;
+        openAsPopular?: boolean;
+        viewCourseId?: string;
+        initialQuery?: string;
+      }
+    | undefined;
   MyRoute: undefined;
   Chat: undefined;
   All: undefined;
@@ -85,6 +94,8 @@ export type RootStackParamList = {
 
   // 기타
   BottomSheet: undefined;
+  FollowingNews: undefined;
+  NotificationCenter: undefined;
 };
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
@@ -154,6 +165,7 @@ function TabNavigator() {
   const screenOptions = useMemo(
     () =>
       ({ route }: { route: any }) => ({
+        lazy: true,
         tabBarIcon: ({ color }: { focused: boolean; color: string }) => (
           <View
             style={{
@@ -278,8 +290,13 @@ export default function App(): React.JSX.Element {
               <Stack.Screen name="GenderOnBoard" component={GenderOnBoard} />
               <Stack.Screen name="OnBoardEnd" component={OnBoardEnd} />
               <Stack.Screen name="FindAccount" component={FindAccountScreen} />
-              {/* <Stack.Screen name="Start" component={StartScreen} /> */}
               <Stack.Screen name="ChatCreatingScreen" component={ChatCreatingScreen} />
+              <Stack.Screen name="FollowingNews" component={FollowingNewsScreen} />
+              <Stack.Screen
+                name="NotificationCenter"
+                component={NotificationCenterScreen}
+              />
+              {/* <Stack.Screen name="Start" component={StartScreen} /> */}
               <Stack.Screen name="ChatRoomScreen" component={ChatRoomScreen} />
               <Stack.Screen name="ChatRoomInfoScreen" component={ChatRoomInfoScreen} />
             </Stack.Navigator>
