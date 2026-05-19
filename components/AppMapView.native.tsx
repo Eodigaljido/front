@@ -9,6 +9,8 @@ type Props = {
   latitude?: number;
   longitude?: number;
   level?: number;
+  zoom?: number;
+  fitToRoute?: boolean;
   /** WebView·임베드에서 지도 기본 UI·표기 최소화 */
   chromeless?: boolean;
   /** false면 지도 제스처(드래그/줌/회전) 비활성화 */
@@ -56,8 +58,15 @@ function cameraForPath(
   fallbackLat: number,
   fallbackLng: number,
   level: number,
+  fitToRoute: boolean,
+  zoomOverride?: number,
 ): CameraPosition {
-  if (pts.length >= 2) {
+  const targetZoom =
+    typeof zoomOverride === "number" && Number.isFinite(zoomOverride)
+      ? Math.max(8, Math.min(20, zoomOverride))
+      : kakaoLevelToZoom(level);
+
+  if (fitToRoute && pts.length >= 2) {
     const lats = pts.map((p) => p.latitude);
     const lngs = pts.map((p) => p.longitude);
     const minLat = Math.min(...lats);
@@ -82,12 +91,12 @@ function cameraForPath(
   if (pts.length === 1) {
     return {
       coordinates: { latitude: pts[0].latitude, longitude: pts[0].longitude },
-      zoom: kakaoLevelToZoom(level),
+      zoom: targetZoom,
     };
   }
   return {
     coordinates: { latitude: fallbackLat, longitude: fallbackLng },
-    zoom: kakaoLevelToZoom(level),
+    zoom: targetZoom,
   };
 }
 
@@ -99,7 +108,9 @@ function AppMapViewExpoGoogleMapsImpl({
   latitude = 37.5665,
   longitude = 126.978,
   level = 8,
-  chromeless = false,
+  zoom: zoomProp,
+  fitToRoute = true,
+  chromeless: _chromeless = true,
   interactive = true,
   allowTap = true,
   path,
@@ -145,8 +156,16 @@ function AppMapViewExpoGoogleMapsImpl({
     return stopPts;
   }, [segs, pts, markerPts, stopPts]);
   const cameraPosition = useMemo(
-    () => cameraForPath(cameraPath, latitude, longitude, level),
-    [cameraPath, latitude, longitude, level],
+    () =>
+      cameraForPath(
+        cameraPath,
+        latitude,
+        longitude,
+        level,
+        fitToRoute,
+        zoomProp,
+      ),
+    [cameraPath, latitude, longitude, level, fitToRoute, zoomProp],
   );
   const lineCoords = useMemo(() => toCoordinates(pts), [pts]);
 
@@ -216,23 +235,23 @@ function AppMapViewExpoGoogleMapsImpl({
 
   return (
     <GoogleMaps.View
-      style={baseStyle}
-      cameraPosition={cameraPosition}
-      markers={nativeMarkers}
-      polylines={polylines}
-      uiSettings={{
-        compassEnabled: !chromeless,
-        myLocationButtonEnabled: false,
-        mapToolbarEnabled: !chromeless,
-        zoomControlsEnabled: !chromeless,
-        scaleBarEnabled: !chromeless,
-        indoorLevelPickerEnabled: false,
-        scrollGesturesEnabled: interactive,
-        zoomGesturesEnabled: interactive,
-        rotationGesturesEnabled: interactive,
-        tiltGesturesEnabled: interactive,
-      }}
-      properties={chromeless ? { selectionEnabled: false } : undefined}
+        style={baseStyle}
+        cameraPosition={cameraPosition}
+        markers={nativeMarkers}
+        polylines={polylines}
+        uiSettings={{
+          compassEnabled: false,
+          myLocationButtonEnabled: false,
+          mapToolbarEnabled: false,
+          zoomControlsEnabled: false,
+          scaleBarEnabled: false,
+          indoorLevelPickerEnabled: false,
+          scrollGesturesEnabled: interactive,
+          zoomGesturesEnabled: interactive,
+          rotationGesturesEnabled: interactive,
+          tiltGesturesEnabled: interactive,
+        }}
+        properties={{ selectionEnabled: false }}
     />
   );
 }
@@ -244,5 +263,5 @@ export default function AppMapView(props: Props): React.JSX.Element {
     return <AppMapViewExpoGoogleMapsImpl {...props} />;
   }
 
-  return <GoogleMapWebView {...props} />;
+  return <GoogleMapWebView {...props} fitToRoute={props.fitToRoute ?? true} />;
 }
