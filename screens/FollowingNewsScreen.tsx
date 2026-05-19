@@ -1,0 +1,71 @@
+import React, { useEffect, useState } from "react";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { View, Text, Pressable, FlatList } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
+import { fetchFollowingNews, type FollowingNewsItem } from "../api/courses";
+
+export default function FollowingNewsScreen(): React.JSX.Element {
+  const navigation = useNavigation<any>();
+  const [items, setItems] = useState<FollowingNewsItem[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    fetchFollowingNews(30)
+      .then((res) => {
+        if (mounted) setItems(res);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  return (
+    <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={["top"]}>
+      <View className="px-4 py-3 flex-row items-center">
+        <Pressable onPress={() => navigation.goBack()} className="mr-2 p-1">
+          <Ionicons name="chevron-back" size={24} color="#111827" />
+        </Pressable>
+        <Text className="text-lg font-semibold text-gray-900">팔로잉 소식</Text>
+      </View>
+
+      <FlatList
+        data={items}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
+        renderItem={({ item }) => (
+          <View
+            className="mb-2.5 flex-row items-center rounded-[16px] p-3 bg-white"
+            style={{
+              borderWidth: 0.5,
+              borderColor: "rgba(37,99,235,0.12)",
+            }}
+          >
+            <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-blue-100">
+              <Text style={{ fontSize: 13, fontWeight: "600", color: "#2563EB" }}>
+                {item.user.slice(0, 1)}
+              </Text>
+            </View>
+            <View className="min-w-0 flex-1">
+              <Text style={{ fontSize: 13, fontWeight: "400", color: "#1A1A2E" }} numberOfLines={1}>
+                <Text style={{ fontWeight: "600" }}>{item.user}</Text>이 {item.action}
+              </Text>
+              <Text style={{ marginTop: 2, fontSize: 12, fontWeight: "400", color: "#6B7280" }} numberOfLines={1}>
+                {item.courseName}
+              </Text>
+            </View>
+            <Text style={{ marginLeft: 8, fontSize: 12, fontWeight: "400", color: "#6B7280" }}>
+              {item.ago}
+            </Text>
+          </View>
+        )}
+        ListEmptyComponent={
+          <View className="mt-12 items-center">
+            <Text className="text-sm text-gray-500">표시할 팔로잉 소식이 없습니다.</Text>
+          </View>
+        }
+      />
+    </SafeAreaView>
+  );
+}
