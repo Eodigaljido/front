@@ -38,8 +38,8 @@ export const ProfileList = ({ size = 60 }: { size?: number }) => {
         paddingRight: 16,
       }}
     >
-      <View className="flex-row gap-5">
-        {friends.map((friend) => (
+      <View className="flex-row" style={{ gap: 20 }}>
+        {(Array.isArray(friends) ? friends : []).map((friend) => (
           <View key={friend.friendId} className="items-center">
             <Image
               source={{

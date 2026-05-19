@@ -45,7 +45,7 @@ export function useChatSocket(
 
   useEffect(() => {
     if (!accessToken || !roomUuidKey) return;
-    const uuids = roomUuidKey.split(",");
+    const uuids = roomUuidKey.split(",").filter(Boolean);
 
     const client = new Client({
       webSocketFactory: () => new SockJS(STOMP_URL),

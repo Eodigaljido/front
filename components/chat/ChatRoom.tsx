@@ -49,7 +49,7 @@ export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
 
   // 방 목록이 로드된 후 모든 방을 구독해 실시간 업데이트 수신
   useChatSocket(
-    chatRooms.map((r) => r.uuid),
+    (Array.isArray(chatRooms) ? chatRooms : []).map((r) => r.uuid),
     (event: ChatSocketEvent) => {
       if (event.eventType === "MESSAGE_CREATED" && accessToken) {
         getChatRooms(accessToken).then(setChatRooms).catch(console.error);
@@ -60,7 +60,7 @@ export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
   const fetchChatRooms = () => {
     if (!accessToken) return;
     getChatRooms(accessToken)
-      .then(setChatRooms)
+      .then((rooms) => setChatRooms(Array.isArray(rooms) ? rooms : []))
       .catch((err) => {
         console.error("채팅방 목록 불러오기 실패:", err);
       });
@@ -72,13 +72,14 @@ export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
     }, [accessToken]),
   );
 
+  const roomList = Array.isArray(chatRooms) ? chatRooms : [];
   const filteredRooms = searchQuery
-    ? chatRooms.filter(
+    ? roomList.filter(
         (room) =>
           room.name.includes(searchQuery) ||
           room.lastMessage?.includes(searchQuery),
       )
-    : chatRooms;
+    : roomList;
 
   return (
     <View>

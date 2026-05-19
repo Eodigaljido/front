@@ -18,68 +18,10 @@ export type MockPlace = {
   category?: string;
 };
 
-export const MOCK_RECENT_PLACES: MockPlace[] = [
-  {
-    id: 'r1',
-    name: '강남역 2호선',
-    distance: '1.2km',
-    address: '서울특별시 강남구 강남대로 396',
-    latitude: 37.498095,
-    longitude: 127.02761,
-  },
-  {
-    id: 'r2',
-    name: '홍대입구역',
-    distance: '3.4km',
-    address: '서울특별시 마포구 양화로 188',
-    latitude: 37.556724,
-    longitude: 126.923607,
-  },
-  {
-    id: 'r3',
-    name: '잠실종합운동장',
-    distance: '8.1km',
-    address: '서울특별시 송파구 올림픽로 25',
-    latitude: 37.513366,
-    longitude: 127.071876,
-  },
-];
+/** 목 장소 제거 — 검색은 카카오 키워드 API만 사용 */
+export const MOCK_RECENT_PLACES: MockPlace[] = [];
 
-export const MOCK_SEARCH_POOL: MockPlace[] = [
-  ...MOCK_RECENT_PLACES,
-  {
-    id: 's1',
-    name: '매실 보육원',
-    distance: '2.0km',
-    address: '경기도 용인시 처인구 포곡읍 매실로 123',
-    latitude: 37.2469,
-    longitude: 127.2147,
-  },
-  {
-    id: 's2',
-    name: '수원역',
-    distance: '12km',
-    address: '경기도 수원시 팔달구 덕영대로 924',
-    latitude: 37.2659,
-    longitude: 126.9998,
-  },
-  {
-    id: 's3',
-    name: '판교역',
-    distance: '15km',
-    address: '경기도 성남시 분당구 판교역로 166',
-    latitude: 37.3948,
-    longitude: 127.1112,
-  },
-  {
-    id: 's4',
-    name: '남산타워',
-    distance: '4.5km',
-    address: '서울특별시 용산구 남산공원길 105',
-    latitude: 37.5512,
-    longitude: 126.9882,
-  },
-];
+export const MOCK_SEARCH_POOL: MockPlace[] = [];
 
 export function findPlaceById(id: string): MockPlace | undefined {
   return MOCK_SEARCH_POOL.find((p) => p.id === id);
@@ -115,8 +57,5 @@ export type Collaborator = {
   isTyping?: boolean;
 };
 
-export const MOCK_COLLABORATORS: Collaborator[] = [
-  { id: 'u1', name: '민지', color: '#f97316' },
-  { id: 'u2', name: '현우', color: '#3b82f6' },
-  { id: 'u3', name: '서연', color: '#22c55e' },
-];
+/** 공동 편집 멤버는 서버 연동 전까지 비움 */
+export const MOCK_COLLABORATORS: Collaborator[] = [];

@@ -51,8 +51,15 @@ function buildStaticBootstrapHtml(appKey: string): string {
       var imgs = root.querySelectorAll('img');
       for (var j = 0; j < imgs.length; j++) {
         var s = (imgs[j].getAttribute('src') || '') + (imgs[j].getAttribute('alt') || '');
-        if (/logo|kakao|daum|bi_/i.test(s)) imgs[j].style.display = 'none';
+        if (/logo|kakao|daum|bi_|tmap|mobility|모빌리티|google/i.test(s)) imgs[j].style.display = 'none';
       }
+      root.querySelectorAll('a, span').forEach(function (el) {
+        if (el.children && el.children.length > 0) return;
+        var tx = String(el.textContent || '').trim();
+        if (tx.length > 0 && tx.length < 64 && /^(©|지도\\s*데이터|kakao|tmap|모빌리티)/i.test(tx)) {
+          el.style.display = 'none';
+        }
+      });
     }
     window.__pendingSpec = null;
     kakao.maps.load(function () {

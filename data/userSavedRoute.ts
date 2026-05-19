@@ -57,6 +57,12 @@ export function userRouteToCourseItem(r: UserSavedRoute): CourseItem {
       name: s.title,
       stayMinutes: 0,
     })),
+    routeLegs: r.legs.map((l, i) => ({
+      id: l.id || `${r.id}-leg-${i}`,
+      mode: (l.mode as any) || 'transit',
+      minutes: Number(l.minutes || 0),
+      transitType: l.transitType,
+    })),
     reviews: [],
   };
 }

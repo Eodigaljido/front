@@ -13,7 +13,7 @@ export async function getFriends(accessToken: string): Promise<Friends[]> {
   const res = await instance.get<Friends[]>("/friends", {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  return res.data;
+  return Array.isArray(res.data) ? res.data : [];
 }
 
 // 최근 대화한 친구 목록 조회
@@ -23,5 +23,5 @@ export async function getFriendsRecent(
   const res = await instance.get<Friends[]>("/friends/recent", {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  return res.data;
+  return Array.isArray(res.data) ? res.data : [];
 }
