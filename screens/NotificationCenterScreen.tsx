@@ -39,9 +39,7 @@ export default function NotificationCenterScreen(): React.JSX.Element {
         ListEmptyComponent={
           <View className="items-center justify-center py-16 px-8">
             <Ionicons name="notifications-off-outline" size={44} color="#9ca3af" />
-            <Text className="mt-3 text-center text-sm text-gray-500">
-              알림 API 연동 후 목록이 표시됩니다.
-            </Text>
+            <Text className="mt-3 text-center text-sm text-gray-500">목록 없음</Text>
           </View>
         }
         renderItem={({ item }) => {

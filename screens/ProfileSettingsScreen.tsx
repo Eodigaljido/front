@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../store/authStore';
+import { useToast } from '../context/ToastContext';
 import {
   deleteMyAccount,
   deleteMyProfileImage,
@@ -32,6 +33,7 @@ const DEFAULT_AVATAR_URI = 'https://i.pravatar.cc/100?img=5';
 
 export default function ProfileSettingsScreen(): React.JSX.Element {
   const navigation = useNavigation<any>();
+  const { showToast } = useToast();
   const setUser = useAuthStore(s => s.setUser);
   const logout = useAuthStore(s => s.logout);
 
@@ -212,14 +214,14 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
         // 번호 변경 없음 — 그대로 유지
       }
       syncAuthUser(updated);
-      Alert.alert('저장 완료', '프로필이 서버에 저장되었습니다.');
+      showToast('저장 완료');
     } catch (e: any) {
-      const msg = e?.response?.data?.message ?? e?.message ?? '프로필 저장에 실패했습니다.';
-      Alert.alert('오류', msg);
+      const msg = e?.response?.data?.message ?? e?.message ?? '저장하지 못했어요';
+      showToast(msg);
     } finally {
       setSaving(false);
     }
-  }, [saving, nickname, bio, phone, syncAuthUser]);
+  }, [saving, nickname, bio, phone, syncAuthUser, showToast]);
 
   const handleDeleteProfileImage = useCallback(async () => {
     try {
