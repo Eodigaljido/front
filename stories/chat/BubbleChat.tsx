@@ -4,6 +4,7 @@ import {
   Easing,
   View,
   Text,
+  Image,
   ViewStyle,
   StyleProp,
   StyleSheet,
@@ -13,6 +14,7 @@ import {
 export interface BubbleChatProps {
   isMine: boolean;
   text?: string;
+  imageUrl?: string | null;
   sentAt?: Date;
   profileImageUrl?: string;
   userName?: string;
@@ -20,6 +22,7 @@ export interface BubbleChatProps {
   onLongPress?: () => void;
   isEdited?: boolean;
   isTyping?: boolean;
+  onImageLoad?: () => void;
 }
 
 function formatTime(date: Date) {
@@ -32,6 +35,7 @@ function formatTime(date: Date) {
 
 export function BubbleChat({
   text,
+  imageUrl,
   isMine,
   sentAt,
   userName,
@@ -39,6 +43,7 @@ export function BubbleChat({
   onLongPress,
   isEdited,
   isTyping,
+  onImageLoad,
 }: BubbleChatProps) {
   const dot1 = useRef(new Animated.Value(0)).current;
   const dot2 = useRef(new Animated.Value(0)).current;
@@ -64,7 +69,7 @@ export function BubbleChat({
             useNativeDriver: true,
           }),
           Animated.delay(480),
-        ])
+        ]),
       );
 
     const a1 = makeAnim(dot1, 0);
@@ -97,17 +102,31 @@ export function BubbleChat({
           ]}
         >
           <Animated.View
-            style={[typingStyles.dot, isMine ? typingStyles.dotMine : typingStyles.dotOther, { transform: [{ translateY: dot1 }] }]}
+            style={[
+              typingStyles.dot,
+              isMine ? typingStyles.dotMine : typingStyles.dotOther,
+              { transform: [{ translateY: dot1 }] },
+            ]}
           />
           <Animated.View
-            style={[typingStyles.dot, isMine ? typingStyles.dotMine : typingStyles.dotOther, { transform: [{ translateY: dot2 }] }]}
+            style={[
+              typingStyles.dot,
+              isMine ? typingStyles.dotMine : typingStyles.dotOther,
+              { transform: [{ translateY: dot2 }] },
+            ]}
           />
           <Animated.View
-            style={[typingStyles.dot, isMine ? typingStyles.dotMine : typingStyles.dotOther, { transform: [{ translateY: dot3 }] }]}
+            style={[
+              typingStyles.dot,
+              isMine ? typingStyles.dotMine : typingStyles.dotOther,
+              { transform: [{ translateY: dot3 }] },
+            ]}
           />
         </View>
         {userName && (
-          <Text style={[styles.time, isMine ? styles.timeMine : styles.timeOther]}>
+          <Text
+            style={[styles.time, isMine ? styles.timeMine : styles.timeOther]}
+          >
             {userName}
           </Text>
         )}
@@ -128,21 +147,32 @@ export function BubbleChat({
         disabled={!onLongPress}
         activeOpacity={onLongPress ? 0.7 : 1}
       >
-        <View
-          style={[
-            styles.bubble,
-            isMine ? styles.bubbleMine : styles.bubbleOther,
-          ]}
-        >
-          <Text
-            style={[styles.text, isMine ? styles.textMine : styles.textOther]}
+        {imageUrl ? (
+          <Image
+            source={{ uri: imageUrl }}
+            style={styles.image}
+            resizeMode="cover"
+            onLoad={onImageLoad}
+          />
+        ) : (
+          <View
+            style={[
+              styles.bubble,
+              isMine ? styles.bubbleMine : styles.bubbleOther,
+            ]}
           >
-            {text?.replace(/ /g, ' ')}
-          </Text>
-        </View>
+            <Text
+              style={[styles.text, isMine ? styles.textMine : styles.textOther]}
+            >
+              {text?.replace(/ /g, " ")}
+            </Text>
+          </View>
+        )}
       </TouchableOpacity>
       {sentAt && (
-        <Text style={[styles.time, isMine ? styles.timeMine : styles.timeOther]}>
+        <Text
+          style={[styles.time, isMine ? styles.timeMine : styles.timeOther]}
+        >
           {isEdited ? `(수정됨) ${formatTime(sentAt)}` : formatTime(sentAt)}
         </Text>
       )}
@@ -218,5 +248,10 @@ const styles = StyleSheet.create({
   },
   timeOther: {
     alignSelf: "flex-start",
+  },
+  image: {
+    width: 200,
+    height: 200,
+    borderRadius: 12,
   },
 });
