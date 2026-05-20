@@ -31,3 +31,13 @@ export async function getFriendsRecent(
   });
   return Array.isArray(res.data) ? res.data : [];
 }
+
+/**
+ * 친구 코드로 친구 추가 (공유 링크 수신 후 호출)
+ * 백엔드 경로 확정 전: POST /friends/add — 명세 docs/share-link-backend-spec.md 참고
+ */
+export async function addFriendByCode(friendCode: string): Promise<void> {
+  const code = String(friendCode ?? "").trim();
+  if (!code) throw new Error("친구 코드가 비어 있습니다.");
+  await instance.post("/friends/add", { friendCode: code });
+}

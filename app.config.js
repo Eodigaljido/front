@@ -3,8 +3,15 @@
  * iOS·웹·Expo Go(WebView): Maps JavaScript API — EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY
  * @see https://docs.expo.dev/versions/latest/sdk/maps/
  */
+const shareHost =
+  (process.env.EXPO_PUBLIC_SHARE_BASE_URL ?? '')
+    .trim()
+    .replace(/^https?:\/\//i, '')
+    .replace(/\/+$/, '') || 'share.eodigaljido.rjsgud.com';
+
 module.exports = ({ config }) => ({
   ...config,
+  scheme: 'eodigaljido',
   /** 빌드 시 .env의 TEST_LOGIN 또는 EXPO_PUBLIC_TEST_LOGIN → LoginScreen 자동 로그인 */
   extra: {
     ...(config.extra ?? {}),
@@ -13,8 +20,38 @@ module.exports = ({ config }) => ({
         .trim(),
   },
   plugins: [...(config.plugins ?? []), 'expo-secure-store', '@react-native-community/datetimepicker'],
+  ios: {
+    ...(config.ios ?? {}),
+    associatedDomains: [`applinks:${shareHost}`],
+  },
   android: {
     ...config.android,
+    intentFilters: [
+      {
+        action: 'VIEW',
+        autoVerify: true,
+        data: [
+          {
+            scheme: 'https',
+            host: shareHost,
+            pathPrefix: '/courses/public',
+          },
+        ],
+        category: ['BROWSABLE', 'DEFAULT'],
+      },
+      {
+        action: 'VIEW',
+        autoVerify: true,
+        data: [
+          {
+            scheme: 'https',
+            host: shareHost,
+            pathPrefix: '/friends/add',
+          },
+        ],
+        category: ['BROWSABLE', 'DEFAULT'],
+      },
+    ],
     config: {
       ...(config.android?.config ?? {}),
       googleMaps: {
