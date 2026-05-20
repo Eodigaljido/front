@@ -98,7 +98,7 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'settings-outline',
       iconColor: '#60a5fa',
       iconBg: '#dbeafe',
-      onPress: () => Alert.alert('준비 중', '앱 설정 기능은 곧 제공됩니다.'),
+      onPress: () => {},
     },
     {
       id: 'help',
@@ -106,7 +106,7 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'help-circle-outline',
       iconColor: '#4b5563',
       iconBg: '#f3f4f6',
-      onPress: () => Alert.alert('도움말', '문의가 필요하면 고객센터로 연락해주세요.'),
+      onPress: () => {},
     },
     {
       id: 'alarm',
@@ -114,7 +114,7 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'notifications-outline',
       iconColor: '#6b7280',
       iconBg: '#e5e7eb',
-      onPress: () => Alert.alert('준비 중', '알림 설정 기능은 곧 제공됩니다.'),
+      onPress: () => {},
     },
   ];
 

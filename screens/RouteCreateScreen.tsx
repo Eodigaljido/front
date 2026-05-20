@@ -14,14 +14,20 @@ import {
   Image,
   PanResponder,
   Dimensions,
+  useWindowDimensions,
+  Switch,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import * as Location from 'expo-location';
 import AppMapView from '../components/AppMapView';
-import type { MapMarkerPoint, MapRouteSegment } from '../components/mapTypes';
+import type { MapRouteSegment } from '../components/mapTypes';
+import { buildMapMarkersFromRouteStops } from '../utils/spreadMapMarkers';
+import { formatOverallDurationLabel } from '../utils/formatOverallDurationLabel';
 import { useMockData } from '../context/MockDataContext';
+import { useToast } from '../context/ToastContext';
 import {
   TRANSPORT_LABELS,
   type TransportMode,
@@ -34,14 +40,24 @@ import {
   KAKAO_KEYWORD_CATEGORY_OPTIONS,
   type KakaoKeywordSort,
 } from '../data/kakaoLocalApi';
-import { fetchGoogleDirectionsLeg, type DirectionsMode } from '../data/googleDirectionsApi';
+import {
+  fetchGoogleDirectionsLeg,
+  fetchWalkingRouteAlternatives,
+  fetchTransitRouteAlternatives,
+  type DirectionsMode,
+  type WalkRouteCandidate,
+  type TransitRouteCandidate,
+} from '../data/googleDirectionsApi';
 import {
   createMyRoute,
   fetchMyCourseDetail,
+  fetchMySharingCourseIds,
   fetchSharedCourseDetail,
+  setMyCoursePublic,
   updateMyRoute,
 } from '../api/courses';
 import type { CourseItem } from '../data/mockData';
+import { MAX_ROUTE_TAGS, ROUTE_TAG_PRESETS } from '../data/routeTags';
 import { getCourseStepMapPoint } from '../data/mockData';
 
 type RouteStop = {
@@ -61,10 +77,30 @@ type RouteLeg = {
   directionsSummary?: string;
   directionsDetail?: string;
   distanceMeters?: number;
+  /** 도보 구간 — 보도 후보 2~3개 중 사용자 선택 */
+  walkCandidates?: WalkRouteCandidate[];
+  selectedWalkCandidateId?: string;
+  /** 대중교통 구간 — 노선·출발·도착 시각 후보 */
+  transitCandidates?: TransitRouteCandidate[];
+  selectedTransitCandidateId?: string;
+};
+
+type LegDirectionResult = {
+  path: { latitude: number; longitude: number }[];
+  segments: MapRouteSegment[];
+  durationMinutes: number;
+  summary: string;
+  detail: string;
+  distanceMeters?: number;
+  walkCandidates?: WalkRouteCandidate[];
+  transitCandidates?: TransitRouteCandidate[];
 };
 
 const WALK_SEGMENT_COLOR = '#f59e0b';
 const RIDE_SEGMENT_COLOR = '#2563eb';
+
+/** 내 루트 수정(editRouteId) 화면에서만 하단 패널 높이 저장 */
+const ROUTE_EDIT_SHEET_HEIGHT_STORAGE_KEY = 'ROUTE_CREATE_EDIT_SHEET_HEIGHT_PX';
 
 const ROUTE_CREATE_EMPTY_STOPS: RouteStop[] = [
   {
@@ -81,25 +117,8 @@ const ROUTE_CREATE_EMPTY_STOPS: RouteStop[] = [
   },
 ];
 
-const ROUTE_CREATE_INITIAL_CHAT: { id: string; from: 'me' | 'other'; name: string; text: string; at: number }[] = [
-  {
-    id: 'm0',
-    from: 'other',
-    name: '민지',
-    text: '출발 시간 8시 반으로 맞출까요?',
-    at: Date.now() - 600000,
-  },
-  {
-    id: 'm1',
-    from: 'other',
-    name: '현우',
-    text: '네, 그때 보는 걸로 해요.',
-    at: Date.now() - 300000,
-  },
-];
-
 function normalizeLegMode(m: string): TransportMode {
-  return (['walk', 'transit', 'car', 'bike'].includes(m) ? m : 'transit') as TransportMode;
+  return (['walk', 'transit', 'car', 'bike'].includes(m) ? m : 'walk') as TransportMode;
 }
 
 function transportIcon(mode: TransportMode): string {
@@ -129,20 +148,9 @@ function legTransportLabel(mode: TransportMode, transitType?: TransitType): stri
   return transitType ? `대중교통(${TRANSIT_TYPE_LABELS[transitType]})` : TRANSPORT_LABELS.transit;
 }
 
-function pickFastestModeByKey(placeKey: string): TransportMode {
-  // 자동 기본 추천은 도보/대중교통 축에서만 판단한다.
-  // (개인차량/자전거는 사용자가 명시적으로 변경할 때만 적용)
-  const candidates: TransportMode[] = ['walk', 'transit'];
-  let best: TransportMode = 'transit';
-  let bestMinutes = Number.POSITIVE_INFINITY;
-  for (const mode of candidates) {
-    const minutes = estimateMinutes(mode, placeKey);
-    if (minutes < bestMinutes) {
-      best = mode;
-      bestMinutes = minutes;
-    }
-  }
-  return best;
+/** 새 구간·장소 추가 시 기본 이동수단 — 도보(보도) */
+function pickFastestModeByKey(_placeKey: string): TransportMode {
+  return 'walk';
 }
 
 /** 공유 루트 목 코스 → 루트 제작 정류장/구간 (저장 시 새 내 루트로 추가) */
@@ -237,6 +245,109 @@ function syntheticLegMinutes(aId: string, bId: string): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h + s.charCodeAt(i) * (i + 3)) % 91;
   return 10 + (h % 35);
+}
+
+function buildWalkPickSegments(
+  legIndex: number,
+  from: { lat: number; lng: number },
+  to: { lat: number; lng: number },
+  path: { latitude: number; longitude: number }[],
+): MapRouteSegment[] {
+  const pts = snapPolylineToEndpoints(path, from, to).map((p) => ({
+    latitude: p.latitude,
+    longitude: p.longitude,
+  }));
+  if (pts.length < 2) return [];
+  return [
+    {
+      id: `leg-${legIndex}-walk-pick`,
+      points: offsetPolylineForLegSeparation(pts, legIndex, 0),
+      color: WALK_SEGMENT_COLOR,
+      width: 4,
+    },
+  ];
+}
+
+function buildTransitPickSegments(
+  legIndex: number,
+  from: { lat: number; lng: number },
+  to: { lat: number; lng: number },
+  candidate: TransitRouteCandidate,
+): MapRouteSegment[] {
+  const path = snapPolylineToEndpoints(candidate.path, from, to);
+  const rawSegs =
+    candidate.segments?.length >= 1
+      ? candidate.segments
+      : [{ mode: 'ride' as const, points: path }];
+  return rawSegs
+    .map((seg, segIdx) => {
+      const basePts = seg.points?.length >= 2 ? seg.points : path;
+      if (!basePts || basePts.length < 2) return null;
+      const pts = basePts.map((p) => ({ latitude: p.latitude, longitude: p.longitude }));
+      if (segIdx === 0) pts[0] = { latitude: from.lat, longitude: from.lng };
+      if (segIdx === rawSegs.length - 1) {
+        pts[pts.length - 1] = { latitude: to.lat, longitude: to.lng };
+      }
+      const walkVisual = seg.mode === 'walk';
+      return {
+        id: `leg-${legIndex}-transit-${segIdx}`,
+        points: offsetPolylineForLegSeparation(pts, legIndex, segIdx),
+        color: walkVisual ? WALK_SEGMENT_COLOR : RIDE_SEGMENT_COLOR,
+        width: walkVisual ? 4 : 5,
+        dashed: walkVisual,
+      } as MapRouteSegment;
+    })
+    .filter(Boolean) as MapRouteSegment[];
+}
+
+function resolveLegDirectionResult(
+  legIndex: number,
+  leg: RouteLeg | undefined,
+  s: RouteStop | undefined,
+  e: RouteStop | undefined,
+  r: LegDirectionResult | null,
+): LegDirectionResult | null {
+  if (!r || !leg || s?.lat == null || s?.lng == null || e?.lat == null || e?.lng == null) {
+    return r;
+  }
+  const from = { lat: s.lat, lng: s.lng };
+  const to = { lat: e.lat, lng: e.lng };
+
+  if (leg.mode === 'walk' && r.walkCandidates?.length) {
+    const pick =
+      r.walkCandidates.find((c) => c.id === leg.selectedWalkCandidateId) ??
+      r.walkCandidates[0];
+    const path = snapPolylineToEndpoints(pick.path, from, to);
+    return {
+      ...r,
+      path,
+      segments: buildWalkPickSegments(legIndex, from, to, path),
+      durationMinutes: pick.durationMinutes,
+      summary: pick.summary,
+      detail: pick.detail,
+      distanceMeters: pick.distanceMeters,
+      walkCandidates: r.walkCandidates,
+    };
+  }
+
+  if (leg.mode === 'transit' && r.transitCandidates?.length) {
+    const pick =
+      r.transitCandidates.find((c) => c.id === leg.selectedTransitCandidateId) ??
+      r.transitCandidates[0];
+    const path = snapPolylineToEndpoints(pick.path, from, to);
+    return {
+      ...r,
+      path,
+      segments: buildTransitPickSegments(legIndex, from, to, pick),
+      durationMinutes: pick.durationMinutes,
+      summary: pick.summary,
+      detail: pick.detail,
+      distanceMeters: pick.distanceMeters,
+      transitCandidates: r.transitCandidates,
+    };
+  }
+
+  return r;
 }
 
 /** 정류장 순서가 바뀐 뒤, 가능한 구간은 이전 legs의 모드·시간을 유지 */
@@ -615,8 +726,78 @@ function ViaDragHandle({
 export default function RouteCreateScreen(): React.JSX.Element {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
+  const { showToast } = useToast();
   const insets = useSafeAreaInsets();
-  const { upsertUserRoute, getUserRoute, deleteUserRoute } = useMockData();
+  const { height: windowH } = useWindowDimensions();
+  const editRouteIdParam = route.params?.editRouteId as string | undefined;
+  const isEditingMyRoute = Boolean(editRouteIdParam);
+  const clampRouteEditSheetHeight = useCallback(
+    (px: number) => {
+      const minH = Math.round(windowH * 0.45);
+      const maxH = Math.round(windowH * 0.94);
+      return Math.min(Math.max(Math.round(px), minH), maxH);
+    },
+    [windowH],
+  );
+  const [routeEditSheetHeightPx, setRouteEditSheetHeightPx] = useState(() => {
+    const h = Dimensions.get('window').height;
+    const minH = Math.round(h * 0.45);
+    const maxH = Math.round(h * 0.94);
+    const v = Math.round(h * 0.5);
+    return Math.min(Math.max(v, minH), maxH);
+  });
+  const sheetEditHeightRef = useRef(routeEditSheetHeightPx);
+  sheetEditHeightRef.current = routeEditSheetHeightPx;
+  const sheetEditPanStartRef = useRef(0);
+  const routeEditSheetPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, g) =>
+          Math.abs(g.dy) > 6 && Math.abs(g.dy) > Math.abs(g.dx) * 0.55,
+        onPanResponderGrant: () => {
+          sheetEditPanStartRef.current = sheetEditHeightRef.current;
+        },
+        onPanResponderMove: (_, g) => {
+          setRouteEditSheetHeightPx(
+            clampRouteEditSheetHeight(sheetEditPanStartRef.current - g.dy),
+          );
+        },
+        onPanResponderRelease: async (_, g) => {
+          const next = clampRouteEditSheetHeight(sheetEditPanStartRef.current - g.dy);
+          setRouteEditSheetHeightPx(next);
+          try {
+            await AsyncStorage.setItem(ROUTE_EDIT_SHEET_HEIGHT_STORAGE_KEY, String(next));
+          } catch {
+            /* ignore */
+          }
+        },
+      }),
+    [clampRouteEditSheetHeight],
+  );
+  useEffect(() => {
+    if (!isEditingMyRoute) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(ROUTE_EDIT_SHEET_HEIGHT_STORAGE_KEY);
+        if (cancelled || raw == null) return;
+        const n = Number(raw);
+        if (!Number.isFinite(n)) return;
+        setRouteEditSheetHeightPx(clampRouteEditSheetHeight(n));
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isEditingMyRoute, clampRouteEditSheetHeight]);
+  useEffect(() => {
+    if (!isEditingMyRoute) return;
+    setRouteEditSheetHeightPx((h) => clampRouteEditSheetHeight(h));
+  }, [windowH, isEditingMyRoute, clampRouteEditSheetHeight]);
+  const { upsertUserRoute, getUserRoute, deleteUserRoute, userSavedRoutes } = useMockData();
 
   const [stops, setStops] = useState<RouteStop[]>(() => ROUTE_CREATE_EMPTY_STOPS.map((s) => ({ ...s })));
 
@@ -632,8 +813,30 @@ export default function RouteCreateScreen(): React.JSX.Element {
   const stopRowRefs = useRef<Record<string, View | null>>({});
   const stopsRef = useRef(stops);
   const legsRef = useRef(legs);
+  const legDirectionsResultsRef = useRef<Array<LegDirectionResult | null>>([]);
   stopsRef.current = stops;
   legsRef.current = legs;
+
+  /** 정류장 수(stops.length-1)와 legs 길이가 어긋나면 마지막 구간 이동수단 UI가 사라짐 → 맞춤 */
+  useEffect(() => {
+    const need = Math.max(0, stops.length - 1);
+    if (need === 0) return;
+    setLegs((prev) => {
+      if (prev.length === need) return prev;
+      if (prev.length > need) return prev.slice(0, need);
+      const next = [...prev];
+      for (let i = next.length; i < need; i++) {
+        const from = stops[i];
+        const to = stops[i + 1];
+        next.push({
+          id: uid(),
+          mode: 'walk',
+          minutes: syntheticLegMinutes(from?.id ?? `s${i}`, to?.id ?? `e${i}`),
+        });
+      }
+      return next;
+    });
+  }, [stops]);
 
   type ViaDragOverlay =
     | null
@@ -679,28 +882,54 @@ export default function RouteCreateScreen(): React.JSX.Element {
   const [searchCenterSource, setSearchCenterSource] = useState<'user' | 'route' | null>(null);
   const [mapRoutePath, setMapRoutePath] = useState<{ latitude: number; longitude: number }[]>([]);
   const [mapRouteSegments, setMapRouteSegments] = useState<MapRouteSegment[]>([]);
+  /** 신규 루트 제작 — 정류장 좌표 없을 때 지도 초기 중심(1회) */
+  const [initialMapCenter, setInitialMapCenter] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const initialMapCenterFetchedRef = useRef(false);
 
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
-  const [chatMessages, setChatMessages] = useState(ROUTE_CREATE_INITIAL_CHAT);
+  const [chatMessages, setChatMessages] = useState<
+    { id: string; from: 'me' | 'other'; name: string; text: string; at: number }[]
+  >([]);
 
-  const [activity, setActivity] = useState<string[]>([
-    '협업 세션 · 변경 사항은 저장 시 함께 반영됩니다.',
-  ]);
   const [editingStop, setEditingStop] = useState<RouteStop | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [routeTitle, setRouteTitle] = useState('새 루트');
+  /** 홈·공유 목록 카드용, 최대 2개 */
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [editingLegId, setEditingLegId] = useState<string | null>(null);
+  const [publishToPublic, setPublishToPublic] = useState(false);
+
+  const syncPublishToPublicFromRoute = useCallback(
+    async (routeId: string, localPublished?: boolean) => {
+      if (localPublished === true) {
+        setPublishToPublic(true);
+        return;
+      }
+      try {
+        const sharingIds = await fetchMySharingCourseIds();
+        setPublishToPublic(
+          sharingIds.some((sid) => String(sid ?? '') === String(routeId)),
+        );
+      } catch {
+        setPublishToPublic(false);
+      }
+    },
+    [],
+  );
 
   const isCollaborative = useMemo(() => {
     if (route.params?.collaborative === true) return true;
     const eid = route.params?.editRouteId as string | undefined;
     if (eid) {
-      const r = getUserRoute(eid);
+      const r = userSavedRoutes.find((x) => String(x.id) === String(eid));
       if (r?.collaborative === true) return true;
     }
     return false;
-  }, [route.params?.collaborative, route.params?.editRouteId, getUserRoute]);
+  }, [route.params?.collaborative, route.params?.editRouteId, userSavedRoutes]);
 
   useFocusEffect(
     useCallback(() => {
@@ -710,26 +939,32 @@ export default function RouteCreateScreen(): React.JSX.Element {
       const seedId = route.params?.seedMockCourseId as string | undefined;
       const collab =
         route.params?.collaborative === true ||
-        (editId ? getUserRoute(editId)?.collaborative === true : false);
+        (editId
+          ? Boolean(
+              userSavedRoutes.find((x) => String(x.id) === String(editId))?.collaborative,
+            )
+          : false);
 
       const applyEmptyRoute = () => {
         setPersistedRouteId(null);
         setRouteTitle("새 루트");
+        setSelectedTags([]);
+        setPublishToPublic(false);
         setStops(ROUTE_CREATE_EMPTY_STOPS.map((s) => ({ ...s })));
         setLegs([]);
-        setActivity([
-          collab
-            ? "협업 세션 · 저장 시 서버에 반영됩니다."
-            : "개인 루트입니다. 저장 시 서버에 반영됩니다.",
-        ]);
-        setChatMessages(collab ? ROUTE_CREATE_INITIAL_CHAT : []);
+        setChatMessages([]);
       };
 
       if (editId) {
-        const r = getUserRoute(editId);
+        const r = userSavedRoutes.find((x) => String(x.id) === String(editId));
         if (r) {
           setPersistedRouteId(r.id);
           setRouteTitle(r.title);
+          setSelectedTags(
+            Array.isArray(r.tags)
+              ? r.tags.map((t) => String(t).trim()).filter(Boolean).slice(0, MAX_ROUTE_TAGS)
+              : [],
+          );
           setStops(r.stops.map((s) => ({ ...s })));
           setLegs(
             r.legs.map((l) => ({
@@ -745,12 +980,8 @@ export default function RouteCreateScreen(): React.JSX.Element {
               distanceMeters: l.distanceMeters,
             })),
           );
-          setActivity([
-            collab
-              ? "공동 수정 루트를 불러왔습니다."
-              : "저장된 개인 루트를 불러왔습니다.",
-          ]);
-          setChatMessages(collab ? ROUTE_CREATE_INITIAL_CHAT : []);
+          setChatMessages([]);
+          void syncPublishToPublicFromRoute(r.id, r.publishedToPublic);
           return () => {
             cancelled = true;
           };
@@ -764,25 +995,25 @@ export default function RouteCreateScreen(): React.JSX.Element {
               const { stops: nextStops, legs: nextLegs } = seedRouteFromMockCourse(detail);
               setPersistedRouteId(editId);
               setRouteTitle(detail.title);
+              const detailTagList = Array.isArray(detail.tags)
+                ? detail.tags.map((t) => String(t).trim()).filter(Boolean).slice(0, MAX_ROUTE_TAGS)
+                : [];
+              const localR = userSavedRoutes.find((x) => String(x.id) === String(editId));
+              const localTagList = Array.isArray(localR?.tags)
+                ? localR!.tags!.map((t) => String(t).trim()).filter(Boolean).slice(0, MAX_ROUTE_TAGS)
+                : [];
+              setSelectedTags(detailTagList.length > 0 ? detailTagList : localTagList);
               setStops(nextStops);
               setLegs(nextLegs);
-              setActivity([
-                collab
-                  ? '서버에 저장된 공동 루트를 불러왔습니다.'
-                  : '서버에 저장된 코스를 불러왔습니다.',
-              ]);
-              setChatMessages(collab ? ROUTE_CREATE_INITIAL_CHAT : []);
+              setChatMessages([]);
+              void syncPublishToPublicFromRoute(editId, localR?.publishedToPublic);
               return;
             }
             applyEmptyRoute();
-            setActivity([
-              '기기에 해당 루트가 없고, 서버에서도 코스 정보를 찾을 수 없습니다.',
-            ]);
             setChatMessages([]);
           } catch {
             if (!cancelled) {
               applyEmptyRoute();
-              setActivity(['코스를 불러오지 못했습니다.']);
               setChatMessages([]);
             }
           }
@@ -799,9 +1030,6 @@ export default function RouteCreateScreen(): React.JSX.Element {
             if (cancelled) return;
             if (!c) {
               applyEmptyRoute();
-              setActivity([
-                "공유 코스를 불러오지 못했습니다. 서버에 등록된 코스인지 확인해 주세요.",
-              ]);
               setChatMessages([]);
               return;
             }
@@ -809,16 +1037,17 @@ export default function RouteCreateScreen(): React.JSX.Element {
               seedRouteFromMockCourse(c);
             setPersistedRouteId(null);
             setRouteTitle(c.title);
+            setSelectedTags(
+              Array.isArray(c.tags)
+                ? c.tags.map((t) => String(t).trim()).filter(Boolean).slice(0, MAX_ROUTE_TAGS)
+                : [],
+            );
             setStops(nextStops);
             setLegs(nextLegs);
-            setActivity([
-              "공유 루트에서 가져온 코스입니다. 수정 후 저장하면 내 루트에 반영됩니다.",
-            ]);
             setChatMessages([]);
           } catch {
             if (!cancelled) {
               applyEmptyRoute();
-              setActivity(["공유 코스를 불러오지 못했습니다."]);
               setChatMessages([]);
             }
           }
@@ -836,9 +1065,41 @@ export default function RouteCreateScreen(): React.JSX.Element {
       route.params?.collaborative,
       route.params?.editRouteId,
       route.params?.seedMockCourseId,
-      getUserRoute,
+      userSavedRoutes,
+      syncPublishToPublicFromRoute,
     ]),
   );
+
+  /** 신규 루트: 화면 진입 시 1회 현재 위치로 지도 중심 */
+  useEffect(() => {
+    const editId = route.params?.editRouteId as string | undefined;
+    const seedId = route.params?.seedMockCourseId as string | undefined;
+    if (editId || seedId || initialMapCenterFetchedRef.current) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (cancelled || status !== 'granted') return;
+        const pos = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+          maximumAge: 120_000,
+        });
+        if (cancelled) return;
+        initialMapCenterFetchedRef.current = true;
+        setInitialMapCenter({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        });
+      } catch {
+        /* 권한·GPS 없으면 MAP_DEFAULT 유지 */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [route.params?.editRouteId, route.params?.seedMockCourseId]);
 
   /** 거리순 정렬 기준: 현재 루트에 찍힌 정류장들의 무게중심 (없으면 거리순 비활성) */
   const searchMapCenter = useMemo(() => {
@@ -860,15 +1121,8 @@ export default function RouteCreateScreen(): React.JSX.Element {
 
   const mapPath = useMemo(() => buildModeAwareMapPath(stops, legs), [stops, legs]);
   const pathStopsForMap = useMemo(() => buildMapPath(stops), [stops]);
-  const mapMarkers = useMemo<MapMarkerPoint[]>(
-    () =>
-      stops
-        .filter((s) => s.lat != null && s.lng != null)
-        .map((s, i) => ({
-          latitude: s.lat as number,
-          longitude: s.lng as number,
-          label: `${i + 1}`,
-        })),
+  const mapMarkers = useMemo(
+    () => buildMapMarkersFromRouteStops(stops),
     [stops],
   );
 
@@ -914,6 +1168,16 @@ export default function RouteCreateScreen(): React.JSX.Element {
     setSearchRadiusMeters(15000);
     setCurrentSearchCenter(null);
     setSearchCenterSource(null);
+  }, []);
+
+  const toggleRouteTag = useCallback((tag: string) => {
+    const t = String(tag).trim();
+    if (!t) return;
+    setSelectedTags((prev) => {
+      if (prev.includes(t)) return prev.filter((x) => x !== t);
+      if (prev.length >= MAX_ROUTE_TAGS) return prev;
+      return [...prev, t];
+    });
   }, []);
 
   useEffect(() => {
@@ -1007,6 +1271,121 @@ export default function RouteCreateScreen(): React.JSX.Element {
     canUseDistanceSort,
   ]);
 
+  const applyMapFromDirectionResults = useCallback(
+    (
+      stopsSnap: RouteStop[],
+      legsSnap: RouteLeg[],
+      results: Array<LegDirectionResult | null>,
+    ) => {
+      const fallbackPath = buildModeAwareMapPath(stopsSnap, legsSnap);
+      const merged: { latitude: number; longitude: number }[] = [];
+      const mergedSegments: MapRouteSegment[] = [];
+      for (let i = 0; i < results.length; i++) {
+        const s = stopsSnap[i];
+        const e = stopsSnap[i + 1];
+        const r = resolveLegDirectionResult(i, legsSnap[i], s, e, results[i]);
+        let seg: { latitude: number; longitude: number }[] = [];
+        if (r?.path && r.path.length >= 2) {
+          seg = r.path;
+        } else if (
+          s?.lat != null &&
+          s?.lng != null &&
+          e?.lat != null &&
+          e?.lng != null
+        ) {
+          seg = [
+            { latitude: s.lat, longitude: s.lng },
+            { latitude: e.lat, longitude: e.lng },
+          ];
+        }
+        if (seg.length < 2) continue;
+        if (merged.length === 0) merged.push(...seg);
+        else merged.push(...seg.slice(1));
+        if (r?.segments && r.segments.length >= 1) mergedSegments.push(...r.segments);
+        else {
+          mergedSegments.push({
+            id: `fallback-${i}`,
+            points: offsetPolylineForLegSeparation(seg, i, 0),
+            color: legsSnap[i]?.mode === 'walk' ? WALK_SEGMENT_COLOR : RIDE_SEGMENT_COLOR,
+            width: legsSnap[i]?.mode === 'walk' ? 4 : 5,
+          });
+        }
+      }
+      const cleaned = dedupePathPoints(merged);
+      setMapRoutePath(cleaned.length > 0 ? cleaned : fallbackPath);
+      setMapRouteSegments(mergedSegments);
+    },
+    [],
+  );
+
+  const selectTransitCandidate = useCallback(
+    (legId: string, candidateId: string) => {
+      setLegs((prev) => {
+        const next = prev.map((l) =>
+          l.id === legId ? { ...l, selectedTransitCandidateId: candidateId } : l,
+        );
+        legsRef.current = next;
+        const pick = next.find((l) => l.id === legId)?.transitCandidates?.find(
+          (c) => c.id === candidateId,
+        );
+        const withMeta = pick
+          ? next.map((l) =>
+              l.id === legId
+                ? {
+                    ...l,
+                    minutes: pick.durationMinutes,
+                    directionsSummary: pick.summary,
+                    directionsDetail: pick.detail,
+                    distanceMeters: pick.distanceMeters,
+                  }
+                : l,
+            )
+          : next;
+        applyMapFromDirectionResults(
+          stopsRef.current,
+          withMeta,
+          legDirectionsResultsRef.current,
+        );
+        return withMeta;
+      });
+    },
+    [applyMapFromDirectionResults],
+  );
+
+  const selectWalkCandidate = useCallback(
+    (legId: string, candidateId: string) => {
+      setLegs((prev) => {
+        const next = prev.map((l) =>
+          l.id === legId ? { ...l, selectedWalkCandidateId: candidateId } : l,
+        );
+        legsRef.current = next;
+        const pick = next.find((l) => l.id === legId)?.walkCandidates?.find(
+          (c) => c.id === candidateId,
+        );
+        const withMeta = pick
+          ? next.map((l) =>
+              l.id === legId
+                ? {
+                    ...l,
+                    minutes: pick.durationMinutes,
+                    directionsSummary: pick.summary,
+                    directionsDetail: pick.detail,
+                    distanceMeters: pick.distanceMeters,
+                  }
+                : l,
+            )
+          : next;
+        applyMapFromDirectionResults(
+          stopsRef.current,
+          withMeta,
+          legDirectionsResultsRef.current,
+        );
+        return withMeta;
+      });
+    },
+    [applyMapFromDirectionResults],
+  );
+
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
@@ -1045,9 +1424,76 @@ export default function RouteCreateScreen(): React.JSX.Element {
               transit: 'transit',
             };
             try {
+              const fromPt = { latitude: s.lat, longitude: s.lng };
+              const toPt = { latitude: e.lat, longitude: e.lng };
+
+              if (leg.mode === 'walk') {
+                const walkCandidates = await fetchWalkingRouteAlternatives({
+                  from: fromPt,
+                  to: toPt,
+                  signal: controller.signal,
+                });
+                const pick =
+                  walkCandidates.find((c) => c.id === leg.selectedWalkCandidateId) ??
+                  walkCandidates[0];
+                const path = snapPolylineToEndpoints(
+                  pick.path,
+                  { lat: s.lat, lng: s.lng },
+                  { lat: e.lat, lng: e.lng },
+                );
+                const segs = buildWalkPickSegments(
+                  i,
+                  { lat: s.lat, lng: s.lng },
+                  { lat: e.lat, lng: e.lng },
+                  path,
+                );
+                return {
+                  path,
+                  segments: segs,
+                  durationMinutes: pick.durationMinutes,
+                  summary: pick.summary,
+                  detail: pick.detail,
+                  distanceMeters: pick.distanceMeters,
+                  walkCandidates,
+                } satisfies LegDirectionResult;
+              }
+
+              if (leg.mode === 'transit') {
+                const transitCandidates = await fetchTransitRouteAlternatives({
+                  from: fromPt,
+                  to: toPt,
+                  transitType: leg.transitType,
+                  signal: controller.signal,
+                });
+                const pick =
+                  transitCandidates.find(
+                    (c) => c.id === leg.selectedTransitCandidateId,
+                  ) ?? transitCandidates[0];
+                const path = snapPolylineToEndpoints(
+                  pick.path,
+                  { lat: s.lat, lng: s.lng },
+                  { lat: e.lat, lng: e.lng },
+                );
+                const segs = buildTransitPickSegments(
+                  i,
+                  { lat: s.lat, lng: s.lng },
+                  { lat: e.lat, lng: e.lng },
+                  pick,
+                );
+                return {
+                  path,
+                  segments: segs,
+                  durationMinutes: pick.durationMinutes,
+                  summary: pick.summary,
+                  detail: pick.detail,
+                  distanceMeters: pick.distanceMeters,
+                  transitCandidates,
+                } satisfies LegDirectionResult;
+              }
+
               const r = await fetchGoogleDirectionsLeg({
-                from: { latitude: s.lat, longitude: s.lng },
-                to: { latitude: e.lat, longitude: e.lng },
+                from: fromPt,
+                to: toPt,
                 mode: modeMap[leg.mode],
                 transitType: leg.mode === 'transit' ? leg.transitType : undefined,
                 signal: controller.signal,
@@ -1095,11 +1541,6 @@ export default function RouteCreateScreen(): React.JSX.Element {
                   `[Directions] leg ${i} OK mode=${leg.mode} provider=${r.source ?? 'google'} pathPoints=${path.length} mapSegs=${segs.length}`,
                 );
               }
-              if (leg.mode === 'walk' && path.length <= 2) {
-                console.warn(
-                  `[Directions] leg ${i} 도보: 서버 폴리라인이 거의 없어 직선에 가깝게 보일 수 있음 (pathPoints=${path.length})`,
-                );
-              }
               return {
                 path,
                 segments: segs,
@@ -1107,7 +1548,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                 summary,
                 detail: r.detail,
                 distanceMeters: r.distanceMeters,
-              };
+              } satisfies LegDirectionResult;
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e);
               const aborted =
@@ -1122,56 +1563,47 @@ export default function RouteCreateScreen(): React.JSX.Element {
           }),
         );
 
-        const merged: { latitude: number; longitude: number }[] = [];
-        const mergedSegments: MapRouteSegment[] = [];
-        for (let i = 0; i < results.length; i++) {
-          const r = results[i];
-          const s = stopsSnap[i];
-          const e = stopsSnap[i + 1];
-          let seg: { latitude: number; longitude: number }[] = [];
-          if (r?.path && r.path.length >= 2) {
-            seg = r.path;
-          } else if (
-            s?.lat != null &&
-            s?.lng != null &&
-            e?.lat != null &&
-            e?.lng != null
-          ) {
-            seg = [
-              { latitude: s.lat, longitude: s.lng },
-              { latitude: e.lat, longitude: e.lng },
-            ];
-          }
-          if (seg.length < 2) continue;
-          if (merged.length === 0) merged.push(...seg);
-          else merged.push(...seg.slice(1));
-          if (r?.segments && r.segments.length >= 1) mergedSegments.push(...r.segments);
-          else {
-            mergedSegments.push({
-              id: `fallback-${i}`,
-              points: offsetPolylineForLegSeparation(seg, i, 0),
-              color: RIDE_SEGMENT_COLOR,
-              width: 5,
-            });
-          }
-        }
-        const cleaned = dedupePathPoints(merged);
+        legDirectionsResultsRef.current = results;
 
         if (cancelled) return;
-        setMapRoutePath(cleaned.length > 0 ? cleaned : fallbackPath);
-        setMapRouteSegments(mergedSegments);
+        applyMapFromDirectionResults(stopsSnap, legsSnap, results);
         setLegs((prev) => {
           if (prev.length !== results.length) return prev;
           return prev.map((leg, i) => {
             const r = results[i];
             if (!r) return leg;
-            return {
+            const next: RouteLeg = {
               ...leg,
               minutes: r.durationMinutes,
               directionsSummary: r.summary,
               directionsDetail: r.detail,
               distanceMeters: r.distanceMeters,
             };
+            if (r.walkCandidates?.length) {
+              next.walkCandidates = r.walkCandidates;
+              const keep =
+                leg.selectedWalkCandidateId &&
+                r.walkCandidates.some((c) => c.id === leg.selectedWalkCandidateId);
+              next.selectedWalkCandidateId = keep
+                ? leg.selectedWalkCandidateId
+                : r.walkCandidates[0].id;
+            } else {
+              delete next.walkCandidates;
+              delete next.selectedWalkCandidateId;
+            }
+            if (r.transitCandidates?.length) {
+              next.transitCandidates = r.transitCandidates;
+              const keepT =
+                leg.selectedTransitCandidateId &&
+                r.transitCandidates.some((c) => c.id === leg.selectedTransitCandidateId);
+              next.selectedTransitCandidateId = keepT
+                ? leg.selectedTransitCandidateId
+                : r.transitCandidates[0].id;
+            } else {
+              delete next.transitCandidates;
+              delete next.selectedTransitCandidateId;
+            }
+            return next;
           });
         });
       } catch {
@@ -1190,11 +1622,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
       cancelled = true;
       controller.abort();
     };
-  }, [directionsRouteKey]);
-
-  const pushActivity = useCallback((line: string) => {
-    setActivity((a) => [line, ...a].slice(0, 8));
-  }, []);
+  }, [directionsRouteKey, applyMapFromDirectionResults]);
 
   const handleViaLift = useCallback((viaId: string, fromViaIndex: number, previewTitle: string) => {
     viaDragCommitLockRef.current = false;
@@ -1324,12 +1752,11 @@ export default function RouteCreateScreen(): React.JSX.Element {
     if (changed) {
       setStops(newStops);
       setLegs(rebuildLegsForStops(newStops, oldStops, legsRef.current));
-      pushActivity('경유 순서를 변경했습니다.');
     }
     requestAnimationFrame(() => {
       viaDragCommitLockRef.current = false;
     });
-  }, [pushActivity]);
+  }, []);
 
   const addStopToRoute = useCallback(() => {
     if (!selectedPlace) return;
@@ -1373,21 +1800,28 @@ export default function RouteCreateScreen(): React.JSX.Element {
             : prev,
         );
       } else if (target.kind === 'end') {
-        setLegs((prev) =>
-          prev.length > 0
-            ? [
-                ...prev.slice(0, -1),
-                {
-                  ...prev[prev.length - 1],
-                  mode: selectedMode,
-                  minutes: m,
-                  transitType: selectedMode === 'transit' ? selectedTransitType : undefined,
-                },
-              ]
-            : prev,
-        );
+        setLegs((prev) => {
+          if (prev.length === 0) {
+            return [
+              {
+                id: uid(),
+                mode: selectedMode,
+                minutes: m,
+                transitType: selectedMode === 'transit' ? selectedTransitType : undefined,
+              },
+            ];
+          }
+          return [
+            ...prev.slice(0, -1),
+            {
+              ...prev[prev.length - 1],
+              mode: selectedMode,
+              minutes: m,
+              transitType: selectedMode === 'transit' ? selectedTransitType : undefined,
+            },
+          ];
+        });
       }
-      pushActivity(`${targetTitle}를 "${selectedPlace.name}"(으)로 변경했습니다.`);
       closeSearch();
       return;
     }
@@ -1409,7 +1843,6 @@ export default function RouteCreateScreen(): React.JSX.Element {
         return [newStart, ...rest];
       });
       setLegs([]);
-      pushActivity(`출발지를 "${selectedPlace.name}"(으)로 설정했습니다.`);
       closeSearch();
       return;
     }
@@ -1437,7 +1870,6 @@ export default function RouteCreateScreen(): React.JSX.Element {
           transitType: selectedMode === 'transit' ? selectedTransitType : undefined,
         },
       ]);
-      pushActivity(`도착지를 "${selectedPlace.name}"(으)로 설정했습니다.`);
       closeSearch();
       return;
     }
@@ -1460,7 +1892,22 @@ export default function RouteCreateScreen(): React.JSX.Element {
     setLegs((prev) => {
       const mm = estimateMinutes(selectedMode, selectedPlace.id);
       if (prev.length === 0) {
-        return [{ id: uid(), mode: selectedMode, minutes: mm }];
+        const firstHalf = Math.max(5, Math.round(mm * 0.45));
+        const secondHalf = Math.max(5, mm - firstHalf);
+        return [
+          {
+            id: uid(),
+            mode: selectedMode,
+            minutes: firstHalf,
+            transitType: selectedMode === 'transit' ? selectedTransitType : undefined,
+          },
+          {
+            id: uid(),
+            mode: selectedMode,
+            minutes: secondHalf,
+            transitType: selectedMode === 'transit' ? selectedTransitType : undefined,
+          },
+        ];
       }
       const last = prev[prev.length - 1];
       const firstHalf = Math.max(5, Math.round(last.minutes * 0.45));
@@ -1482,18 +1929,13 @@ export default function RouteCreateScreen(): React.JSX.Element {
       ];
     });
 
-    pushActivity(
-      isCollaborative
-        ? `경유지 "${selectedPlace.name}"을(를) 추가했습니다. (공동 편집)`
-        : `경유지 "${selectedPlace.name}"을(를) 추가했습니다.`,
-    );
     closeSearch();
-  }, [selectedPlace, searchTargetStopId, selectedTransitType, closeSearch, pushActivity, stops, isCollaborative]);
+  }, [selectedPlace, searchTargetStopId, selectedTransitType, closeSearch, stops, isCollaborative]);
 
   const removeStop = (id: string) => {
     const idx = stops.findIndex((s) => s.id === id);
     if (idx <= 0 || idx >= stops.length - 1) {
-      Alert.alert('알림', '출발·도착지는 삭제할 수 없습니다. 경유지만 삭제할 수 있어요.');
+      Alert.alert('', '출발·도착은 삭제할 수 없습니다.');
       return;
     }
     const target = stops[idx];
@@ -1518,7 +1960,6 @@ export default function RouteCreateScreen(): React.JSX.Element {
             };
             return [...prev.slice(0, i), merged, ...prev.slice(i + 2)];
           });
-          pushActivity('경유지가 삭제되었습니다.');
         },
       },
     ]);
@@ -1544,11 +1985,9 @@ export default function RouteCreateScreen(): React.JSX.Element {
       setEditingStop(null);
       return;
     }
-    const prevTitle = editingStop.title;
     setStops((prev) =>
       prev.map((s) => (s.id === editingStop.id ? { ...s, title: t } : s)),
     );
-    pushActivity(`"${prevTitle}" 이름이 수정되었습니다.`);
     setEditingStop(null);
   };
 
@@ -1561,35 +2000,30 @@ export default function RouteCreateScreen(): React.JSX.Element {
       { id: uid(), from: 'me', name: '나', text: t, at: Date.now() },
     ]);
     setChatInput('');
-    setTimeout(() => {
-      setChatMessages((m) => [
-        ...m,
-        {
-          id: uid(),
-          from: 'other',
-          name: "멤버",
-          text: '확인했어요!',
-          at: Date.now(),
-        },
-      ]);
-    }, 1200);
   };
 
   const saveRoute = async () => {
     if (stops[0]?.lat == null || stops[stops.length - 1]?.lat == null) {
-      Alert.alert(
-        '루트 미완성',
-        '출발지와 도착지를 검색에서 교통수단과 함께 모두 설정한 뒤 저장할 수 있어요.',
-      );
+      showToast('출발·도착을 설정해 주세요');
       return;
     }
     const title = routeTitle.trim() || '새 루트';
     const now = new Date().toISOString();
     const localId = persistedRouteId ?? `ur-${uid()}`;
     const prev = getUserRoute(localId) ?? getUserRoute(persistedRouteId ?? '');
+    const wantPublic = publishToPublic && !isCollaborative;
+    const serverBackedPersisted =
+      persistedRouteId && !String(persistedRouteId).startsWith('ur-')
+        ? String(persistedRouteId)
+        : '';
+    const tagsForSave = selectedTags
+      .map((t) => String(t).trim())
+      .filter(Boolean)
+      .slice(0, MAX_ROUTE_TAGS);
     const routePayload = {
       title,
       collaborative: isCollaborative,
+      ...(tagsForSave.length > 0 ? { tags: tagsForSave } : {}),
       stops: stops.map((s) => ({
         id: s.id,
         kind: s.kind,
@@ -1615,14 +2049,16 @@ export default function RouteCreateScreen(): React.JSX.Element {
       createdAt: prev?.createdAt ?? now,
       updatedAt: now,
       collaborative: isCollaborative,
+      tags: tagsForSave,
       stops: routePayload.stops,
       legs: routePayload.legs,
+      publishedToPublic: wantPublic,
     });
 
     let apiSaved = false;
     let effectiveId = localId;
 
-    if (persistedRouteId) {
+    if (persistedRouteId && !String(persistedRouteId).startsWith('ur-')) {
       apiSaved = await updateMyRoute(persistedRouteId, routePayload);
       effectiveId = persistedRouteId;
       if (apiSaved) {
@@ -1632,8 +2068,10 @@ export default function RouteCreateScreen(): React.JSX.Element {
           createdAt: prev?.createdAt ?? now,
           updatedAt: now,
           collaborative: isCollaborative,
+          tags: tagsForSave,
           stops: routePayload.stops,
           legs: routePayload.legs,
+          publishedToPublic: wantPublic,
         });
       }
     } else {
@@ -1650,21 +2088,29 @@ export default function RouteCreateScreen(): React.JSX.Element {
           createdAt: prev?.createdAt ?? now,
           updatedAt: now,
           collaborative: isCollaborative,
+          tags: tagsForSave,
           stops: routePayload.stops,
           legs: routePayload.legs,
+          publishedToPublic: wantPublic,
         });
       }
     }
 
+    if (
+      apiSaved &&
+      effectiveId &&
+      !String(effectiveId).startsWith('ur-') &&
+      !isCollaborative
+    ) {
+      await setMyCoursePublic(String(effectiveId), wantPublic);
+    }
+
     setPersistedRouteId(effectiveId);
 
-    Alert.alert(
-      apiSaved ? '저장됨' : '저장됨 (로컬 반영)',
-      apiSaved
-        ? `"${title}"\n경유 ${Math.max(0, stops.length - 2)}곳 · 구간 ${legs.length}개 · 총 ${totalMinutes}분\n백엔드와 동기화되었습니다.`
-        : `"${title}"\n경유 ${Math.max(0, stops.length - 2)}곳 · 구간 ${legs.length}개 · 총 ${totalMinutes}분\n백엔드 저장에 실패해 기기에만 반영되었습니다. 네트워크를 확인한 뒤 다시 저장해 주세요.`,
-      [{ text: '확인', onPress: () => navigation.goBack() }],
-    );
+    showToast(apiSaved ? '저장 완료' : '저장하지 못했어요');
+    if (apiSaved) {
+      navigation.goBack();
+    }
   };
 
   const updateLegMode = useCallback((legId: string, mode: TransportMode) => {
@@ -1678,13 +2124,18 @@ export default function RouteCreateScreen(): React.JSX.Element {
               directionsSummary: undefined,
               directionsDetail: undefined,
               distanceMeters: undefined,
+              walkCandidates: undefined,
+              selectedWalkCandidateId: undefined,
+              transitCandidates: undefined,
+              selectedTransitCandidateId: undefined,
             }
           : l,
       ),
     );
-    setEditingLegId(null);
-    pushActivity(`이동 수단을 ${TRANSPORT_LABELS[mode]}(으)로 변경했습니다.`);
-  }, [pushActivity]);
+    if (mode !== 'transit' && mode !== 'walk') {
+      setEditingLegId(null);
+    }
+  }, []);
 
   const updateLegTransitType = useCallback((legId: string, transitType: TransitType) => {
     setLegs((prev) =>
@@ -1696,12 +2147,13 @@ export default function RouteCreateScreen(): React.JSX.Element {
               directionsSummary: undefined,
               directionsDetail: undefined,
               distanceMeters: undefined,
+              transitCandidates: undefined,
+              selectedTransitCandidateId: undefined,
             }
           : l,
       ),
     );
-    pushActivity(`대중교통 유형을 ${TRANSIT_TYPE_LABELS[transitType]}(으)로 변경했습니다.`);
-  }, [pushActivity]);
+  }, []);
 
   const renderStopBadge = (kind: RouteStop['kind']) => {
     if (kind === 'start')
@@ -1747,17 +2199,32 @@ export default function RouteCreateScreen(): React.JSX.Element {
   /** 1개: 마커만, 2개 이상: 선 + 마커 (웹: 카카오 JS / 네이티브: expo-maps) */
   const mapPathProp = mapRoutePath.length >= 1 ? mapRoutePath : undefined;
 
+  const mapViewLat =
+    mapRoutePath[0]?.latitude ??
+    mapPath[0]?.latitude ??
+    initialMapCenter?.latitude ??
+    MAP_DEFAULT_LAT;
+  const mapViewLng =
+    mapRoutePath[0]?.longitude ??
+    mapPath[0]?.longitude ??
+    initialMapCenter?.longitude ??
+    MAP_DEFAULT_LNG;
+
   /** 하단 시트 둥근 모서리 뒤로 지도가 비치도록 살짝 겹침 (rounded-t-3xl ≈ 24px) */
   const ROUTE_SHEET_TOP_OVERLAP = 24;
+  /** 신규 루트: 패널 높이 고정(비율). 수정 모드: 드래그로 조절 가능한 높이 */
+  const createRouteSheetHeightPx = Math.max(260, Math.round(windowH * 0.52));
+  const bottomSheetPanelHeightPx = isEditingMyRoute ? routeEditSheetHeightPx : createRouteSheetHeightPx;
 
   return (
     <View className="flex-1" style={{ backgroundColor: '#4b5563' }}>
       <View style={[StyleSheet.absoluteFillObject, { zIndex: 0 }]} pointerEvents="auto">
         <AppMapView
           style={{ flex: 1 }}
-          latitude={mapRoutePath[0]?.latitude ?? mapPath[0]?.latitude ?? MAP_DEFAULT_LAT}
-          longitude={mapRoutePath[0]?.longitude ?? mapPath[0]?.longitude ?? MAP_DEFAULT_LNG}
+          latitude={mapViewLat}
+          longitude={mapViewLng}
           level={mapRoutePath.length >= 2 ? 6 : 8}
+          fitToRoute={mapRoutePath.length >= 2 || pathStopsForMap.length >= 2}
           path={mapPathProp}
           segments={mapRouteSegments}
           stops={pathStopsForMap.length >= 1 ? pathStopsForMap : undefined}
@@ -1765,11 +2232,15 @@ export default function RouteCreateScreen(): React.JSX.Element {
         />
       </View>
 
-      <SafeAreaView
-        edges={['top']}
-        style={{ flex: 1, zIndex: 1, pointerEvents: 'box-none' }}
+      <View
+        style={{
+          flex: 1,
+          zIndex: 1,
+          pointerEvents: 'box-none',
+          paddingTop: insets.top + 8,
+        }}
       >
-        <View className="flex-row items-center gap-2 px-3 pt-1" pointerEvents="box-none">
+        <View className="flex-row items-center gap-2 px-3" pointerEvents="box-none">
           <Pressable
             onPress={() => navigation.goBack()}
             className="z-10 h-11 w-11 items-center justify-center rounded-full bg-white shadow-md active:opacity-90"
@@ -1804,13 +2275,13 @@ export default function RouteCreateScreen(): React.JSX.Element {
           </Pressable>
         </View>
 
-        <View style={{ flex: 2, minHeight: 120 }} pointerEvents="none" />
+        <View style={{ flex: 1, minHeight: 0 }} pointerEvents="none" />
 
         <View
           className="rounded-t-3xl border-t border-gray-200 bg-white"
           style={{
-            flex: 1,
-            minHeight: 260,
+            height: bottomSheetPanelHeightPx,
+            flexShrink: 0,
             marginTop: -ROUTE_SHEET_TOP_OVERLAP,
             paddingBottom: Math.max(insets.bottom, 12),
             overflow: 'hidden',
@@ -1821,6 +2292,29 @@ export default function RouteCreateScreen(): React.JSX.Element {
             elevation: 20,
           }}
         >
+        {isEditingMyRoute ? (
+          <View
+            {...routeEditSheetPanResponder.panHandlers}
+            style={{
+              paddingVertical: 8,
+              paddingHorizontal: 16,
+              backgroundColor: '#f1f5f9',
+              borderBottomWidth: StyleSheet.hairlineWidth,
+              borderBottomColor: '#e2e8f0',
+            }}
+          >
+            <View
+              style={{
+                alignSelf: 'center',
+                width: 40,
+                height: 5,
+                borderRadius: 3,
+                backgroundColor: '#94a3b8',
+                marginBottom: 6,
+              }}
+            />
+          </View>
+        ) : null}
         <View className="flex-row items-center border-b border-gray-50 px-4 pt-3 pb-2">
           <TextInput
             value={routeTitle}
@@ -1831,8 +2325,36 @@ export default function RouteCreateScreen(): React.JSX.Element {
             maxLength={30}
           />
           <Text className="ml-2 text-xs font-medium text-gray-400">
-            총 {totalMinutes}분
+            {formatOverallDurationLabel(totalMinutes)}
           </Text>
+        </View>
+
+        <View className="border-b border-gray-100 px-4 pb-3">
+          <Text className="mb-1.5 text-[11px] font-semibold text-gray-700">
+            태그 (최대 {MAX_ROUTE_TAGS}개)
+          </Text>
+          <View className="flex-row flex-wrap gap-1.5">
+            {ROUTE_TAG_PRESETS.map((tag) => {
+              const on = selectedTags.includes(tag);
+              const disabled = !on && selectedTags.length >= MAX_ROUTE_TAGS;
+              return (
+                <Pressable
+                  key={tag}
+                  onPress={() => toggleRouteTag(tag)}
+                  disabled={disabled}
+                  className={`rounded-full border px-2.5 py-1 ${
+                    on ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white'
+                  } ${disabled ? 'opacity-40' : ''}`}
+                >
+                  <Text
+                    className={`text-[11px] font-medium ${on ? 'text-blue-800' : 'text-gray-700'}`}
+                  >
+                    {tag}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
 
         <View className="flex-row items-center border-b border-gray-100 px-3 py-2.5">
@@ -1876,6 +2398,23 @@ export default function RouteCreateScreen(): React.JSX.Element {
                 <Text className="text-sm font-bold text-white">채팅</Text>
               </Pressable>
             ) : null}
+            {!isCollaborative ? (
+              <View className="flex-row items-center gap-1.5 rounded-xl bg-slate-100 px-2 py-1">
+                <Ionicons
+                  name={publishToPublic ? 'globe' : 'lock-closed-outline'}
+                  size={16}
+                  color={publishToPublic ? '#2563eb' : '#64748b'}
+                />
+                <Text className="text-[11px] font-semibold text-gray-600">공개</Text>
+                <Switch
+                  value={publishToPublic}
+                  onValueChange={setPublishToPublic}
+                  trackColor={{ false: '#d1d5db', true: '#93c5fd' }}
+                  thumbColor={publishToPublic ? '#2563eb' : '#f4f4f5'}
+                  accessibilityLabel="공개 코스"
+                />
+              </View>
+            ) : null}
             <Pressable
               onPress={saveRoute}
               className="rounded-xl bg-green-600 px-3.5 py-2 active:opacity-90"
@@ -1902,12 +2441,6 @@ export default function RouteCreateScreen(): React.JSX.Element {
             }}
             contentContainerStyle={{ paddingBottom: 16, position: 'relative' }}
           >
-          {activity.length > 0 && (
-            <Text className="py-2 text-center text-[10px] text-gray-400" numberOfLines={2}>
-              {activity[0]}
-            </Text>
-          )}
-
           {stops.map((stop, index) => {
             const isDragRow = viaDrag != null && viaDrag.viaId === stop.id;
             const cardOpacity = isDragRow ? (viaDrag.phase === 'lift' ? 0.4 : 0.18) : 1;
@@ -1985,7 +2518,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                     </View>
                     {stop.kind === 'end' ? (
                       <Text className="mt-1 text-xs font-semibold text-blue-800">
-                        총 예상 소요 {totalMinutes}분
+                        총 예상 소요 {formatOverallDurationLabel(totalMinutes)}
                       </Text>
                     ) : stop.kind === 'via' ? (
                       <Text className="mt-1 text-xs text-gray-500">{stop.timeLine}</Text>
@@ -2017,6 +2550,92 @@ export default function RouteCreateScreen(): React.JSX.Element {
                     ) : null}
                   </Pressable>
                 )}
+                {index < stops.length - 1 &&
+                legs[index]?.mode === 'walk' &&
+                legs[index].walkCandidates &&
+                legs[index].walkCandidates!.length > 1 ? (
+                  <View className="mb-2 ml-12 pl-2 flex-row flex-wrap gap-1.5">
+                    <Text className="mb-0.5 w-full text-[10px] font-semibold text-amber-800">
+                      보도 선택
+                    </Text>
+                    {legs[index].walkCandidates!.map((c) => {
+                      const selectedId =
+                        legs[index].selectedWalkCandidateId ??
+                        legs[index].walkCandidates![0].id;
+                      const on = selectedId === c.id;
+                      return (
+                        <Pressable
+                          key={c.id}
+                          onPress={() => selectWalkCandidate(legs[index].id, c.id)}
+                          className={`rounded-lg border px-2.5 py-1.5 ${
+                            on ? 'border-amber-500 bg-amber-100' : 'border-gray-200 bg-white'
+                          }`}
+                        >
+                          <Text
+                            className={`text-[11px] font-bold ${
+                              on ? 'text-amber-900' : 'text-gray-700'
+                            }`}
+                          >
+                            {c.label}
+                          </Text>
+                          <Text className="text-[10px] text-gray-500">
+                            약 {c.durationMinutes}분
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                ) : null}
+                {index < stops.length - 1 &&
+                legs[index]?.mode === 'transit' &&
+                legs[index].transitCandidates &&
+                legs[index].transitCandidates!.length > 0 ? (
+                  <View className="mb-2 ml-12 pl-2">
+                    <Text className="mb-1.5 text-[10px] font-semibold text-sky-800">
+                      대중교통 경로 ({legs[index].transitCandidates!.length}개)
+                    </Text>
+                    {legs[index].transitCandidates!.map((c) => {
+                      const selectedId =
+                        legs[index].selectedTransitCandidateId ??
+                        legs[index].transitCandidates![0].id;
+                      const on = selectedId === c.id;
+                      return (
+                        <Pressable
+                          key={c.id}
+                          onPress={() => selectTransitCandidate(legs[index].id, c.id)}
+                          className={`mb-1.5 rounded-xl border px-3 py-2.5 ${
+                            on ? 'border-sky-500 bg-sky-50' : 'border-gray-200 bg-white'
+                          }`}
+                        >
+                          <Text
+                            className={`text-[12px] font-bold ${
+                              on ? 'text-sky-900' : 'text-gray-800'
+                            }`}
+                            numberOfLines={2}
+                          >
+                            {c.summary}
+                          </Text>
+                          <View className="mt-1 flex-row flex-wrap gap-2">
+                            {c.departureLabel ? (
+                              <Text className="text-[11px] font-semibold text-emerald-700">
+                                {c.departureLabel}
+                              </Text>
+                            ) : null}
+                            {c.arrivalLabel ? (
+                              <Text className="text-[11px] font-semibold text-blue-700">
+                                {c.arrivalLabel}
+                              </Text>
+                            ) : null}
+                            <Text className="text-[11px] text-gray-600">
+                              약 {c.durationMinutes}분
+                              {c.transfers > 0 ? ` · 환승 ${c.transfers}회` : ''}
+                            </Text>
+                          </View>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                ) : null}
               </View>
             );
           })}
@@ -2044,7 +2663,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
           </ScrollView>
         </View>
       </View>
-      </SafeAreaView>
+      </View>
 
       <Modal visible={viaDrag?.phase === 'drag'} transparent animationType="none" statusBarTranslucent>
         <View style={StyleSheet.absoluteFill} pointerEvents="none">
@@ -2083,16 +2702,21 @@ export default function RouteCreateScreen(): React.JSX.Element {
         </View>
       </Modal>
 
-      <Modal visible={searchOpen} animationType="slide" onRequestClose={closeSearch}>
-        <SafeAreaView className="flex-1 bg-[#f5f5f9]" edges={['top', 'left', 'right']}>
+      <Modal
+        visible={searchOpen}
+        animationType="slide"
+        onRequestClose={closeSearch}
+        statusBarTranslucent={false}
+      >
+        <View
+          className="flex-1 bg-[#f5f5f9]"
+          style={{ paddingTop: insets.top + 8 }}
+        >
           <KeyboardAvoidingView
             className="flex-1"
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           >
-            <View
-              className="flex-row items-center gap-2 border-b border-gray-200 px-3 py-2"
-              style={{ marginTop: 14 }}
-            >
+            <View className="flex-row items-center gap-2 border-b border-gray-200 px-3 py-2.5">
               <Pressable
                 onPress={closeSearch}
                 className="h-10 w-10 items-center justify-center rounded-full bg-white active:opacity-80"
@@ -2118,9 +2742,6 @@ export default function RouteCreateScreen(): React.JSX.Element {
 
             <View className="border-b border-gray-100 bg-white px-3 py-2.5">
               <Text className="mb-1 text-[11px] font-bold text-gray-800">검색 옵션</Text>
-              <Text className="mb-2 text-[10px] leading-4 text-gray-500">
-                카카오 키워드 검색 기준입니다. 정렬·반경·업종을 바꾸면 자동으로 다시 검색합니다.
-              </Text>
               <Text className="mb-1 text-[10px] font-semibold text-gray-600">정렬</Text>
               <View className="mb-2 flex-row gap-2">
                 <Pressable
@@ -2275,7 +2896,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                 </>
             </ScrollView>
           </KeyboardAvoidingView>
-        </SafeAreaView>
+        </View>
       </Modal>
 
       <Modal visible={chatOpen} animationType="slide" transparent>
@@ -2379,11 +3000,54 @@ export default function RouteCreateScreen(): React.JSX.Element {
             })}
             {(() => {
               const leg = legs.find((l) => l.id === editingLegId);
+              if (
+                !leg ||
+                leg.mode !== 'walk' ||
+                !leg.walkCandidates ||
+                leg.walkCandidates.length < 2
+              ) {
+                return null;
+              }
+              return (
+                <View className="mt-2">
+                  <Text className="mb-2 text-sm font-semibold text-gray-800">
+                    보도 경로 선택
+                  </Text>
+                  {leg.walkCandidates.map((c) => {
+                    const selectedId =
+                      leg.selectedWalkCandidateId ?? leg.walkCandidates![0].id;
+                    const on = selectedId === c.id;
+                    return (
+                      <Pressable
+                        key={c.id}
+                        onPress={() =>
+                          editingLegId && selectWalkCandidate(editingLegId, c.id)
+                        }
+                        className={`mb-2 rounded-xl border-2 px-3 py-2.5 ${
+                          on ? 'border-amber-500 bg-amber-50' : 'border-gray-200 bg-gray-50'
+                        }`}
+                      >
+                        <Text
+                          className={`text-sm font-bold ${on ? 'text-amber-900' : 'text-gray-800'}`}
+                        >
+                          {c.label}
+                        </Text>
+                        <Text className="mt-0.5 text-xs text-gray-600">{c.summary}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              );
+            })()}
+            {(() => {
+              const leg = legs.find((l) => l.id === editingLegId);
               if (!leg || leg.mode !== 'transit') return null;
               return (
                 <View className="mt-2">
-                  <Text className="mb-2 text-sm font-semibold text-gray-800">대중교통 종류</Text>
-                  <View className="flex-row gap-2">
+                  <Text className="mb-2 text-sm font-semibold text-gray-800">
+                    대중교통 종류 (필터)
+                  </Text>
+                  <View className="mb-3 flex-row gap-2">
                     {(Object.keys(TRANSIT_TYPE_LABELS) as TransitType[]).map((tt) => {
                       const on = (leg.transitType ?? 'subway') === tt;
                       return (
@@ -2401,6 +3065,58 @@ export default function RouteCreateScreen(): React.JSX.Element {
                       );
                     })}
                   </View>
+                  <Text className="mb-2 text-sm font-semibold text-gray-800">
+                    이용 가능한 경로
+                  </Text>
+                  <ScrollView className="max-h-56" nestedScrollEnabled>
+                    {leg.transitCandidates && leg.transitCandidates.length > 0 ? (
+                      leg.transitCandidates.map((c) => {
+                        const selectedId =
+                          leg.selectedTransitCandidateId ?? leg.transitCandidates![0].id;
+                        const on = selectedId === c.id;
+                        return (
+                          <Pressable
+                            key={c.id}
+                            onPress={() =>
+                              editingLegId && selectTransitCandidate(editingLegId, c.id)
+                            }
+                            className={`mb-2 rounded-xl border-2 px-3 py-3 ${
+                              on ? 'border-sky-500 bg-sky-50' : 'border-gray-200 bg-gray-50'
+                            }`}
+                          >
+                            <Text
+                              className={`text-sm font-bold ${on ? 'text-sky-900' : 'text-gray-900'}`}
+                            >
+                              {c.summary}
+                            </Text>
+                            <View className="mt-1.5 flex-row flex-wrap gap-x-3 gap-y-1">
+                              {c.departureLabel ? (
+                                <Text className="text-xs font-semibold text-emerald-700">
+                                  {c.departureLabel}
+                                </Text>
+                              ) : null}
+                              {c.arrivalLabel ? (
+                                <Text className="text-xs font-semibold text-blue-700">
+                                  {c.arrivalLabel}
+                                </Text>
+                              ) : null}
+                            </View>
+                            <Text className="mt-1 text-xs text-gray-600">
+                              약 {c.durationMinutes}분
+                              {c.transfers > 0 ? ` · 환승 ${c.transfers}회` : ''}
+                              {c.distanceMeters > 0
+                                ? ` · ${c.distanceMeters < 1000 ? `${c.distanceMeters}m` : `${(c.distanceMeters / 1000).toFixed(1)}km`}`
+                                : ''}
+                            </Text>
+                          </Pressable>
+                        );
+                      })
+                    ) : (
+                      <Text className="py-4 text-center text-xs text-gray-500">
+                        대중교통 경로를 조회하는 중이거나, 이 구간에 승차 정보가 없습니다.
+                      </Text>
+                    )}
+                  </ScrollView>
                 </View>
               );
             })()}

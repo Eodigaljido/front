@@ -1,6 +1,10 @@
 // @ts-nocheck
 import { instance } from "./axios";
 import type { CourseItem } from "../data/mockData";
+import {
+  resolveCourseRegionLabel,
+  sanitizeCourseCategory,
+} from "../utils/inferCourseRegionLabel";
 
 type ApiCourseLike = {
   id?: string | number;
@@ -77,6 +81,8 @@ type ApiCourseLike = {
     text?: string;
     date?: string;
   }>;
+  /** 코스 태그 (서버·클라이언트 공통, 카드에 최대 2개 표시) */
+  tags?: string[];
 };
 
 /** Swagger UI 기준 확정 경로만 사용 (빈 목록 시 fallback 호출로 404 로그가 쌓이지 않게 함) */
@@ -124,6 +130,33 @@ function asArray<T>(value: T[] | null | undefined): T[] {
   return Array.isArray(value) ? value : [];
 }
 
+function pickTagsFromApiRaw(raw: ApiCourseLike | Record<string, unknown>): string[] {
+  if (!raw || typeof raw !== "object") return [];
+  const anyRaw = raw as Record<string, unknown>;
+  const collect = (arr: unknown): string[] =>
+    Array.isArray(arr)
+      ? arr
+          .map((t) => String(t ?? "").trim())
+          .filter((s) => s.length > 0)
+      : [];
+  const direct = anyRaw.tags;
+  if (Array.isArray(direct)) {
+    return collect(direct).slice(0, 4);
+  }
+  if (typeof direct === "string" && direct.trim()) {
+    return direct
+      .split(/[,#|\s]+/u)
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .slice(0, 4);
+  }
+  const list = anyRaw.tagList;
+  if (Array.isArray(list)) return collect(list).slice(0, 4);
+  const labels = anyRaw.labels ?? anyRaw.courseTags ?? anyRaw.hashTags;
+  if (Array.isArray(labels)) return collect(labels).slice(0, 4);
+  return [];
+}
+
 /** API·스냅샷 혼합 — 공유 코스 저장 횟수 */
 export function pickCourseSaveCount(raw: ApiCourseLike | CourseItem | null | undefined): number {
   if (!raw || typeof raw !== "object") return 0;
@@ -158,11 +191,32 @@ export function normalizeCourseList(
       Array.isArray(c.routeSteps) && c.routeSteps.length > 0
         ? c.routeSteps
         : [{ id: `fb-${idx}`, name: "경유지", stayMinutes: 30 }];
+    const tags = Array.isArray(c.tags)
+      ? c.tags.map((t) => String(t).trim()).filter(Boolean).slice(0, 2)
+      : [];
+    const metaBad = !c.meta || String(c.meta).trim() === "" || c.meta === "API 연동 코스";
+    const catSan = sanitizeCourseCategory(c.category);
+    const meta =
+      tags.length > 0
+        ? tags.join(" · ")
+        : metaBad
+          ? catSan || "코스"
+          : c.meta;
+    const stepNames = steps
+      .map((s) => String(s?.name ?? "").trim())
+      .filter(Boolean);
+    const region = resolveCourseRegionLabel(
+      c.region,
+      String(c.departure ?? "").trim(),
+      String(c.arrival ?? "").trim(),
+      stepNames,
+    );
     return {
       ...c,
-      meta: c.meta ?? "API 연동 코스",
-      category: c.category ?? "기타",
-      region: c.region ?? "지역 미정",
+      tags,
+      meta,
+      category: catSan,
+      region,
       departure: c.departure ?? "출발지",
       arrival: c.arrival ?? "도착지",
       routeSteps: steps,
@@ -174,7 +228,26 @@ export function normalizeCourseList(
 
 function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
   if (!raw || typeof raw !== "object") {
-    return toCourseItem({}, idx);
+    return {
+      id: `api-${idx}`,
+      title: "코스 제목",
+      meta: "코스",
+      tags: [],
+      departure: "출발지",
+      arrival: "도착지",
+      thumbnail: null,
+      category: "",
+      region: "",
+      createdAt: new Date().toISOString().slice(0, 10),
+      views: 0,
+      saveCount: 0,
+      overallDurationMinutes: 120,
+      rating: 4.5,
+      reviewCount: 0,
+      routeSteps: [{ id: `s-${idx}-0`, name: "경유지", stayMinutes: 30 }],
+      routeLegs: [],
+      reviews: [],
+    };
   }
   /** 목록은 `id`, 상세는 `uuid` — Swagger 기준 `id` 우선 */
   const rootId =
@@ -226,7 +299,7 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
     mode:
       l.mode === "walk" || l.mode === "car" || l.mode === "bike" || l.mode === "transit"
         ? l.mode
-        : "transit",
+        : "walk",
     minutes: Math.max(1, Number(l.minutes ?? 10)),
     transitType: l.transitType,
   }));
@@ -249,16 +322,39 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
   const depField = String(raw.departure ?? raw.startPlace ?? "").trim();
   const arrField = String(raw.arrival ?? raw.endPlace ?? "").trim();
 
+  const tags = pickTagsFromApiRaw(raw).slice(0, 2);
+  const rawMeta = String(raw.meta ?? raw.description ?? "").trim();
+  const meta =
+    tags.length > 0
+      ? tags.join(" · ")
+      : rawMeta && rawMeta !== "API 연동 코스"
+        ? rawMeta
+        : sanitizeCourseCategory(raw.category) || "코스";
+
+  const departureOut = depField || depFromKind || steps[0]?.name || "출발지";
+  const arrivalOut =
+    arrField || arrFromKind || steps[steps.length - 1]?.name || "도착지";
+  const stepNamesForRegion = steps
+    .map((s) => String(s?.name ?? "").trim())
+    .filter(Boolean);
+  const regionResolved = resolveCourseRegionLabel(
+    raw.region,
+    departureOut,
+    arrivalOut,
+    stepNamesForRegion,
+  );
+  const categoryResolved = sanitizeCourseCategory(raw.category);
+
   return {
     id: rootId,
     title: raw.title ?? raw.name ?? "코스 제목",
-    meta: raw.meta ?? raw.description ?? "API 연동 코스",
-    departure: depField || depFromKind || steps[0]?.name || "출발지",
-    arrival:
-      arrField || arrFromKind || steps[steps.length - 1]?.name || "도착지",
+    meta,
+    tags,
+    departure: departureOut,
+    arrival: arrivalOut,
     thumbnail: raw.thumbnail ?? raw.imageUrl ?? null,
-    category: raw.category ?? "기타",
-    region: raw.region ?? "지역 미정",
+    category: categoryResolved,
+    region: regionResolved,
     createdAt: raw.createdAt ?? new Date().toISOString().slice(0, 10),
     views: Number(raw.views ?? 0),
     saveCount: pickCourseSaveCount(raw),
@@ -542,7 +638,7 @@ export async function disableMyCourseSharing(courseId: string): Promise<boolean>
 
 /**
  * Swagger 공개 플로우: status → PUBLISHED 후 share 활성화
- * (공유 코스 탭 노출 + 팔로잉 소식)
+ * (공유 코스 탭 노출 + 친구 소식)
  */
 export async function publishMyCourseToPublic(courseId: string): Promise<boolean> {
   const id = normalizeServerCourseId(courseId);
@@ -563,6 +659,8 @@ export async function unpublishMyCourseFromPublic(courseId: string): Promise<boo
 export type UpsertMyRoutePayload = {
   title: string;
   collaborative: boolean;
+  /** 최대 2개 — 홈·공유 목록 카드에 표시 */
+  tags?: string[];
   stops: Array<{
     id: string;
     kind: "start" | "via" | "end";
@@ -617,12 +715,18 @@ export async function updateMyRoute(
 export function buildUpsertPayloadFromUserRoute(route: {
   title: string;
   collaborative?: boolean;
+  tags?: string[];
   stops: UpsertMyRoutePayload["stops"];
   legs: UpsertMyRoutePayload["legs"];
 }): UpsertMyRoutePayload {
+  const tags = (route.tags ?? [])
+    .map((t) => String(t).trim())
+    .filter(Boolean)
+    .slice(0, 2);
   return {
     title: route.title,
     collaborative: route.collaborative === true,
+    ...(tags.length > 0 ? { tags } : {}),
     stops: route.stops.map((s) => ({
       id: s.id,
       kind: s.kind,
@@ -636,7 +740,7 @@ export function buildUpsertPayloadFromUserRoute(route: {
       mode:
         l.mode === "walk" || l.mode === "car" || l.mode === "bike" || l.mode === "transit"
           ? l.mode
-          : "transit",
+          : "walk",
       minutes: Math.max(1, Number(l.minutes ?? 10)),
       transitType: l.transitType,
       directionsSummary: l.directionsSummary,
@@ -651,6 +755,7 @@ export async function syncUserRouteToServer(route: {
   id: string;
   title: string;
   collaborative?: boolean;
+  tags?: string[];
   stops: UpsertMyRoutePayload["stops"];
   legs: UpsertMyRoutePayload["legs"];
 }): Promise<string | null> {
@@ -673,6 +778,7 @@ export async function convertPersonalCourseToPublic(route: {
   id: string;
   title: string;
   collaborative?: boolean;
+  tags?: string[];
   stops: UpsertMyRoutePayload["stops"];
   legs: UpsertMyRoutePayload["legs"];
 }): Promise<ConvertToPublicResult> {
