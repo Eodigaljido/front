@@ -12,7 +12,7 @@ module.exports = ({ config }) => ({
       String(process.env.TEST_LOGIN ?? process.env.EXPO_PUBLIC_TEST_LOGIN ?? '')
         .trim(),
   },
-  plugins: [...(config.plugins ?? []), 'expo-secure-store'],
+  plugins: [...(config.plugins ?? []), 'expo-secure-store', '@react-native-community/datetimepicker'],
   android: {
     ...config.android,
     config: {
