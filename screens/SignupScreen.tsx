@@ -1,4 +1,4 @@
-  import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -16,9 +16,30 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
 import { usePasswordMask } from '../hooks/usePasswordMask';
-import { sendPhoneCode, verifyPhoneCode } from '../api/auth';
+import { sendPhoneCode, verifyPhoneCode, kakaoOAuth, googleOAuth } from '../api/auth';
 import { useAuthStore } from '../store/authStore';
 import { OtpModal } from '../components/OtpModal';
+import OAuthWebViewModal from '../components/OAuthWebViewModal';
+import { tokenStorage } from '../utils/tokenStorage';
+import { getOnboardingStatus } from '../api/onboard';
+
+const KAKAO_REST_KEY = process.env.EXPO_PUBLIC_KAKAO_REST_API_KEY ?? '';
+const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID ?? '';
+const KAKAO_REDIRECT_URI = process.env.EXPO_PUBLIC_OAUTH_REDIRECT_URI ?? '';
+const GOOGLE_REDIRECT_URI = process.env.EXPO_PUBLIC_OAUTH_REDIRECT_URI ?? '';
+
+const KAKAO_AUTH_URL =
+  `https://kauth.kakao.com/oauth/authorize` +
+  `?client_id=${KAKAO_REST_KEY}` +
+  `&redirect_uri=${encodeURIComponent(KAKAO_REDIRECT_URI)}` +
+  `&response_type=code`;
+
+const GOOGLE_AUTH_URL =
+  `https://accounts.google.com/o/oauth2/v2/auth` +
+  `?client_id=${GOOGLE_CLIENT_ID}` +
+  `&redirect_uri=${encodeURIComponent(GOOGLE_REDIRECT_URI)}` +
+  `&response_type=code` +
+  `&scope=${encodeURIComponent('email profile')}`;
 
 type SignupNavProp = NativeStackNavigationProp<RootStackParamList, 'Signup'>;
 
@@ -55,8 +76,11 @@ export default function SignupScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isPhoneVerified, setIsPhoneVerified] = useState(false);
+  const [oauthModal, setOauthModal] = useState<'kakao' | 'google' | null>(null);
   const [otpExpiry, setOtpExpiry] = useState(TIMER_SECONDS);
   const registerStore = useAuthStore((s: ReturnType<typeof useAuthStore.getState>) => s.register);
+  const setTokens = useAuthStore(s => s.setTokens);
+  const setUser = useAuthStore(s => s.setUser);
 
   const userIdRef = useRef<TextInput>(null);
   const emailRef = useRef<TextInput>(null);
@@ -162,6 +186,43 @@ export default function SignupScreen() {
     } catch (err: any) {
       const msg = err?.response?.data?.message ?? '회원가입에 실패했습니다.';
       Alert.alert('회원가입 실패', msg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleOAuthCode = async (provider: 'kakao' | 'google', code: string) => {
+    setOauthModal(null);
+    setIsLoading(true);
+    try {
+      const redirectUri = provider === 'kakao' ? KAKAO_REDIRECT_URI : GOOGLE_REDIRECT_URI;
+      const res =
+        provider === 'kakao'
+          ? await kakaoOAuth({ code, redirectUri })
+          : await googleOAuth({ code, redirectUri });
+
+      await tokenStorage.saveTokens(res.accessToken, res.refreshToken);
+      await tokenStorage.saveUserUuid(res.user.uuid);
+      await setTokens(res.accessToken, res.refreshToken);
+      setUser(res.user);
+
+      const { completed } = await getOnboardingStatus(res.accessToken);
+      if (!completed) {
+        navigation.reset({ index: 0, routes: [{ name: 'OnBoardStart' }] });
+      } else {
+        navigation.reset({ index: 0, routes: [{ name: 'Tabs' }] });
+      }
+    } catch (err: any) {
+      const status = err?.response?.status;
+      if (status === 409) {
+        Alert.alert(
+          '이미 가입된 계정',
+          '동일한 이메일로 가입된 계정이 있습니다. 기존 계정으로 로그인해주세요.',
+          [{ text: '확인', onPress: () => navigation.navigate('Login') }],
+        );
+      } else {
+        Alert.alert('오류', '소셜 로그인에 실패했습니다. 다시 시도해주세요.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -360,6 +421,8 @@ export default function SignupScreen() {
           <View className="flex-row gap-3 mt-8">
             <TouchableOpacity
               activeOpacity={0.7}
+              disabled={isLoading}
+              onPress={() => setOauthModal('kakao')}
               className="flex-1 flex-row items-center justify-center gap-2 h-12 bg-[#ffeb00] rounded-2xl"
             >
               <Image
@@ -371,6 +434,8 @@ export default function SignupScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.7}
+              disabled={isLoading}
+              onPress={() => setOauthModal('google')}
               className="flex-row items-center justify-center flex-1 h-12 gap-2 bg-white border border-gray-200 rounded-2xl"
             >
               <Image
@@ -402,6 +467,25 @@ export default function SignupScreen() {
           return res.expiresInSeconds;
         }}
       />
+
+      {oauthModal === 'kakao' && (
+        <OAuthWebViewModal
+          visible
+          authUrl={KAKAO_AUTH_URL}
+          redirectUri={KAKAO_REDIRECT_URI}
+          onCode={code => handleOAuthCode('kakao', code)}
+          onClose={() => setOauthModal(null)}
+        />
+      )}
+      {oauthModal === 'google' && (
+        <OAuthWebViewModal
+          visible
+          authUrl={GOOGLE_AUTH_URL}
+          redirectUri={GOOGLE_REDIRECT_URI}
+          onCode={code => handleOAuthCode('google', code)}
+          onClose={() => setOauthModal(null)}
+        />
+      )}
     </SafeAreaView>
   );
 }
