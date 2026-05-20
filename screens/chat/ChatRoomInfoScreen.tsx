@@ -33,11 +33,7 @@ import {
 } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 
-import {
-  deleteChatRoom,
-  leaveChatRoom,
-  renameChatRoom,
-} from "@/api/chat/index";
+import { deleteChatRoom, leaveChatRoom, renameChatRoom } from "@/api/chat/chat";
 import { useAuthStore } from "@/store/authStore";
 
 type ChatRoomInfoRouteProp = RouteProp<
@@ -315,11 +311,6 @@ export default function ChatRoomInfoScreen() {
               <Text style={s.nameEditPillText}>수정</Text>
             </View>
           </TouchableOpacity>
-
-          <View style={s.memberCountPill}>
-            <Users color="#6B7280" size={13} />
-            <Text style={s.memberCountText}>{members.length}명</Text>
-          </View>
         </View>
 
         {/* 멤버 카드 */}
