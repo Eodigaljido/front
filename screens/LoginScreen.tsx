@@ -22,6 +22,27 @@ import {
   TEST_AUTO_LOGIN_IDENTIFIER,
   TEST_AUTO_LOGIN_PASSWORD,
 } from '../constants/testLogin';
+import { kakaoOAuth, googleOAuth } from '../api/auth';
+import OAuthWebViewModal from '../components/OAuthWebViewModal';
+import { tokenStorage } from '../utils/tokenStorage';
+
+const KAKAO_REST_KEY = process.env.EXPO_PUBLIC_KAKAO_REST_API_KEY ?? '';
+const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID ?? '';
+const KAKAO_REDIRECT_URI = process.env.EXPO_PUBLIC_OAUTH_REDIRECT_URI ?? '';
+const GOOGLE_REDIRECT_URI = process.env.EXPO_PUBLIC_OAUTH_REDIRECT_URI ?? '';
+
+const KAKAO_AUTH_URL =
+  `https://kauth.kakao.com/oauth/authorize` +
+  `?client_id=${KAKAO_REST_KEY}` +
+  `&redirect_uri=${encodeURIComponent(KAKAO_REDIRECT_URI)}` +
+  `&response_type=code`;
+
+const GOOGLE_AUTH_URL =
+  `https://accounts.google.com/o/oauth2/v2/auth` +
+  `?client_id=${GOOGLE_CLIENT_ID}` +
+  `&redirect_uri=${encodeURIComponent(GOOGLE_REDIRECT_URI)}` +
+  `&response_type=code` +
+  `&scope=${encodeURIComponent('email profile')}`;
 
 type LoginNavProp = NativeStackNavigationProp<RootStackParamList, 'Login'>;
 
@@ -30,9 +51,41 @@ export default function LoginScreen() {
   const [identifier, setIdentifier] = useState('');
   const [loginError, setLoginError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [oauthModal, setOauthModal] = useState<'kakao' | 'google' | null>(null);
   const { displayPassword, realPasswordRef, handleInput, maskAll } = usePasswordMask();
   const loginStore = useAuthStore(s => s.login);
+  const setTokens = useAuthStore(s => s.setTokens);
+  const setUser = useAuthStore(s => s.setUser);
   const passwordRef = useRef<TextInput>(null);
+
+  async function handleOAuthCode(provider: 'kakao' | 'google', code: string) {
+    setOauthModal(null);
+    setIsLoading(true);
+    setLoginError('');
+    try {
+      const redirectUri = provider === 'kakao' ? KAKAO_REDIRECT_URI : GOOGLE_REDIRECT_URI;
+      const res =
+        provider === 'kakao'
+          ? await kakaoOAuth({ code, redirectUri })
+          : await googleOAuth({ code, redirectUri });
+
+      await tokenStorage.saveTokens(res.accessToken, res.refreshToken);
+      await tokenStorage.saveUserUuid(res.user.uuid);
+      await setTokens(res.accessToken, res.refreshToken);
+      setUser(res.user);
+
+      const { completed } = await getOnboardingStatus(res.accessToken);
+      if (!completed) {
+        navigation.reset({ index: 0, routes: [{ name: 'OnBoardStart' }] });
+      } else {
+        navigation.reset({ index: 0, routes: [{ name: 'Tabs' }] });
+      }
+    } catch {
+      setLoginError('소셜 로그인에 실패했습니다. 다시 시도해주세요.');
+    } finally {
+      setIsLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (!isTestAutoLoginEnabled()) return;
@@ -184,6 +237,8 @@ export default function LoginScreen() {
             <View className="flex-row gap-4 mt-6">
               <TouchableOpacity
                 activeOpacity={0.7}
+                disabled={isLoading}
+                onPress={() => setOauthModal('kakao')}
                 className="items-center justify-center w-12 h-12 bg-[#ffeb00] rounded-full overflow-hidden"
               >
                 <Image
@@ -194,6 +249,8 @@ export default function LoginScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 activeOpacity={0.7}
+                disabled={isLoading}
+                onPress={() => setOauthModal('google')}
                 className="items-center justify-center w-12 h-12 bg-white border border-gray-200 rounded-full"
               >
                 <Image
@@ -206,6 +263,25 @@ export default function LoginScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {oauthModal === 'kakao' && (
+        <OAuthWebViewModal
+          visible
+          authUrl={KAKAO_AUTH_URL}
+          redirectUri={KAKAO_REDIRECT_URI}
+          onCode={code => handleOAuthCode('kakao', code)}
+          onClose={() => setOauthModal(null)}
+        />
+      )}
+      {oauthModal === 'google' && (
+        <OAuthWebViewModal
+          visible
+          authUrl={GOOGLE_AUTH_URL}
+          redirectUri={GOOGLE_REDIRECT_URI}
+          onCode={code => handleOAuthCode('google', code)}
+          onClose={() => setOauthModal(null)}
+        />
+      )}
     </SafeAreaView>
   );
 }
