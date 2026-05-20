@@ -27,14 +27,12 @@ export async function sharePublicCourse(opts: {
   const courseId = String(opts.courseId ?? "").trim();
   const title = String(opts.title ?? "코스").trim() || "코스";
   if (!courseId) {
-    Alert.alert("공유 불가", "코스 정보를 찾을 수 없습니다.");
+    Alert.alert('', '코스 ID 없음');
     return;
   }
 
   const url = buildPublicCourseShareUrl(courseId);
-  const message = url
-    ? `「${title}」 코스를 어디갈지도에서 확인해 보세요!\n${url}`
-    : `「${title}」 코스를 어디갈지도에서 확인해 보세요!\n(코스 ID: ${courseId})`;
+  const message = url ? `${title}\n${url}` : `${title}\nID: ${courseId}`;
 
   try {
     const result = await Share.share(
@@ -50,6 +48,6 @@ export async function sharePublicCourse(opts: {
     if (msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("dismiss")) {
       return;
     }
-    Alert.alert("공유 실패", "공유를 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    Alert.alert('', '공유 실패');
   }
 }

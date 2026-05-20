@@ -12,6 +12,7 @@ import { TEXT_STYLE } from './styles/textStyles';
 
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { MockDataProvider } from './context/MockDataContext';
+import { ToastProvider } from './context/ToastContext';
 import HomeScreen from './screens/HomeScreen';
 import SharedRouteScreen from './screens/SharedRouteScreen';
 import MyRouteScreen from './screens/MyRouteScreen';
@@ -34,6 +35,7 @@ import ProfileSettingsScreen from './screens/ProfileSettingsScreen';
 import FindAccountScreen from './screens/FindAccountScreen';
 import FollowingNewsScreen from './screens/FollowingNewsScreen';
 import NotificationCenterScreen from './screens/NotificationCenterScreen';
+import CourseGuideScreen from './screens/CourseGuideScreen';
 
 export type RootTabParamList = {
   Home: undefined;
@@ -100,6 +102,8 @@ export type RootStackParamList = {
   BottomSheet: undefined;
   FollowingNews: undefined;
   NotificationCenter: undefined;
+  /** 내 코스 카드 「안내」 — 지도 중심, 턴바이턴 없음 (방향성.md) */
+  CourseGuide: { courseId: string; courseTitle?: string };
 };
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
@@ -275,39 +279,42 @@ export default function App(): React.JSX.Element {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <MockDataProvider>
-          <NavigationContainer>
-            <StatusBar style="auto" />
-            <Stack.Navigator
-              screenOptions={{ headerShown: false }}
-              initialRouteName={isAuthenticated ? 'Tabs' : 'Login'}
-            >
-              <Stack.Screen name="Login" component={LoginScreen} />
-              <Stack.Screen name="Signup" component={SignupScreen} />
-              <Stack.Screen name="Tabs" component={TabNavigator} />
-              <Stack.Screen name="SharedRouteStack" component={SharedRouteScreen} />
-              <Stack.Screen name="MyRouteStack" component={MyRouteScreen} />
-              <Stack.Screen name="RouteCreate" component={RouteCreateScreen} />
-              <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
-              <Stack.Screen name="OnBoardStart" component={OnBoardStart} />
-              <Stack.Screen name="AreaOnBoard" component={AreaOnBoard} />
-              <Stack.Screen name="AgeOnBoard" component={AgeOnBoard} />
-              <Stack.Screen name="ActivityOnBoard" component={ActivityOnBoard} />
-              <Stack.Screen name="GenderOnBoard" component={GenderOnBoard} />
-              <Stack.Screen name="OnBoardEnd" component={OnBoardEnd} />
-              <Stack.Screen name="FindAccount" component={FindAccountScreen} />
-              <Stack.Screen name="ChatCreatingScreen" component={ChatCreatingScreen} />
-              <Stack.Screen name="FollowingNews" component={FollowingNewsScreen} />
-              <Stack.Screen
-                name="NotificationCenter"
-                component={NotificationCenterScreen}
-              />
-              {/* <Stack.Screen name="Start" component={StartScreen} /> */}
-              <Stack.Screen name="ChatRoomScreen" component={ChatRoomScreen} />
-              <Stack.Screen name="ChatRoomInfoScreen" component={ChatRoomInfoScreen} />
-            </Stack.Navigator>
-          </NavigationContainer>
-        </MockDataProvider>
+        <ToastProvider>
+          <MockDataProvider>
+            <NavigationContainer>
+              <StatusBar style="auto" />
+              <Stack.Navigator
+                screenOptions={{ headerShown: false }}
+                initialRouteName={isAuthenticated ? 'Tabs' : 'Login'}
+              >
+                <Stack.Screen name="Login" component={LoginScreen} />
+                <Stack.Screen name="Signup" component={SignupScreen} />
+                <Stack.Screen name="Tabs" component={TabNavigator} />
+                <Stack.Screen name="SharedRouteStack" component={SharedRouteScreen} />
+                <Stack.Screen name="MyRouteStack" component={MyRouteScreen} />
+                <Stack.Screen name="RouteCreate" component={RouteCreateScreen} />
+                <Stack.Screen name="CourseGuide" component={CourseGuideScreen} />
+                <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
+                <Stack.Screen name="OnBoardStart" component={OnBoardStart} />
+                <Stack.Screen name="AreaOnBoard" component={AreaOnBoard} />
+                <Stack.Screen name="AgeOnBoard" component={AgeOnBoard} />
+                <Stack.Screen name="ActivityOnBoard" component={ActivityOnBoard} />
+                <Stack.Screen name="GenderOnBoard" component={GenderOnBoard} />
+                <Stack.Screen name="OnBoardEnd" component={OnBoardEnd} />
+                <Stack.Screen name="FindAccount" component={FindAccountScreen} />
+                <Stack.Screen name="ChatCreatingScreen" component={ChatCreatingScreen} />
+                <Stack.Screen name="FollowingNews" component={FollowingNewsScreen} />
+                <Stack.Screen
+                  name="NotificationCenter"
+                  component={NotificationCenterScreen}
+                />
+                {/* <Stack.Screen name="Start" component={StartScreen} /> */}
+                <Stack.Screen name="ChatRoomScreen" component={ChatRoomScreen} />
+                <Stack.Screen name="ChatRoomInfoScreen" component={ChatRoomInfoScreen} />
+              </Stack.Navigator>
+            </NavigationContainer>
+          </MockDataProvider>
+        </ToastProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

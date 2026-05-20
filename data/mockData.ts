@@ -32,6 +32,8 @@ export type CourseItem = {
   id: string;
   title: string;
   meta: string;
+  /** 홈·공유 루트 카드 등에 표시 (최대 2개) */
+  tags: string[];
   departure: string;
   arrival: string;
   thumbnail: string | null;

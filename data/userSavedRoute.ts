@@ -1,4 +1,5 @@
 import type { CourseItem } from './mockData';
+import { resolveCourseRegionLabel } from '../utils/inferCourseRegionLabel';
 
 /** 루트 제작 화면에서 저장되는 정류장 (목·로컬) */
 export type UserSavedRouteStop = {
@@ -29,8 +30,12 @@ export type UserSavedRoute = {
   updatedAt: string;
   stops: UserSavedRouteStop[];
   legs: UserSavedRouteLeg[];
+  /** 홈·목록용 태그, 최대 2개 */
+  tags?: string[];
   /** true면 공동 수정(프로필·채팅 UI). 개인 루트는 false/미설정 */
   collaborative?: boolean;
+  /** 사용자가 공개(공유)로 둔 경우 true — 서버 PATCH 후 공개가 풀리면 저장 시 다시 맞춤 */
+  publishedToPublic?: boolean;
 };
 
 export function userRouteToCourseItem(r: UserSavedRoute): CourseItem {
@@ -38,17 +43,28 @@ export function userRouteToCourseItem(r: UserSavedRoute): CourseItem {
   const end = r.stops[r.stops.length - 1];
   const totalMin = r.legs.reduce((s, l) => s + (l.minutes || 0), 0);
   const dateStr = r.updatedAt.slice(0, 10);
+  const tags = (r.tags ?? []).map((t) => String(t).trim()).filter(Boolean).slice(0, 2);
+  const region = resolveCourseRegionLabel(
+    undefined,
+    start?.title ?? '',
+    end?.title ?? '',
+    r.stops.map((s) => s.title),
+  );
+  const meta =
+    tags.length > 0 ? tags.join(' · ') : `직접 제작 · ${dateStr}`;
   return {
     id: r.id,
     title: r.title,
-    meta: `직접 제작 · ${dateStr}`,
+    meta,
+    tags,
     departure: start?.title ?? '',
     arrival: end?.title ?? '',
     thumbnail: null,
     category: '직접제작',
-    region: '내 루트',
+    region: region || '',
     createdAt: dateStr,
     views: 0,
+    saveCount: 0,
     overallDurationMinutes: Math.max(1, totalMin),
     rating: 0,
     reviewCount: 0,
@@ -59,7 +75,7 @@ export function userRouteToCourseItem(r: UserSavedRoute): CourseItem {
     })),
     routeLegs: r.legs.map((l, i) => ({
       id: l.id || `${r.id}-leg-${i}`,
-      mode: (l.mode as any) || 'transit',
+      mode: (l.mode as any) || 'walk',
       minutes: Number(l.minutes || 0),
       transitType: l.transitType,
     })),
