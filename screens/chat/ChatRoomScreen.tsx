@@ -22,6 +22,7 @@ import {
   markAsRead,
   deleteMessage,
   editMessage,
+  sendImageMessage,
 } from "@/api/chat/chat";
 import { useAuthStore } from "@/store/authStore";
 import { useChatSocket, ChatSocketEvent } from "@/hooks/useChatSocket";
@@ -44,6 +45,7 @@ export const ChatRoomScreen = () => {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const scrollViewRef = useRef<ScrollView>(null);
+  const scrollOnImageLoadRef = useRef<string | null>(null);
 
   const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(
     null,
@@ -65,6 +67,9 @@ export const ChatRoomScreen = () => {
               m.uuid.startsWith("pending-"),
             );
             if (pendingIdx === -1) return prev;
+            if (scrollOnImageLoadRef.current?.startsWith("pending-")) {
+              scrollOnImageLoadRef.current = event.payload.uuid;
+            }
             return prev.map((m, i) => (i === pendingIdx ? event.payload : m));
           });
           return;
@@ -112,6 +117,7 @@ export const ChatRoomScreen = () => {
     [accessToken, roomUuid],
   );
 
+
   // 채팅방 입장 시 읽음 처리
   useEffect(() => {
     if (!accessToken) return;
@@ -155,11 +161,12 @@ export const ChatRoomScreen = () => {
       senderProfileImageUrl: "",
       messageType: "TEXT",
       content: text,
-      routeUuid: "",
-      routeTitle: "",
-      routeThumbnailUrl: "",
+      attachmentUrl: null,
+      routeUuid: null,
+      routeTitle: null,
+      routeThumbnailUrl: null,
       createdAt: new Date().toISOString(),
-      editedAt: "",
+      editedAt: null,
       isDeleted: false,
     };
     setMessages((prev) => [...prev, optimistic]);
@@ -191,6 +198,39 @@ export const ChatRoomScreen = () => {
         );
         return inserted;
       });
+    }
+  };
+
+  const handleImageSend = async (imageUri: string) => {
+    if (!accessToken) return;
+
+    const pendingUuid = `pending-${Date.now()}`;
+    const optimistic: ChatMessage = {
+      uuid: pendingUuid,
+      senderUuid: userUuid ?? "",
+      senderNickname: "",
+      senderProfileImageUrl: "",
+      messageType: "IMAGE",
+      content: null,
+      attachmentUrl: imageUri,
+      routeUuid: null,
+      routeTitle: null,
+      routeThumbnailUrl: null,
+      createdAt: new Date().toISOString(),
+      editedAt: null,
+      isDeleted: false,
+    };
+    setMessages((prev) => [...prev, optimistic]);
+    scrollOnImageLoadRef.current = pendingUuid;
+    setTimeout(
+      () => scrollViewRef.current?.scrollToEnd({ animated: true }),
+      50,
+    );
+    try {
+      await sendImageMessage(accessToken, roomUuid, imageUri);
+    } catch (err) {
+      console.error("[Chat] 이미지 전송 실패:", err);
+      setMessages((prev) => prev.filter((m) => m.uuid !== pendingUuid));
     }
   };
 
@@ -243,12 +283,21 @@ export const ChatRoomScreen = () => {
             return (
               <BubbleChat
                 key={msg.uuid}
-                text={msg.content}
+                text={msg.messageType === "IMAGE" ? undefined : (msg.content ?? undefined)}
+                imageUrl={msg.messageType === "IMAGE" ? msg.attachmentUrl : undefined}
                 isMine={isMine}
                 sentAt={new Date(msg.createdAt)}
                 userName={msg.senderNickname}
                 isEdited={!!msg.editedAt}
                 onLongPress={isMine ? () => setSelectedMessage(msg) : undefined}
+                onImageLoad={
+                  msg.uuid === scrollOnImageLoadRef.current
+                    ? () => {
+                        scrollOnImageLoadRef.current = null;
+                        scrollViewRef.current?.scrollToEnd({ animated: true });
+                      }
+                    : undefined
+                }
               />
             );
           })}
@@ -261,6 +310,7 @@ export const ChatRoomScreen = () => {
           )}
           <MessageInput
             onSend={handleSend}
+            onImageSend={handleImageSend}
             editingText={editingMessage ? editingMessage.content : null}
             onCancelEdit={() => setEditingMessage(null)}
             onTypingChange={sendTyping}
