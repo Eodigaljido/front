@@ -71,7 +71,7 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'paper-plane-outline',
       iconColor: '#ea580c',
       iconBg: '#ffedd5',
-      onPress: () => navigation.getParent()?.navigate('SharedRouteStack'),
+      onPress: () => navigation.navigate('SharedRoute'),
     },
     {
       id: 'saved-route',
@@ -79,7 +79,7 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'bookmark-outline',
       iconColor: '#16a34a',
       iconBg: '#dcfce7',
-      onPress: () => navigation.getParent()?.navigate('MyRouteStack'),
+      onPress: () => navigation.navigate('MyRoute'),
     },
     {
       id: 'near-popular',
@@ -87,8 +87,7 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'location-outline',
       iconColor: '#9333ea',
       iconBg: '#f3e8ff',
-      onPress: () =>
-        navigation.getParent()?.navigate('SharedRouteStack', { openAsPopular: true }),
+      onPress: () => navigation.navigate('SharedRoute', { openAsPopular: true }),
     },
   ];
 
