@@ -67,6 +67,10 @@ export type RootTabParamList = {
 
 export type RootStackParamList = {
   Tabs: undefined;
+  SharedRouteStack:
+    | { openFilter?: boolean; openAsPopular?: boolean; viewCourseId?: string }
+    | undefined;
+  MyRouteStack: undefined;
   RouteCreate:
     | {
         editRouteId?: string;
@@ -281,6 +285,8 @@ export default function App(): React.JSX.Element {
               <Stack.Screen name="Login" component={LoginScreen} />
               <Stack.Screen name="Signup" component={SignupScreen} />
               <Stack.Screen name="Tabs" component={TabNavigator} />
+              <Stack.Screen name="SharedRouteStack" component={SharedRouteScreen} />
+              <Stack.Screen name="MyRouteStack" component={MyRouteScreen} />
               <Stack.Screen name="RouteCreate" component={RouteCreateScreen} />
               <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
               <Stack.Screen name="OnBoardStart" component={OnBoardStart} />
