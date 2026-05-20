@@ -45,7 +45,7 @@ export const ProfileList = ({ size = 60 }: { size?: number }) => {
               source={{
                 uri: friend.profileImageUrl,
               }}
-              className="rounded-full mt-5 border-2 border-gray-300"
+              className="rounded-full mt-5"
               style={{ width: size, height: size }}
             />
             <Text className="text-sm font-semibold mt-3 text-gray-700">
