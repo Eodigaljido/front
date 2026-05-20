@@ -27,7 +27,7 @@ export default function FollowingNewsScreen(): React.JSX.Element {
         <Pressable onPress={() => navigation.goBack()} className="mr-2 p-1">
           <Ionicons name="chevron-back" size={24} color="#111827" />
         </Pressable>
-        <Text className="text-lg font-semibold text-gray-900">팔로잉 소식</Text>
+        <Text className="text-lg font-semibold text-gray-900">친구 소식</Text>
       </View>
 
       <FlatList
@@ -49,7 +49,7 @@ export default function FollowingNewsScreen(): React.JSX.Element {
             </View>
             <View className="min-w-0 flex-1">
               <Text style={{ fontSize: 13, fontWeight: "400", color: "#1A1A2E" }} numberOfLines={1}>
-                <Text style={{ fontWeight: "600" }}>{item.user}</Text>이 {item.action}
+                <Text style={{ fontWeight: "600" }}>{item.user}</Text>님이 {item.action}
               </Text>
               <Text style={{ marginTop: 2, fontSize: 12, fontWeight: "400", color: "#6B7280" }} numberOfLines={1}>
                 {item.courseName}
@@ -61,8 +61,18 @@ export default function FollowingNewsScreen(): React.JSX.Element {
           </View>
         )}
         ListEmptyComponent={
-          <View className="mt-12 items-center">
-            <Text className="text-sm text-gray-500">표시할 팔로잉 소식이 없습니다.</Text>
+          <View className="mt-12 items-center px-4">
+            <Text className="text-center text-sm leading-5 text-gray-600">
+              친구가 없어 표시할 소식이 없어요. 채팅 탭의 친구 목록에서 맺을 수 있어요.
+            </Text>
+            <Pressable
+              onPress={() => navigation.navigate("Tabs", { screen: "Chat" })}
+              className="mt-4 active:opacity-80"
+              accessibilityRole="link"
+              accessibilityLabel="친구 추가하기, 채팅 탭으로 이동"
+            >
+              <Text className="text-sm font-semibold text-blue-600 underline">친구 추가하기</Text>
+            </Pressable>
           </View>
         }
       />

@@ -170,7 +170,7 @@ export default function SignupScreen() {
       return;
     }
     if (!isPhoneVerified) {
-      Alert.alert('휴대전화 인증 필요', '인증 버튼을 눌러 휴대전화 인증을 완료해주세요.');
+      Alert.alert('', '휴대전화 인증 필요');
       return;
     }
     setIsLoading(true);

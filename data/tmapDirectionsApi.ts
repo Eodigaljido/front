@@ -43,31 +43,63 @@ function pickNum(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function appendLineStringCoords(coords: unknown, points: LatLng[]) {
+  if (!Array.isArray(coords)) return;
+  for (const c of coords) {
+    const lng = Number(Array.isArray(c) ? c[0] : NaN);
+    const lat = Number(Array.isArray(c) ? c[1] : NaN);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      points.push({ latitude: lat, longitude: lng });
+    }
+  }
+}
+
+function appendGeometryCoords(geom: any, points: LatLng[]) {
+  if (!geom) return;
+  const type = String(geom.type ?? '');
+  if (type === 'LineString') {
+    appendLineStringCoords(geom.coordinates, points);
+    return;
+  }
+  if (type === 'MultiLineString' && Array.isArray(geom.coordinates)) {
+    for (const ring of geom.coordinates) {
+      appendLineStringCoords(ring, points);
+    }
+    return;
+  }
+  if (type === 'Point' && Array.isArray(geom.coordinates)) {
+    const lng = Number(geom.coordinates[0]);
+    const lat = Number(geom.coordinates[1]);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      points.push({ latitude: lat, longitude: lng });
+    }
+    return;
+  }
+  if (type === 'MultiPoint' && Array.isArray(geom.coordinates)) {
+    appendLineStringCoords(geom.coordinates, points);
+    return;
+  }
+  if (type === 'GeometryCollection' && Array.isArray(geom.geometries)) {
+    for (const g of geom.geometries) {
+      appendGeometryCoords(g, points);
+    }
+  }
+}
+
 function toLatLngListFromFeatures(features: any[]): LatLng[] {
   const points: LatLng[] = [];
   for (const f of features) {
-    const geom = f?.geometry;
-    const type = String(geom?.type ?? '');
-    if (type === 'LineString' && Array.isArray(geom?.coordinates)) {
-      for (const c of geom.coordinates) {
-        const lng = Number(Array.isArray(c) ? c[0] : NaN);
-        const lat = Number(Array.isArray(c) ? c[1] : NaN);
-        if (Number.isFinite(lat) && Number.isFinite(lng)) {
-          points.push({ latitude: lat, longitude: lng });
-        }
-      }
-    } else if (type === 'Point' && Array.isArray(geom?.coordinates)) {
-      const lng = Number(geom.coordinates[0]);
-      const lat = Number(geom.coordinates[1]);
-      if (Number.isFinite(lat) && Number.isFinite(lng)) {
-        points.push({ latitude: lat, longitude: lng });
-      }
-    }
+    appendGeometryCoords(f?.geometry, points);
   }
   return dedupeConsecutive(points);
 }
 
-function tmapBody(mode: TmapDirectionsRequestMode, from: LatLng, to: LatLng) {
+function tmapBody(
+  mode: TmapDirectionsRequestMode,
+  from: LatLng,
+  to: LatLng,
+  searchOption = '0',
+) {
   const base = {
     startX: String(from.longitude),
     startY: String(from.latitude),
@@ -81,7 +113,7 @@ function tmapBody(mode: TmapDirectionsRequestMode, from: LatLng, to: LatLng) {
   if (mode === 'walking') {
     return {
       ...base,
-      searchOption: '0',
+      searchOption: String(searchOption),
     };
   }
   return {
@@ -162,6 +194,8 @@ export async function fetchTmapDirectionsLeg(params: {
   from: LatLng;
   to: LatLng;
   requestedMode: TmapDirectionsRequestMode;
+  /** 보행: 0 추천, 1 큰길, 2 최단시간, 4 계단회피 등 (Tmap 문서 기준) */
+  searchOption?: string;
   signal?: AbortSignal;
 }): Promise<TmapDirectionsLegResult | null> {
   const appKey = getTmapAppKey();
@@ -172,7 +206,12 @@ export async function fetchTmapDirectionsLeg(params: {
 
   const isWalking = mode === 'walking';
   const url = isWalking ? TMAP_WALK_URL : TMAP_CAR_URL;
-  const json = await fetchTmapJson(url, appKey, tmapBody(mode, params.from, params.to), params.signal);
+  const json = await fetchTmapJson(
+    url,
+    appKey,
+    tmapBody(mode, params.from, params.to, params.searchOption ?? '0'),
+    params.signal,
+  );
   const features = Array.isArray(json?.features) ? json.features : [];
   if (features.length === 0) return null;
 
