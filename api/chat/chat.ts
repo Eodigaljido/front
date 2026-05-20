@@ -19,13 +19,14 @@ export interface ChatMessage {
   senderUuid: string;
   senderNickname: string;
   senderProfileImageUrl: string | null;
-  messageType: string;
-  content: string;
-  routeUuid: string;
-  routeTitle: string;
-  routeThumbnailUrl: string;
+  messageType: "TEXT" | "IMAGE" | "ROUTE" | string;
+  content: string | null;
+  attachmentUrl: string | null;
+  routeUuid: string | null;
+  routeTitle: string | null;
+  routeThumbnailUrl: string | null;
   createdAt: string;
-  editedAt: string;
+  editedAt: string | null;
   isDeleted: boolean;
   mentionedUserUuids?: string[];
 }
@@ -150,4 +151,39 @@ export async function renameChatRoom(
       headers: { Authorization: `Bearer ${accessToken}` },
     },
   );
+}
+
+// 이미지 메시지 전송
+export async function sendImageMessage(
+  accessToken: string,
+  roomUuid: string,
+  imageUri: string,
+): Promise<ChatMessage> {
+  const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").replace(
+    /\/+$/,
+    "",
+  );
+
+  const fileName = imageUri.split("/").pop() ?? "image.jpg";
+  const ext = fileName.split(".").pop()?.toLowerCase() ?? "jpg";
+  const mimeType =
+    ext === "png" ? "image/png" : ext === "gif" ? "image/gif" : "image/jpeg";
+
+  const form = new FormData();
+  form.append("image", { uri: imageUri, name: fileName, type: mimeType } as any);
+
+  // fetch를 직접 사용: Content-Type을 지정하지 않으면 React Native가
+  // multipart/form-data; boundary=... 를 자동으로 설정함
+  const res = await fetch(`${baseUrl}/chats/${roomUuid}/images`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: form,
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => String(res.status));
+    throw new Error(`이미지 업로드 실패 (${res.status}): ${body}`);
+  }
+
+  return res.json() as Promise<ChatMessage>;
 }
