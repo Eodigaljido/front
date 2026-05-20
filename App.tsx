@@ -27,7 +27,6 @@ import ChatHomeScreen from './screens/chat/ChatHomeScreen';
 import LoginScreen from './screens/LoginScreen';
 import SignupScreen from './screens/SignupScreen';
 import { ChatRoomScreen } from './screens/chat/ChatRoomScreen';
-import BottomSheetTest from './screens/BottomSheet';
 import ChatCreatingScreen from './screens/chat/ChatCreatingScreen';
 import ChatRoomInfoScreen from './screens/chat/ChatRoomInfoScreen';
 import RouteCreateScreen from './screens/RouteCreateScreen';
@@ -36,6 +35,7 @@ import FindAccountScreen from './screens/FindAccountScreen';
 import FollowingNewsScreen from './screens/FollowingNewsScreen';
 import NotificationCenterScreen from './screens/NotificationCenterScreen';
 import CourseGuideScreen from './screens/CourseGuideScreen';
+import { appLinking } from './constants/shareLinking';
 
 export type RootTabParamList = {
   Home: undefined;
@@ -49,7 +49,7 @@ export type RootTabParamList = {
     | undefined;
   MyRoute: undefined;
   Chat: undefined;
-  All: undefined;
+  All: { friendCode?: string } | undefined;
 
   // 온보드 관련
   OnBoardStart: undefined;
@@ -63,8 +63,6 @@ export type RootTabParamList = {
   ChatRoomScreen: undefined;
   ChatCreatingScreen: undefined;
 
-  // 기타
-  BottomSheet: undefined;
 };
 
 export type RootStackParamList = {
@@ -98,8 +96,6 @@ export type RootStackParamList = {
   ChatCreatingScreen: undefined;
   ChatRoomInfoScreen: { roomUuid: string; roomName: string };
 
-  // 기타
-  BottomSheet: undefined;
   FollowingNews: undefined;
   NotificationCenter: undefined;
   /** 내 코스 카드 「안내」 — 지도 중심, 턴바이턴 없음 (방향성.md) */
@@ -281,7 +277,7 @@ export default function App(): React.JSX.Element {
       <SafeAreaProvider>
         <ToastProvider>
           <MockDataProvider>
-            <NavigationContainer>
+            <NavigationContainer linking={appLinking}>
               <StatusBar style="auto" />
               <Stack.Navigator
                 screenOptions={{ headerShown: false }}
@@ -308,7 +304,6 @@ export default function App(): React.JSX.Element {
                   name="NotificationCenter"
                   component={NotificationCenterScreen}
                 />
-                {/* <Stack.Screen name="Start" component={StartScreen} /> */}
                 <Stack.Screen name="ChatRoomScreen" component={ChatRoomScreen} />
                 <Stack.Screen name="ChatRoomInfoScreen" component={ChatRoomInfoScreen} />
               </Stack.Navigator>
