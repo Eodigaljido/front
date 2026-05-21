@@ -48,6 +48,7 @@ import { displayCourseRegionChip } from "../utils/inferCourseRegionLabel";
 import AppMapView from "../components/AppMapView";
 import { buildMapMarkersFromPathPoints } from "../utils/spreadMapMarkers";
 import { simplifyRoutePath } from "../utils/simplifyRoutePath";
+import { sharePublicCourse } from "../utils/shareCourse";
 import { fetchMergedDirectionsPolyline } from "../data/googleDirectionsApi";
 import { useCourseStepWalkingSegments } from "../hooks/useCourseStepWalkingSegments";
 import FilterBottomSheet, {
@@ -842,6 +843,21 @@ export default function SharedRouteScreen(): React.JSX.Element {
                             <Text className="flex-1 text-xl font-bold text-gray-900">
                               코스 상세
                             </Text>
+                            <View className="flex-row items-center gap-2">
+                            <Pressable
+                              onPress={() =>
+                                void sharePublicCourse({
+                                  courseId: course.id,
+                                  title: course.title,
+                                })
+                              }
+                              className="flex-row items-center rounded-lg border border-gray-300 bg-white px-3 py-2 active:opacity-90"
+                            >
+                              <Ionicons name="share-outline" size={18} color="#2563eb" />
+                              <Text className="ml-1 text-xs font-semibold text-blue-600">
+                                공유
+                              </Text>
+                            </Pressable>
                             <Pressable
                               disabled={
                                 savingMyRoute || savedCourseIds.includes(course.id)
@@ -895,6 +911,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
                                     : "내 루트 추가"}
                               </Text>
                             </Pressable>
+                            </View>
                           </View>
 
                           <Text className="mb-1 text-base font-semibold text-gray-900">
