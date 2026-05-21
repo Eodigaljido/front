@@ -117,7 +117,20 @@ Apple Developer·인증서는 EAS credentials로 관리.
 
 ---
 
-## 7. 공유 링크 (별도 작업)
+## 7. 공유 링크 — share-web 401 오류
+
+share-web에서 `GET /api/courses/public/{id}/preview` 가 **401**이면 **백엔드**가 비로그인 조회를 막은 것입니다.
+
+| 담당 | 조치 |
+|------|------|
+| **백엔드** | 코스·친구 **preview** + 공개 조회를 **permitAll** (`/api/courses/public/.../preview`, `/api/friends/code/{code}/preview`) + CORS에 share 도메인 |
+| **share-web** | axios에 토큰·쿠키 넣지 않음. 401 시 사용자에게 「앱에서 열기」만 안내 |
+
+앱 공유 URL 형식: `https://share.eodigaljido.rjsgud.com/courses/public/{courseId}` (정상)
+
+---
+
+## 8. 공유 링크 (별도 작업)
 
 | 구분 | 담당 | 상태 |
 |------|------|------|
@@ -130,7 +143,7 @@ Apple Developer·인증서는 EAS credentials로 관리.
 
 ---
 
-## 8. 심사·데모 시나리오 제안
+## 9. 심사·데모 시나리오 제안
 
 1. 로그인 → 홈 → 공유 루트 코스 열람  
 2. 루트 제작 → 저장 → 내 루트  
@@ -140,7 +153,7 @@ Apple Developer·인증서는 EAS credentials로 관리.
 
 ---
 
-## 9. 자주 나는 문제
+## 10. 자주 나는 문제
 
 | 증상 | 조치 |
 |------|------|
@@ -151,7 +164,9 @@ Apple Developer·인증서는 EAS credentials로 관리.
 
 ---
 
-## 10. 한 줄 요약
+| share-web 401 on preview | 백엔드 비로그인 API 허용 (위 7절) |
+
+## 11. 한 줄 요약
 
 ```powershell
 npm install

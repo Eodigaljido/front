@@ -18,6 +18,7 @@ module.exports = ({ config }) => ({
     testLogin:
       String(process.env.TEST_LOGIN ?? process.env.EXPO_PUBLIC_TEST_LOGIN ?? '')
         .trim(),
+    shareBaseUrl: String(process.env.EXPO_PUBLIC_SHARE_BASE_URL ?? '').trim(),
   },
   plugins: [...(config.plugins ?? []), 'expo-secure-store', '@react-native-community/datetimepicker'],
   ios: {

@@ -52,5 +52,6 @@ storybook-static
 
 
 
-# documents (로컬 API·연동 메모 — GitHub 미업로드)
-docs/
+# documents (로컬 API·연동 메모 — 기본 미업로드, 공유 명세는 예외)
+docs/*
+!docs/share-*.md
