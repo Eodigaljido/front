@@ -3,6 +3,8 @@
 > **대상:** 백엔드 개발 / DevOps  
 > **연동:** Expo 앱 `com.eodigaljido.app`, share-web `https://share.eodigaljido.rjsgud.com`  
 > **API 베이스:** `EXPO_PUBLIC_API_BASE_URL` (예: `http://3.36.85.213:8080`)  
+> **Swagger:** http://3.36.85.213:8080/swagger-ui/index.html  
+> **Swagger 대조·공동편집·신규 API:** [backend-api-request-from-swagger.md](./backend-api-request-from-swagger.md)  
 > **작성일:** 2026-05-20
 
 ---

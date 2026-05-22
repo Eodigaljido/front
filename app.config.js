@@ -52,6 +52,18 @@ module.exports = ({ config }) => ({
         ],
         category: ['BROWSABLE', 'DEFAULT'],
       },
+      {
+        action: 'VIEW',
+        autoVerify: true,
+        data: [
+          {
+            scheme: 'https',
+            host: shareHost,
+            pathPrefix: '/routes/collaborative',
+          },
+        ],
+        category: ['BROWSABLE', 'DEFAULT'],
+      },
     ],
     config: {
       ...(config.android?.config ?? {}),

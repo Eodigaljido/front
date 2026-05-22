@@ -2,7 +2,8 @@
 
 export type ParsedSharePath =
   | { type: 'course'; courseId: string }
-  | { type: 'friend'; friendCode: string };
+  | { type: 'friend'; friendCode: string }
+  | { type: 'collab'; routeId: string };
 
 function normalizePath(input: string): string {
   const raw = String(input ?? '').trim();
@@ -33,6 +34,12 @@ export function parseSharePathFromUrl(urlOrPath: string): ParsedSharePath | null
   if (friend?.[1]) {
     const friendCode = String(friend[1]).trim();
     if (friendCode) return { type: 'friend', friendCode };
+  }
+
+  const collab = path.match(/\/routes\/collaborative\/([^/]+)/i);
+  if (collab?.[1]) {
+    const routeId = String(collab[1]).trim();
+    if (routeId) return { type: 'collab', routeId };
   }
 
   return null;

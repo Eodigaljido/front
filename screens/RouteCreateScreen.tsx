@@ -33,8 +33,11 @@ import {
   type TransportMode,
   type MockPlace,
   estimateMinutes,
-  MOCK_COLLABORATORS,
 } from '../data/routeCreateMocks';
+import { getRouteMembers } from '../data/collaborativeRoute';
+import CollaboratorAvatarStack from '../components/CollaboratorAvatarStack';
+import { shareCollaborativeRoute } from '../utils/shareCollaborativeRoute';
+import { useAuthStore } from '../store/authStore';
 import {
   searchKakaoPlacesByKeyword,
   KAKAO_KEYWORD_CATEGORY_OPTIONS,
@@ -723,9 +726,12 @@ function ViaDragHandle({
   );
 }
 
+const COLLAB_MEMBER_REFRESH_MS = 3 * 60 * 1000;
+
 export default function RouteCreateScreen(): React.JSX.Element {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
+  const authUser = useAuthStore((s) => s.user);
   const { showToast } = useToast();
   const insets = useSafeAreaInsets();
   const { height: windowH } = useWindowDimensions();
@@ -921,14 +927,39 @@ export default function RouteCreateScreen(): React.JSX.Element {
     [],
   );
 
-  const isCollaborative = useMemo(() => {
-    if (route.params?.collaborative === true) return true;
+  const [collaborativeDraft, setCollaborativeDraft] = useState(
+    () => route.params?.collaborative === true,
+  );
+  const [memberRefreshTick, setMemberRefreshTick] = useState(0);
+
+  const isCollaborative = collaborativeDraft;
+
+  const activeRouteId = String(persistedRouteId ?? editRouteIdParam ?? 'new');
+
+  const collabMembers = useMemo(
+    () =>
+      getRouteMembers(activeRouteId, {
+        hostName: authUser?.nickname ?? '나',
+        refreshTick: memberRefreshTick,
+      }),
+    [activeRouteId, authUser?.nickname, memberRefreshTick],
+  );
+
+  useEffect(() => {
+    if (!isCollaborative) return;
+    const id = setInterval(() => {
+      setMemberRefreshTick((t) => t + 1);
+    }, COLLAB_MEMBER_REFRESH_MS);
+    return () => clearInterval(id);
+  }, [isCollaborative]);
+
+  useEffect(() => {
+    if (route.params?.collaborative === true) setCollaborativeDraft(true);
     const eid = route.params?.editRouteId as string | undefined;
     if (eid) {
       const r = userSavedRoutes.find((x) => String(x.id) === String(eid));
-      if (r?.collaborative === true) return true;
+      if (r?.collaborative === true) setCollaborativeDraft(true);
     }
-    return false;
   }, [route.params?.collaborative, route.params?.editRouteId, userSavedRoutes]);
 
   useFocusEffect(
@@ -1058,6 +1089,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
       }
 
       applyEmptyRoute();
+      if (collab) setCollaborativeDraft(true);
       return () => {
         cancelled = true;
       };
@@ -2011,7 +2043,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
     const now = new Date().toISOString();
     const localId = persistedRouteId ?? `ur-${uid()}`;
     const prev = getUserRoute(localId) ?? getUserRoute(persistedRouteId ?? '');
-    const wantPublic = publishToPublic && !isCollaborative;
+    const wantPublic = publishToPublic && !collaborativeDraft;
     const serverBackedPersisted =
       persistedRouteId && !String(persistedRouteId).startsWith('ur-')
         ? String(persistedRouteId)
@@ -2022,7 +2054,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
       .slice(0, MAX_ROUTE_TAGS);
     const routePayload = {
       title,
-      collaborative: isCollaborative,
+      collaborative: collaborativeDraft,
       ...(tagsForSave.length > 0 ? { tags: tagsForSave } : {}),
       stops: stops.map((s) => ({
         id: s.id,
@@ -2048,7 +2080,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
       title,
       createdAt: prev?.createdAt ?? now,
       updatedAt: now,
-      collaborative: isCollaborative,
+      collaborative: collaborativeDraft,
       tags: tagsForSave,
       stops: routePayload.stops,
       legs: routePayload.legs,
@@ -2067,7 +2099,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
           title,
           createdAt: prev?.createdAt ?? now,
           updatedAt: now,
-          collaborative: isCollaborative,
+          collaborative: collaborativeDraft,
           tags: tagsForSave,
           stops: routePayload.stops,
           legs: routePayload.legs,
@@ -2087,7 +2119,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
           title,
           createdAt: prev?.createdAt ?? now,
           updatedAt: now,
-          collaborative: isCollaborative,
+          collaborative: collaborativeDraft,
           tags: tagsForSave,
           stops: routePayload.stops,
           legs: routePayload.legs,
@@ -2100,7 +2132,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
       apiSaved &&
       effectiveId &&
       !String(effectiveId).startsWith('ur-') &&
-      !isCollaborative
+      !collaborativeDraft
     ) {
       await setMyCoursePublic(String(effectiveId), wantPublic);
     }
@@ -2275,6 +2307,48 @@ export default function RouteCreateScreen(): React.JSX.Element {
           </Pressable>
         </View>
 
+        {isCollaborative ? (
+          <View
+            className="mt-2 flex-row items-center justify-between px-3"
+            pointerEvents="box-none"
+          >
+            <CollaboratorAvatarStack
+              members={collabMembers}
+              onPress={() =>
+                navigation.navigate('RouteCollaborators', {
+                  routeId: activeRouteId,
+                  routeTitle: routeTitle.trim() || '루트',
+                  refreshTick: memberRefreshTick,
+                })
+              }
+            />
+            <Pressable
+              onPress={() => {
+                const rid = String(persistedRouteId ?? editRouteIdParam ?? '').trim();
+                if (!rid) {
+                  Alert.alert('', '루트를 한 번 저장한 뒤 초대 링크를 보낼 수 있어요.');
+                  return;
+                }
+                void shareCollaborativeRoute({
+                  routeId: rid,
+                  title: routeTitle.trim() || '루트',
+                });
+              }}
+              className="h-10 w-10 items-center justify-center rounded-full bg-white shadow-md active:opacity-90"
+              style={{
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.12,
+                shadowRadius: 6,
+                elevation: 4,
+              }}
+              accessibilityLabel="공동 편집 초대 링크 공유"
+            >
+              <Ionicons name="share-social-outline" size={22} color="#ea580c" />
+            </Pressable>
+          </View>
+        ) : null}
+
         <View style={{ flex: 1, minHeight: 0 }} pointerEvents="none" />
 
         <View
@@ -2357,39 +2431,46 @@ export default function RouteCreateScreen(): React.JSX.Element {
           </View>
         </View>
 
-        <View className="flex-row items-center border-b border-gray-100 px-3 py-2.5">
-          <View className="min-w-0 flex-1 flex-row items-center">
-            {isCollaborative ? (
-              <View className="flex-row items-center">
-                {MOCK_COLLABORATORS.length > 0 ? (
-                  MOCK_COLLABORATORS.map((c, i) => (
-                    <Image
-                      key={c.id}
-                      accessibilityLabel={`${c.name} 참여 중`}
-                      source={{
-                        uri: `https://i.pravatar.cc/96?u=${encodeURIComponent(c.id)}`,
-                      }}
-                      style={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: 18,
-                        borderWidth: 2.5,
-                        borderColor: '#ffffff',
-                        marginLeft: i === 0 ? 0 : -12,
-                      }}
-                    />
-                  ))
-                ) : (
-                  <Text className="text-xs font-medium text-gray-500">
-                    공동 편집 · 멤버는 서버 연동 후 표시
-                  </Text>
-                )}
-              </View>
-            ) : (
-              <Text className="text-xs font-medium text-gray-500">개인 루트</Text>
-            )}
+        <View className="border-b border-gray-100 px-3 py-2.5">
+          <View className="mb-2 flex-row rounded-xl bg-slate-100 p-1">
+            <Pressable
+              onPress={() => setCollaborativeDraft(false)}
+              className={`flex-1 items-center rounded-lg py-2 ${
+                !isCollaborative ? 'bg-white shadow-sm' : ''
+              }`}
+            >
+              <Text
+                className={`text-xs font-semibold ${
+                  !isCollaborative ? 'text-blue-700' : 'text-gray-500'
+                }`}
+              >
+                개인 루트
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setCollaborativeDraft(true)}
+              className={`flex-1 items-center rounded-lg py-2 ${
+                isCollaborative ? 'bg-white shadow-sm' : ''
+              }`}
+            >
+              <Text
+                className={`text-xs font-semibold ${
+                  isCollaborative ? 'text-orange-600' : 'text-gray-500'
+                }`}
+              >
+                공동 작업
+              </Text>
+            </Pressable>
           </View>
           <View className="flex-row items-center gap-2">
+          <View className="min-w-0 flex-1">
+            <Text className="text-xs font-medium text-gray-500">
+              {isCollaborative
+                ? '멤버와 함께 편집 · 상단에서 초대 링크 공유'
+                : '나만 편집 · 공개 스위치로 공유 루트 등록'}
+            </Text>
+          </View>
+          <View className="flex-row items-center gap-2 shrink-0">
             {isCollaborative ? (
               <Pressable
                 onPress={() => setChatOpen(true)}
@@ -2421,6 +2502,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
             >
               <Text className="text-sm font-bold text-white">저장</Text>
             </Pressable>
+          </View>
           </View>
         </View>
 
