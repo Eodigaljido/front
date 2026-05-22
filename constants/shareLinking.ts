@@ -15,6 +15,13 @@ export const linkingPrefixes = [
 
 const linkingConfig = {
   screens: {
+    RouteCreate: {
+      path: 'routes/collaborative/:editRouteId',
+      parse: {
+        editRouteId: (id: string) => decodeURIComponent(String(id ?? '').trim()),
+        collaborative: () => true,
+      },
+    },
     Tabs: {
       screens: {
         SharedRoute: {

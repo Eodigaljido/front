@@ -23,6 +23,19 @@ export function consumePendingShareNavigation(
   if (!link) return false;
   clearPendingShareLink();
 
+  if (link.type === 'collab') {
+    navigation.reset({
+      index: 0,
+      routes: [
+        {
+          name: 'RouteCreate',
+          params: { editRouteId: link.routeId, collaborative: true },
+        },
+      ],
+    });
+    return true;
+  }
+
   if (link.type === 'course') {
     navigation.reset({
       index: 0,

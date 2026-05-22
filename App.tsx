@@ -30,6 +30,7 @@ import { ChatRoomScreen } from './screens/chat/ChatRoomScreen';
 import ChatCreatingScreen from './screens/chat/ChatCreatingScreen';
 import ChatRoomInfoScreen from './screens/chat/ChatRoomInfoScreen';
 import RouteCreateScreen from './screens/RouteCreateScreen';
+import RouteCollaboratorsScreen from './screens/RouteCollaboratorsScreen';
 import ProfileSettingsScreen from './screens/ProfileSettingsScreen';
 import FindAccountScreen from './screens/FindAccountScreen';
 import FollowingNewsScreen from './screens/FollowingNewsScreen';
@@ -100,6 +101,12 @@ export type RootStackParamList = {
   NotificationCenter: undefined;
   /** 내 코스 카드 「안내」 — 지도 중심, 턴바이턴 없음 (방향성.md) */
   CourseGuide: { courseId: string; courseTitle?: string };
+  /** 공동 루트 편집 멤버(방장·참여자) */
+  RouteCollaborators: {
+    routeId: string;
+    routeTitle?: string;
+    refreshTick?: number;
+  };
 };
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
@@ -289,6 +296,10 @@ export default function App(): React.JSX.Element {
                 <Stack.Screen name="SharedRouteStack" component={SharedRouteScreen} />
                 <Stack.Screen name="MyRouteStack" component={MyRouteScreen} />
                 <Stack.Screen name="RouteCreate" component={RouteCreateScreen} />
+                <Stack.Screen
+                  name="RouteCollaborators"
+                  component={RouteCollaboratorsScreen}
+                />
                 <Stack.Screen name="CourseGuide" component={CourseGuideScreen} />
                 <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
                 <Stack.Screen name="OnBoardStart" component={OnBoardStart} />

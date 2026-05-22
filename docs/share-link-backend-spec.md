@@ -1,7 +1,8 @@
 # 공유 링크 — 백엔드·인프라 명세
 
 > **백엔드 작업 목록·API 계약·Security·CORS·체크리스트:**  
-> **[share-feature-backend-spec.md](./share-feature-backend-spec.md)** ← 백엔드 팀에 이 파일을 우선 전달  
+> **[share-feature-backend-spec.md](./share-feature-backend-spec.md)** — 공유 링크·preview·401  
+> **[backend-api-request-from-swagger.md](./backend-api-request-from-swagger.md)** — Swagger 대조·공동편집·신규 API 전체  
 >
 > **대상:** 백엔드 / DevOps  
 > **연동 앱:** Eodigaljido (`com.eodigaljido.app`)  
