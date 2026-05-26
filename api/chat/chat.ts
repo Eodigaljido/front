@@ -190,6 +190,31 @@ export async function inviteChatMember(
   return res.data;
 }
 
+// 이미지 메시지 전송
+export async function sendImageMessage(
+  accessToken: string,
+  roomUuid: string,
+  imageUri: string,
+): Promise<ChatMessage> {
+  const form = new FormData();
+  const filename = imageUri.split("/").pop() ?? "image.jpg";
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "jpg";
+  const mime = ext === "png" ? "image/png" : ext === "gif" ? "image/gif" : ext === "webp" ? "image/webp" : "image/jpeg";
+  form.append("image", { uri: imageUri, name: filename, type: mime } as any);
+  const res = await instance.post<ChatMessage>(
+    `/chats/${roomUuid}/images`,
+    form,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "multipart/form-data",
+      },
+      transformRequest: (data) => data,
+    },
+  );
+  return res.data;
+}
+
 /** Swagger: POST /chats/{roomUuid}/route — 루트 공유 메시지(ROUTE 타입) */
 export async function shareRouteToChat(
   accessToken: string,
