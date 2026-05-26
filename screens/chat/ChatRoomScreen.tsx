@@ -35,7 +35,7 @@ type ChatRoomRouteProp = RouteProp<RootStackParamList, "ChatRoomScreen">;
 
 export const ChatRoomScreen = () => {
   const route = useRoute<ChatRoomRouteProp>();
-  const { roomUuid, roomName } = route.params;
+  const { roomUuid, roomName, memberCount = 2 } = route.params;
 
   const accessToken = useAuthStore((s) => s.accessToken);
   const userUuid = useAuthStore((s) => s.user?.uuid);
@@ -288,6 +288,8 @@ export const ChatRoomScreen = () => {
                 isMine={isMine}
                 sentAt={new Date(msg.createdAt)}
                 userName={msg.senderNickname}
+                profileImageUrl={!isMine ? msg.senderProfileImageUrl : undefined}
+                showSender={!isMine && memberCount >= 3}
                 isEdited={!!msg.editedAt}
                 onLongPress={isMine && !msg.uuid.startsWith("pending-") ? () => setSelectedMessage(msg) : undefined}
                 onImageLoad={
