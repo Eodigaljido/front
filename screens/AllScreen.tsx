@@ -1,16 +1,16 @@
 // @ts-nocheck
 import React, { useCallback, useState } from 'react';
-import { View, Text, Pressable, ScrollView, Alert, Modal, ActivityIndicator, Clipboard } from 'react-native';
+import { View, Text, Pressable, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
 
 import type { RootTabParamList } from '../App';
 import { getMyProfile } from '../api/users';
-import { getMyFriendCode } from '../api/friend/friends';
+import { getMyFriendCode, addFriendByCode } from '../api/friend/friends';
 import { useAuthStore } from '../store/authStore';
 import MenuSection, { type MenuItem } from '../components/all/MenuSection';
 import ProfileCard from '../components/all/ProfileCard';
+import FriendCodeModal from '../components/all/FriendCodeModal';
 
 const CARD_STYLE = {
   borderWidth: 0.5,
@@ -71,7 +71,7 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'paper-plane-outline',
       iconColor: '#ea580c',
       iconBg: '#ffedd5',
-      onPress: () => navigation.navigate('SharedRoute'),
+      onPress: () => navigation.getParent()?.navigate('SharedRouteStack'),
     },
     {
       id: 'saved-route',
@@ -79,7 +79,7 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'bookmark-outline',
       iconColor: '#16a34a',
       iconBg: '#dcfce7',
-      onPress: () => navigation.navigate('MyRoute'),
+      onPress: () => navigation.getParent()?.navigate('MyRouteStack'),
     },
     {
       id: 'near-popular',
@@ -87,7 +87,7 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'location-outline',
       iconColor: '#9333ea',
       iconBg: '#f3e8ff',
-      onPress: () => navigation.navigate('SharedRoute', { openAsPopular: true }),
+      onPress: () => navigation.getParent()?.navigate('SharedRouteStack', { openAsPopular: true }),
     },
   ];
 
@@ -180,62 +180,13 @@ export default function AllScreen(): React.JSX.Element {
         </Pressable>
       </ScrollView>
 
-      <Modal
+      <FriendCodeModal
         visible={friendCodeVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setFriendCodeVisible(false)}
-      >
-        <Pressable
-          className="flex-1 items-center justify-center"
-          style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
-          onPress={() => setFriendCodeVisible(false)}
-        >
-          <Pressable
-            onPress={e => e.stopPropagation()}
-            className="mx-8 rounded-2xl bg-white px-6 py-7"
-            style={{ width: 300 }}
-          >
-            <Pressable
-              onPress={() => setFriendCodeVisible(false)}
-              className="absolute top-4 right-4 h-8 w-8 items-center justify-center"
-            >
-              <Ionicons name="close" size={20} color="#9ca3af" />
-            </Pressable>
-
-            <Text className="mb-1 text-center text-lg font-bold text-gray-900">내 친구 코드</Text>
-            <Text className="mb-5 text-center text-xs text-gray-500">
-              이 코드를 친구에게 알려주세요.
-            </Text>
-
-            {friendCodeLoading ? (
-              <ActivityIndicator size="large" color="#2563eb" />
-            ) : (
-              <>
-                <View
-                  className="mb-4 items-center rounded-xl py-4"
-                  style={{ backgroundColor: '#EFF6FF' }}
-                >
-                  <Text style={{ fontSize: 32, fontWeight: '800', letterSpacing: 8, color: '#2563eb' }}>
-                    {friendCode}
-                  </Text>
-                </View>
-                <Pressable
-                  onPress={() => {
-                    Clipboard.setString(friendCode ?? '');
-                    Alert.alert('복사 완료', '친구 코드가 클립보드에 복사되었습니다.');
-                  }}
-                  className="flex-row items-center justify-center gap-1 rounded-xl py-3 active:opacity-80"
-                  style={{ backgroundColor: '#2563eb' }}
-                >
-                  <Ionicons name="copy-outline" size={15} color="#fff" />
-                  <Text className="text-sm font-semibold text-white">코드 복사</Text>
-                </Pressable>
-              </>
-            )}
-          </Pressable>
-        </Pressable>
-      </Modal>
+        loading={friendCodeLoading}
+        friendCode={friendCode}
+        onClose={() => setFriendCodeVisible(false)}
+        onAddFriendByCode={addFriendByCode}
+      />
     </SafeAreaView>
   );
 }
