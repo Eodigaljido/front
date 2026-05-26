@@ -49,7 +49,13 @@ instance.interceptors.response.use(
     const originalRequest = err.config;
 
     // 401이 아니거나, 리프레시 요청 자체가 실패하면 즉시 reject
-    if (err.response?.status !== 401 || originalRequest._retry || originalRequest.url === 'auth/refresh') {
+    const refreshPath = 'auth/token/refresh';
+    if (
+      err.response?.status !== 401 ||
+      originalRequest._retry ||
+      originalRequest.url === refreshPath ||
+      originalRequest.url === 'auth/refresh'
+    ) {
       return Promise.reject(err);
     }
 
@@ -71,7 +77,7 @@ instance.interceptors.response.use(
       const refreshToken = await tokenStorage.getRefreshToken();
       if (!refreshToken) throw new Error('no refresh token');
 
-      const { data } = await instance.post('auth/refresh', { refreshToken });
+      const { data } = await instance.post(refreshPath, { refreshToken });
       const newAccess: string = data.accessToken;
       const newRefresh: string = data.refreshToken ?? refreshToken;
 

@@ -51,11 +51,10 @@ export type CourseItem = {
   routeSteps: CourseRouteStep[];
   /** 구간별 이동수단(생성자가 선택한 값). 없으면 프론트 기본값 사용 */
   routeLegs?: CourseRouteLeg[];
-  reviews: CourseReview[];
+  /** 작성자 UUID — 공유 목록에서 내 코스 판별 */
+  authorUuid?: string;
+  authorUserId?: string;
 };
-
-/** 하위 호환용 빈 배열 — 코스는 서버에서만 조회 */
-export const MOCK_COURSES: CourseItem[] = [];
 
 /** 코스별 지도 중심 (API 좌표 없을 때 보간용 기본값) */
 const DEFAULT_MAP_CENTER = { lat: 37.5665, lng: 126.978 };
@@ -213,17 +212,3 @@ export function getCourseStepMapPoint(
   };
 }
 
-/** @deprecated 서버 인기 코스 API 사용 */
-export function getPopularNearbyCourses(): CourseItem[] {
-  return [];
-}
-
-export type ChatRoomItem = {
-  id: string;
-  name: string;
-  lastMessage: string;
-  time: string;
-  unread: number;
-};
-
-export const MOCK_CHAT_ROOMS: ChatRoomItem[] = [];
