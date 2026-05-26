@@ -239,69 +239,12 @@ export default function AllScreen(): React.JSX.Element {
 
       <FriendCodeModal
         visible={friendCodeVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setFriendCodeVisible(false)}
-      >
-        <Pressable
-          className="items-center justify-center flex-1"
-          style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
-          onPress={() => setFriendCodeVisible(false)}
-        >
-          <Pressable
-            onPress={e => e.stopPropagation()}
-            className="px-6 mx-8 bg-white rounded-2xl py-7"
-            style={{ width: 300 }}
-          >
-            <Pressable
-              onPress={() => setFriendCodeVisible(false)}
-              className="absolute items-center justify-center w-8 h-8 top-4 right-4"
-            >
-              <Ionicons name="close" size={20} color="#9ca3af" />
-            </Pressable>
-
-            <Text className="mb-1 text-lg font-bold text-center text-gray-900">내 친구 코드</Text>
-            <Text className="mb-5 text-xs text-center text-gray-500">
-              코드를 알려주거나 링크를 공유해 친구를 초대하세요.
-            </Text>
-
-            {friendCodeLoading ? (
-              <ActivityIndicator size="large" color="#2563eb" />
-            ) : (
-              <>
-                <View
-                  className="items-center py-4 mb-4 rounded-xl"
-                  style={{ backgroundColor: '#EFF6FF' }}
-                >
-                  <Text style={{ fontSize: 32, fontWeight: '800', letterSpacing: 8, color: '#2563eb' }}>
-                    {friendCode}
-                  </Text>
-                </View>
-                <View className="flex-row gap-2">
-                  <Pressable
-                    onPress={() => {
-                      Clipboard.setString(friendCode ?? '');
-                      Alert.alert('복사 완료', '친구 코드가 클립보드에 복사되었습니다.');
-                    }}
-                    className="flex-row items-center justify-center flex-1 gap-1 py-3 bg-white border border-blue-200 rounded-xl active:opacity-80"
-                  >
-                    <Ionicons name="copy-outline" size={15} color="#2563eb" />
-                    <Text className="text-sm font-semibold text-blue-600">코드 복사</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => void handleShareFriendLink()}
-                    className="flex-row items-center justify-center flex-1 gap-1 py-3 rounded-xl active:opacity-80"
-                    style={{ backgroundColor: '#2563eb' }}
-                  >
-                    <Ionicons name="share-outline" size={15} color="#fff" />
-                    <Text className="text-sm font-semibold text-white">링크 공유</Text>
-                  </Pressable>
-                </View>
-              </>
-            )}
-          </Pressable>
-        </Pressable>
-      </Modal>
+        loading={friendCodeLoading}
+        friendCode={friendCode}
+        onClose={() => setFriendCodeVisible(false)}
+        onAddFriendByCode={addFriendByCode}
+        onShareLink={handleShareFriendLink}
+      />
     </SafeAreaView>
   );
 }
