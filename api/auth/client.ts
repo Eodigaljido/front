@@ -11,6 +11,7 @@ export interface AuthUser {
   email: string;
   nickname: string;
   role: string;
+  profileImageUrl?: string | null;
 }
 
 export interface AuthResponse {
