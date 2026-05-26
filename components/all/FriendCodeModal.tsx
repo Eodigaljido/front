@@ -1,14 +1,6 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  Pressable,
-  Modal,
-  ActivityIndicator,
-  Alert,
-  Clipboard,
-  TextInput,
-} from 'react-native';
+import { View, Text, Pressable, Modal, ActivityIndicator, Alert, TextInput } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 
 // 백엔드 친구 코드 형식: 영문 대문자 + 숫자 조합 6자리 (예: A3K9B2)
@@ -20,6 +12,7 @@ interface Props {
   friendCode: string | null;
   onClose: () => void;
   onAddFriendByCode: (code: string) => Promise<void>;
+  onShareLink?: () => void;
 }
 
 export default function FriendCodeModal({
@@ -28,6 +21,7 @@ export default function FriendCodeModal({
   friendCode,
   onClose,
   onAddFriendByCode,
+  onShareLink,
 }: Props) {
   const [inputCode, setInputCode] = useState('');
   const [inputError, setInputError] = useState('');
@@ -111,17 +105,29 @@ export default function FriendCodeModal({
                   {friendCode}
                 </Text>
               </View>
-              <Pressable
-                onPress={() => {
-                  Clipboard.setString(friendCode ?? '');
-                  Alert.alert('복사 완료', '친구 코드가 클립보드에 복사되었습니다.');
-                }}
-                className="flex-row items-center justify-center gap-1 py-3 rounded-xl active:opacity-80"
-                style={{ backgroundColor: '#2563eb' }}
-              >
-                <Ionicons name="copy-outline" size={15} color="#fff" />
-                <Text className="text-sm font-semibold text-white">코드 복사</Text>
-              </Pressable>
+              <View className="flex-row gap-2">
+                <Pressable
+                  onPress={async () => {
+                    await Clipboard.setStringAsync(friendCode ?? '');
+                    Alert.alert('복사 완료', '친구 코드가 클립보드에 복사되었습니다.');
+                  }}
+                  className="flex-row items-center justify-center flex-1 gap-1 py-3 border border-blue-200 rounded-xl active:opacity-80"
+                  style={{ backgroundColor: '#fff' }}
+                >
+                  <Ionicons name="copy-outline" size={15} color="#2563eb" />
+                  <Text className="text-sm font-semibold text-blue-600">코드 복사</Text>
+                </Pressable>
+                {onShareLink && (
+                  <Pressable
+                    onPress={onShareLink}
+                    className="flex-row items-center justify-center flex-1 gap-1 py-3 rounded-xl active:opacity-80"
+                    style={{ backgroundColor: '#2563eb' }}
+                  >
+                    <Ionicons name="share-outline" size={15} color="#fff" />
+                    <Text className="text-sm font-semibold text-white">링크 공유</Text>
+                  </Pressable>
+                )}
+              </View>
             </>
           )}
 
