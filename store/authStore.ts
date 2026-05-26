@@ -76,6 +76,7 @@ export const useAuthStore = create<AuthState>(set => ({
           email: me.email ?? '',
           nickname: me.nickname ?? '',
           role: me.role ?? 'USER',
+          profileImageUrl: me.profileImageUrl ?? null,
         },
       });
     } catch {
@@ -114,6 +115,7 @@ export const useAuthStore = create<AuthState>(set => ({
           email: me.email ?? '',
           nickname: me.nickname ?? '',
           role: me.role ?? 'USER',
+          profileImageUrl: me.profileImageUrl ?? null,
         },
         isAuthenticated: true,
       });
