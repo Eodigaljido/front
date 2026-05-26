@@ -289,7 +289,7 @@ export const ChatRoomScreen = () => {
                 sentAt={new Date(msg.createdAt)}
                 userName={msg.senderNickname}
                 isEdited={!!msg.editedAt}
-                onLongPress={isMine ? () => setSelectedMessage(msg) : undefined}
+                onLongPress={isMine && !msg.uuid.startsWith("pending-") ? () => setSelectedMessage(msg) : undefined}
                 onImageLoad={
                   msg.uuid === scrollOnImageLoadRef.current
                     ? () => {
