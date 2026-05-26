@@ -10,7 +10,7 @@ export interface Friends {
 
 // 친구 목록 조회
 export async function getFriends(accessToken: string): Promise<Friends[]> {
-  const res = await instance.get<Friends[]>("/friends", {
+  const res = await instance.get<Friends[]>("/api/friends", {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   return Array.isArray(res.data) ? res.data : [];
@@ -20,7 +20,7 @@ export async function getFriends(accessToken: string): Promise<Friends[]> {
 export async function getFriendsRecent(
   accessToken: string,
 ): Promise<Friends[]> {
-  const res = await instance.get<Friends[]>("/friends/recent", {
+  const res = await instance.get<Friends[]>("/api/friends/recent", {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   return Array.isArray(res.data) ? res.data : [];
