@@ -1,5 +1,12 @@
 import { instance } from "../axios";
 
+export type ChatMemberSummary = {
+  uuid: string;
+  userId?: string;
+  nickname?: string;
+  profileImageUrl?: string | null;
+};
+
 export interface ChatRoom {
   uuid: string;
   name: string;
@@ -7,11 +14,27 @@ export interface ChatRoom {
   memberCount: number;
   ownerUuid: string;
   ownerUserId: string;
-  memberUuids: string[];
-  memberUserIds: string[];
+  memberUuids?: string[];
+  memberUserIds?: string[];
+  members?: ChatMemberSummary[];
   lastMessage: string;
   lastMessageAt: string;
   unreadCount: number;
+}
+
+/** Swagger: GET /chats/{roomUuid} */
+export async function getChatRoom(
+  accessToken: string,
+  roomUuid: string,
+): Promise<ChatRoom | null> {
+  try {
+    const res = await instance.get<ChatRoom>(`/chats/${roomUuid}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    return res.data ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export interface ChatMessage {
@@ -150,4 +173,32 @@ export async function renameChatRoom(
       headers: { Authorization: `Bearer ${accessToken}` },
     },
   );
+}
+
+/** Swagger: POST /chats/{roomUuid}/members — 친구(userId) 초대 */
+export async function inviteChatMember(
+  accessToken: string,
+  roomUuid: string,
+  userId: string,
+): Promise<ChatRoom> {
+  const res = await instance.post<ChatRoom>(
+    `/chats/${roomUuid}/members`,
+    { userId: String(userId ?? "").trim() },
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  return res.data;
+}
+
+/** Swagger: POST /chats/{roomUuid}/route — 루트 공유 메시지(ROUTE 타입) */
+export async function shareRouteToChat(
+  accessToken: string,
+  roomUuid: string,
+  routeUuid: string,
+): Promise<ChatMessage> {
+  const res = await instance.post<ChatMessage>(
+    `/chats/${roomUuid}/route`,
+    { routeUuid: String(routeUuid ?? "").trim() },
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  return res.data;
 }

@@ -1,4 +1,4 @@
-import { Alert, Platform, Share } from 'react-native';
+import { Alert, ActionSheetIOS, Platform, Share } from 'react-native';
 import Constants from 'expo-constants';
 import { SHARE_LINK_HOST } from '../constants/shareLinking';
 
@@ -16,6 +16,51 @@ export function buildCollaborativeRouteShareUrl(routeId: string): string {
   if (!id) return '';
   const base = getShareBaseUrl();
   return `${base}/routes/collaborative/${encodeURIComponent(id)}`;
+}
+
+/** 공동 루트 공유 — 친구 초대 / 링크 공유 선택 */
+export function presentCollaborativeShareOptions(opts: {
+  routeId: string;
+  title: string;
+  onInviteFriends: () => void;
+}): void {
+  const routeId = String(opts.routeId ?? '').trim();
+  if (!routeId) {
+    Alert.alert('', '루트를 한 번 저장한 뒤 공유할 수 있어요.');
+    return;
+  }
+
+  const pick = (index: number) => {
+    if (index === 0) opts.onInviteFriends();
+    else if (index === 1) {
+      void shareCollaborativeRoute({ routeId, title: opts.title });
+    }
+  };
+
+  if (Platform.OS === 'ios') {
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        options: ['친구에게 공유', '링크로 공유', '취소'],
+        cancelButtonIndex: 2,
+        title: '공동 루트 초대',
+        message: '친구는 채팅방에서, 링크는 메신저·SNS로 보낼 수 있어요.',
+      },
+      (i) => {
+        if (i === 0 || i === 1) pick(i);
+      },
+    );
+    return;
+  }
+
+  Alert.alert(
+    '공동 루트 초대',
+    '친구는 채팅방에서, 링크는 메신저·SNS로 보낼 수 있어요.',
+    [
+      { text: '친구에게 공유', onPress: () => pick(0) },
+      { text: '링크로 공유', onPress: () => pick(1) },
+      { text: '취소', style: 'cancel' },
+    ],
+  );
 }
 
 /** 공동 편집 초대 — 링크로 RouteCreate(공동) 진입 */

@@ -1,4 +1,4 @@
-/** 공동 루트 편집 멤버 (서버 연동 전 목 데이터) */
+/** 공동 루트 편집 멤버 — API 연동 전까지 방장(본인)만 표시 */
 
 export type RouteMemberRole = 'host' | 'member';
 
@@ -7,59 +7,36 @@ export type RouteMember = {
   name: string;
   role: RouteMemberRole;
   avatarUri: string;
-  /** 온라인 표시용 (3분마다 갱신 시뮬레이션) */
   online?: boolean;
 };
 
-const MOCK_POOL: Omit<RouteMember, 'role' | 'online'>[] = [
-  { id: 'm1', name: '지수', avatarUri: 'https://i.pravatar.cc/96?u=collab-m1' },
-  { id: 'm2', name: '민호', avatarUri: 'https://i.pravatar.cc/96?u=collab-m2' },
-  { id: 'm3', name: '서연', avatarUri: 'https://i.pravatar.cc/96?u=collab-m3' },
-  { id: 'm4', name: '준혁', avatarUri: 'https://i.pravatar.cc/96?u=collab-m4' },
-  { id: 'm5', name: '하은', avatarUri: 'https://i.pravatar.cc/96?u=collab-m5' },
-];
+const DEFAULT_HOST_AVATAR =
+  'https://ui-avatars.com/api/?name=Host&background=e2e8f0&color=475569';
 
-function hashRouteSeed(routeId: string, tick: number): number {
-  const s = `${routeId}:${tick}`;
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h + s.charCodeAt(i) * (i + 3)) % 9973;
-  return h;
-}
-
-/** 방장 + 참여 멤버 (tick마다 온라인 멤버 구성이 약간 바뀜 — 3분 주기 UI용) */
+/** 방장만 반환 (가짜 멤버 목 데이터 제거). 백엔드 members API 연동 시 확장 */
 export function getRouteMembers(
-  routeId: string,
-  opts?: { hostName?: string; refreshTick?: number },
+  _routeId: string,
+  opts?: { hostName?: string; hostAvatarUri?: string | null },
 ): RouteMember[] {
-  const rid = String(routeId ?? '').trim() || 'new';
-  const tick = opts?.refreshTick ?? 0;
   const hostName = String(opts?.hostName ?? '나').trim() || '나';
-  const seed = hashRouteSeed(rid, tick);
-
-  const extraCount = 2 + (seed % 3);
-  const members: RouteMember[] = [
+  const avatar =
+    String(opts?.hostAvatarUri ?? '').trim() || DEFAULT_HOST_AVATAR;
+  return [
     {
       id: 'host-me',
       name: hostName,
       role: 'host',
-      avatarUri: 'https://i.pravatar.cc/96?u=host-me',
+      avatarUri: avatar,
       online: true,
     },
   ];
-
-  for (let i = 0; i < extraCount; i++) {
-    const p = MOCK_POOL[(seed + i * 7) % MOCK_POOL.length];
-    if (members.some((m) => m.id === p.id)) continue;
-    members.push({
-      ...p,
-      role: 'member',
-      online: (seed + i + tick) % 3 !== 0,
-    });
-  }
-
-  return members;
 }
 
 export function getOnlineMembers(members: RouteMember[]): RouteMember[] {
   return members.filter((m) => m.online !== false);
+}
+
+/** 방장 외 참여자가 있을 때만 멤버 UI 표시 */
+export function hasCollaboratorPeers(members: RouteMember[]): boolean {
+  return members.some((m) => m.role !== 'host');
 }
