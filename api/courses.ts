@@ -125,7 +125,9 @@ function asArray<T>(value: T[] | null | undefined): T[] {
 }
 
 /** API·스냅샷 혼합 — 공유 코스 저장 횟수 */
-export function pickCourseSaveCount(raw: ApiCourseLike | CourseItem | null | undefined): number {
+export function pickCourseSaveCount(
+  raw: ApiCourseLike | CourseItem | null | undefined,
+): number {
   if (!raw || typeof raw !== "object") return 0;
   const n = Number(
     (raw as ApiCourseLike).saveCount ??
@@ -184,7 +186,9 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
     `api-${idx}`;
 
   const routeStepSource =
-    asArray(raw.routeSteps).length > 0 ? asArray(raw.routeSteps) : asArray(raw.steps);
+    asArray(raw.routeSteps).length > 0
+      ? asArray(raw.routeSteps)
+      : asArray(raw.steps);
   const fromRouteSteps = routeStepSource.filter(Boolean).map((s, sIdx) => {
     const sAny = s as {
       lat?: number;
@@ -199,9 +203,13 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
       name: String(s.name ?? s.title ?? `경유지 ${sIdx + 1}`),
       stayMinutes: Number(s.stayMinutes ?? 30),
       lat:
-        latRaw != null && !Number.isNaN(Number(latRaw)) ? Number(latRaw) : undefined,
+        latRaw != null && !Number.isNaN(Number(latRaw))
+          ? Number(latRaw)
+          : undefined,
       lng:
-        lngRaw != null && !Number.isNaN(Number(lngRaw)) ? Number(lngRaw) : undefined,
+        lngRaw != null && !Number.isNaN(Number(lngRaw))
+          ? Number(lngRaw)
+          : undefined,
     };
   });
 
@@ -214,17 +222,28 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
       id: String(s.id ?? `${rootId}-s-${s.sequence ?? sIdx}`),
       name: String(s.title ?? s.name ?? `경유지 ${sIdx + 1}`),
       stayMinutes: Number(s.stayMinutes ?? 0),
-      lat: s.lat != null && !Number.isNaN(Number(s.lat)) ? Number(s.lat) : undefined,
-      lng: s.lng != null && !Number.isNaN(Number(s.lng)) ? Number(s.lng) : undefined,
+      lat:
+        s.lat != null && !Number.isNaN(Number(s.lat))
+          ? Number(s.lat)
+          : undefined,
+      lng:
+        s.lng != null && !Number.isNaN(Number(s.lng))
+          ? Number(s.lng)
+          : undefined,
     }));
   }
 
   const legs = (
-    asArray(raw.routeLegs).length > 0 ? asArray(raw.routeLegs) : asArray(raw.legs)
+    asArray(raw.routeLegs).length > 0
+      ? asArray(raw.routeLegs)
+      : asArray(raw.legs)
   ).map((l, lIdx) => ({
     id: String(l.id ?? `${rootId}-l-${lIdx}`),
     mode:
-      l.mode === "walk" || l.mode === "car" || l.mode === "bike" || l.mode === "transit"
+      l.mode === "walk" ||
+      l.mode === "car" ||
+      l.mode === "bike" ||
+      l.mode === "transit"
         ? l.mode
         : "transit",
     minutes: Math.max(1, Number(l.minutes ?? 10)),
@@ -232,13 +251,24 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
   }));
 
   const sortedStops = Array.isArray(raw.stops)
-    ? [...raw.stops].sort((a, b) => Number(a?.sequence ?? 0) - Number(b?.sequence ?? 0))
+    ? [...raw.stops].sort(
+        (a, b) => Number(a?.sequence ?? 0) - Number(b?.sequence ?? 0),
+      )
     : [];
-  const startByKind = sortedStops.find((s) => String(s?.kind ?? "").toLowerCase() === "start");
-  const endByKind = sortedStops.find((s) => String(s?.kind ?? "").toLowerCase() === "end");
+  const startByKind = sortedStops.find(
+    (s) => String(s?.kind ?? "").toLowerCase() === "start",
+  );
+  const endByKind = sortedStops.find(
+    (s) => String(s?.kind ?? "").toLowerCase() === "end",
+  );
 
-  const legMinutesSum = legs.reduce((acc, l) => acc + (Number.isFinite(l.minutes) ? l.minutes : 0), 0);
-  const overallFromFields = Number(raw.overallDurationMinutes ?? raw.durationMinutes ?? NaN);
+  const legMinutesSum = legs.reduce(
+    (acc, l) => acc + (Number.isFinite(l.minutes) ? l.minutes : 0),
+    0,
+  );
+  const overallFromFields = Number(
+    raw.overallDurationMinutes ?? raw.durationMinutes ?? NaN,
+  );
 
   const depFromKind = startByKind
     ? String(startByKind.title ?? startByKind.name ?? "").trim()
@@ -271,7 +301,10 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
     ),
     rating: Number(raw.rating ?? 4.5),
     reviewCount: Number(raw.reviewCount ?? 0),
-    routeSteps: steps.length > 0 ? steps : [{ id: `s-${idx}-0`, name: "경유지", stayMinutes: 30 }],
+    routeSteps:
+      steps.length > 0
+        ? steps
+        : [{ id: `s-${idx}-0`, name: "경유지", stayMinutes: 30 }],
     routeLegs: legs,
     reviews: asArray(raw.reviews).map((r, rIdx) => ({
       id: String(r.id ?? `${rootId}-r-${rIdx}`),
@@ -343,13 +376,18 @@ export async function fetchHomeCourses(limit = 6): Promise<CourseItem[]> {
 }
 
 /** 홈·인기 섹션 — 저장 수 기준 상위 코스 */
-export async function fetchPopularCoursesBySaves(limit = 6): Promise<CourseItem[]> {
+export async function fetchPopularCoursesBySaves(
+  limit = 6,
+): Promise<CourseItem[]> {
   const size = Math.max(limit, 20);
-  const fromPublic = await fetchCoursesFromCandidates(CANDIDATE_ENDPOINTS.shared, {
-    tab: "popular",
-    sort: "popular",
-    size,
-  });
+  const fromPublic = await fetchCoursesFromCandidates(
+    CANDIDATE_ENDPOINTS.shared,
+    {
+      tab: "popular",
+      sort: "popular",
+      size,
+    },
+  );
   const list =
     fromPublic.length > 0
       ? fromPublic
@@ -383,7 +421,9 @@ export async function fetchSharedCourseDetail(
 export async function fetchMyCourseDetail(
   courseId: string,
 ): Promise<CourseItem | null> {
-  return fetchCourseDetailFromCandidates(DETAIL_CANDIDATE_ENDPOINTS.my(courseId));
+  return fetchCourseDetailFromCandidates(
+    DETAIL_CANDIDATE_ENDPOINTS.my(courseId),
+  );
 }
 
 export type SaveSharedCourseResult =
@@ -394,7 +434,9 @@ export type SaveSharedCourseResult =
  * Swagger: POST /api/courses/{courseId}/save
  * 서버에 해당 공유 코스가 없으면 404 → 목(mock) ID로 저장 시도 시 실패함.
  */
-export async function saveSharedCourse(courseId: string): Promise<SaveSharedCourseResult> {
+export async function saveSharedCourse(
+  courseId: string,
+): Promise<SaveSharedCourseResult> {
   const id = String(courseId ?? "").trim();
   if (!id) return { ok: false, reason: "OTHER" };
   const encoded = encodeURIComponent(id);
@@ -414,7 +456,12 @@ export async function saveSharedCourse(courseId: string): Promise<SaveSharedCour
       if (status === 404) {
         saw404 = true;
         if (__DEV__) {
-          console.warn("[saveSharedCourse]", endpoint, status, e?.response?.data);
+          console.warn(
+            "[saveSharedCourse]",
+            endpoint,
+            status,
+            e?.response?.data,
+          );
         }
         continue;
       }
@@ -496,7 +543,9 @@ export async function updateMyCourseStatus(
 }
 
 /** Swagger: POST /api/courses/my/{courseId}/share — 내 루트 공유 활성화 (204) */
-export async function enableMyCourseSharing(courseId: string): Promise<boolean> {
+export async function enableMyCourseSharing(
+  courseId: string,
+): Promise<boolean> {
   const id = normalizeServerCourseId(courseId);
   if (!id) return false;
   try {
@@ -519,7 +568,9 @@ export async function enableMyCourseSharing(courseId: string): Promise<boolean> 
 }
 
 /** Swagger: DELETE /api/courses/my/{courseId}/share — 내 루트 공유 비활성화 (204) */
-export async function disableMyCourseSharing(courseId: string): Promise<boolean> {
+export async function disableMyCourseSharing(
+  courseId: string,
+): Promise<boolean> {
   const id = normalizeServerCourseId(courseId);
   if (!id) return false;
   try {
@@ -544,7 +595,9 @@ export async function disableMyCourseSharing(courseId: string): Promise<boolean>
  * Swagger 공개 플로우: status → PUBLISHED 후 share 활성화
  * (공유 코스 탭 노출 + 팔로잉 소식)
  */
-export async function publishMyCourseToPublic(courseId: string): Promise<boolean> {
+export async function publishMyCourseToPublic(
+  courseId: string,
+): Promise<boolean> {
   const id = normalizeServerCourseId(courseId);
   if (!id) return false;
   await updateMyCourseStatus(id, "PUBLISHED");
@@ -552,7 +605,9 @@ export async function publishMyCourseToPublic(courseId: string): Promise<boolean
 }
 
 /** 비공개: share 해제 후 DRAFT */
-export async function unpublishMyCourseFromPublic(courseId: string): Promise<boolean> {
+export async function unpublishMyCourseFromPublic(
+  courseId: string,
+): Promise<boolean> {
   const id = normalizeServerCourseId(courseId);
   if (!id) return false;
   const ok = await disableMyCourseSharing(id);
@@ -592,7 +647,9 @@ function extractMyCourseUuidFromResponse(data: any): string | null {
 }
 
 /** Swagger: POST /api/courses/my → 201 + `MyCourseDetailResponse`(uuid). 실패 시 null */
-export async function createMyRoute(payload: UpsertMyRoutePayload): Promise<string | null> {
+export async function createMyRoute(
+  payload: UpsertMyRoutePayload,
+): Promise<string | null> {
   try {
     const res = await instance.post("/api/courses/my", payload);
     return extractMyCourseUuidFromResponse(res.data);
@@ -634,7 +691,10 @@ export function buildUpsertPayloadFromUserRoute(route: {
     legs: route.legs.map((l) => ({
       id: l.id,
       mode:
-        l.mode === "walk" || l.mode === "car" || l.mode === "bike" || l.mode === "transit"
+        l.mode === "walk" ||
+        l.mode === "car" ||
+        l.mode === "bike" ||
+        l.mode === "transit"
           ? l.mode
           : "transit",
       minutes: Math.max(1, Number(l.minutes ?? 10)),
@@ -681,7 +741,9 @@ export async function convertPersonalCourseToPublic(route: {
   const shared = await publishMyCourseToPublic(serverId);
   if (!shared) return { ok: false, reason: "SHARE_FAILED", serverId };
   const migratedFromLocalId =
-    String(route.id).startsWith("ur-") && serverId !== route.id ? route.id : undefined;
+    String(route.id).startsWith("ur-") && serverId !== route.id
+      ? route.id
+      : undefined;
   return { ok: true, serverId, migratedFromLocalId };
 }
 
@@ -703,9 +765,13 @@ export type FollowingNewsItem = {
   ago: string;
 };
 
-export async function fetchFollowingNews(limit = 3): Promise<FollowingNewsItem[]> {
+export async function fetchFollowingNews(
+  limit = 3,
+): Promise<FollowingNewsItem[]> {
   try {
-    const res = await instance.get("/api/following/news", { params: { limit } });
+    const res = await instance.get("/api/following/news", {
+      params: { limit },
+    });
     const arr = pickArrayPayload(res.data);
     if (arr.length === 0) return [];
     return arr.slice(0, limit).map((n: any, idx: number) => ({
@@ -718,4 +784,9 @@ export async function fetchFollowingNews(limit = 3): Promise<FollowingNewsItem[]
   } catch {
     return [];
   }
+}
+
+/** Swagger: GET /api/courses/my/sharing — 현재 공유(공개) 중인 내 코스 전체 목록 */
+export async function fetchMySharedCourses(): Promise<CourseItem[]> {
+  return fetchCoursesFromCandidates(["/api/courses/my/sharing"]);
 }
