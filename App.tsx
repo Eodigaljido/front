@@ -102,7 +102,7 @@ export type RootStackParamList = {
   OnBoardEnd: undefined;
 
   // 채팅 관련
-  ChatRoomScreen: { roomUuid: string; roomName: string };
+  ChatRoomScreen: { roomUuid: string; roomName: string; memberCount?: number };
   ChatCreatingScreen: undefined;
   ChatRoomInfoScreen: { roomUuid: string; roomName: string };
 
