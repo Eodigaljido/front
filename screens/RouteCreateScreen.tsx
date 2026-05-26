@@ -167,6 +167,7 @@ const TRANSIT_TYPE_LABELS = {
   subway: "지하철",
   train: "기차",
 } as const;
+const DEFAULT_PLACE_SEARCH_QUERY = "맛집";
 
 type TransitType = keyof typeof TRANSIT_TYPE_LABELS;
 

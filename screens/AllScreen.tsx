@@ -1,15 +1,6 @@
 // @ts-nocheck
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  View,
-  Text,
-  Pressable,
-  ScrollView,
-  Alert,
-  Modal,
-  ActivityIndicator,
-  Clipboard,
-} from "react-native";
+import { View, Text, Pressable, ScrollView, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   useFocusEffect,
@@ -25,6 +16,7 @@ import { shareFriendInvite } from "../utils/shareFriend";
 import { useAuthStore } from "../store/authStore";
 import MenuSection, { type MenuItem } from "../components/all/MenuSection";
 import ProfileCard from "../components/all/ProfileCard";
+import FriendCodeModal from "../components/all/FriendCodeModal";
 
 const CARD_STYLE = {
   borderWidth: 0.5,
@@ -41,7 +33,6 @@ export default function AllScreen(): React.JSX.Element {
   const logout = useAuthStore((s) => s.logout);
   const authUser = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
-  const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
   const [sharedRouteCount, setSharedRouteCount] = useState<number>(27);
   const [friendCode, setFriendCode] = useState<string | null>(null);
   const [friendCodeVisible, setFriendCodeVisible] = useState(false);
@@ -52,7 +43,6 @@ export default function AllScreen(): React.JSX.Element {
   const refreshMe = useCallback(async () => {
     try {
       const me = await getMyProfile();
-      setProfileImageUrl(me.profileImageUrl ?? null);
       setUser({
         id: (me as any).id ?? 0,
         uuid: me.uuid,
@@ -60,6 +50,7 @@ export default function AllScreen(): React.JSX.Element {
         email: me.email ?? "",
         nickname: me.nickname ?? "",
         role: me.role ?? "USER",
+        profileImageUrl: me.profileImageUrl ?? null,
       });
       if (typeof (me as any).sharedRouteCount === "number") {
         setSharedRouteCount((me as any).sharedRouteCount);
@@ -212,7 +203,8 @@ export default function AllScreen(): React.JSX.Element {
     confirmAddFriendFromLink(code);
   }, [route.params, navigation, confirmAddFriendFromLink]);
 
-  const avatarUri = profileImageUrl ?? "https://i.pravatar.cc/100?img=5";
+  const avatarUri =
+    authUser?.profileImageUrl ?? "https://i.pravatar.cc/100?img=5";
 
   return (
     <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={["top"]}>
@@ -266,12 +258,10 @@ export default function AllScreen(): React.JSX.Element {
         <Pressable
           className="items-center py-4 mt-4 bg-white border border-gray-200 rounded-2xl active:opacity-80"
           onPress={() =>
-            navigation
-              .getParent()
-              ?.navigate("UserProfile", {
-                uuid: authUser?.uuid,
-                email: authUser?.email,
-              })
+            navigation.getParent()?.navigate("UserProfile", {
+              uuid: authUser?.uuid,
+              email: authUser?.email,
+            })
           }
         >
           <Text className="text-base font-semibold text-gray-500">
@@ -280,87 +270,14 @@ export default function AllScreen(): React.JSX.Element {
         </Pressable>
       </ScrollView>
 
-      <Modal
+      <FriendCodeModal
         visible={friendCodeVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setFriendCodeVisible(false)}
-      >
-        <Pressable
-          className="flex-1 items-center justify-center"
-          style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
-          onPress={() => setFriendCodeVisible(false)}
-        >
-          <Pressable
-            onPress={(e) => e.stopPropagation()}
-            className="mx-8 rounded-2xl bg-white px-6 py-7"
-            style={{ width: 300 }}
-          >
-            <Pressable
-              onPress={() => setFriendCodeVisible(false)}
-              className="absolute top-4 right-4 h-8 w-8 items-center justify-center"
-            >
-              <Ionicons name="close" size={20} color="#9ca3af" />
-            </Pressable>
-
-            <Text className="mb-1 text-center text-lg font-bold text-gray-900">
-              내 친구 코드
-            </Text>
-            <Text className="mb-5 text-center text-xs text-gray-500">
-              코드를 알려주거나 링크를 공유해 친구를 초대하세요.
-            </Text>
-
-            {friendCodeLoading ? (
-              <ActivityIndicator size="large" color="#2563eb" />
-            ) : (
-              <>
-                <View
-                  className="mb-4 items-center rounded-xl py-4"
-                  style={{ backgroundColor: "#EFF6FF" }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 32,
-                      fontWeight: "800",
-                      letterSpacing: 8,
-                      color: "#2563eb",
-                    }}
-                  >
-                    {friendCode}
-                  </Text>
-                </View>
-                <View className="flex-row gap-2">
-                  <Pressable
-                    onPress={() => {
-                      Clipboard.setString(friendCode ?? "");
-                      Alert.alert(
-                        "복사 완료",
-                        "친구 코드가 클립보드에 복사되었습니다.",
-                      );
-                    }}
-                    className="flex-1 flex-row items-center justify-center gap-1 rounded-xl border border-blue-200 bg-white py-3 active:opacity-80"
-                  >
-                    <Ionicons name="copy-outline" size={15} color="#2563eb" />
-                    <Text className="text-sm font-semibold text-blue-600">
-                      코드 복사
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => void handleShareFriendLink()}
-                    className="flex-1 flex-row items-center justify-center gap-1 rounded-xl py-3 active:opacity-80"
-                    style={{ backgroundColor: "#2563eb" }}
-                  >
-                    <Ionicons name="share-outline" size={15} color="#fff" />
-                    <Text className="text-sm font-semibold text-white">
-                      링크 공유
-                    </Text>
-                  </Pressable>
-                </View>
-              </>
-            )}
-          </Pressable>
-        </Pressable>
-      </Modal>
+        loading={friendCodeLoading}
+        friendCode={friendCode}
+        onClose={() => setFriendCodeVisible(false)}
+        onAddFriendByCode={addFriendByCode}
+        onShareLink={handleShareFriendLink}
+      />
     </SafeAreaView>
   );
 }
