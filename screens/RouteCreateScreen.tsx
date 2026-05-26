@@ -2084,7 +2084,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
       </Modal>
 
       <Modal visible={searchOpen} animationType="slide" onRequestClose={closeSearch}>
-        <SafeAreaView className="flex-1 bg-[#f5f5f9]" edges={['top', 'left', 'right']}>
+        <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={['top', 'left', 'right']}>
           <KeyboardAvoidingView
             className="flex-1"
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
