@@ -44,6 +44,7 @@ import ChatRoomInfoScreen from "./screens/chat/ChatRoomInfoScreen";
 import RouteCreateScreen from "./screens/RouteCreateScreen";
 import ProfileSettingsScreen from "./screens/ProfileSettingsScreen";
 import FindAccountScreen from "./screens/FindAccountScreen";
+import UserProfileScreen from "./screens/UserProfileScreen";
 
 export type RootTabParamList = {
   Home: undefined;
@@ -80,6 +81,7 @@ export type RootStackParamList = {
       }
     | undefined;
   ProfileSettings: undefined;
+  UserProfile: { uuid: string; email?: string };
 
   // Auth 관련
   Login: undefined;
@@ -307,6 +309,10 @@ export default function App(): React.JSX.Element {
                 <Stack.Screen
                   name="ProfileSettings"
                   component={ProfileSettingsScreen}
+                />
+                <Stack.Screen
+                  name="UserProfile"
+                  component={UserProfileScreen}
                 />
                 <Stack.Screen name="OnBoardStart" component={OnBoardStart} />
                 <Stack.Screen name="AreaOnBoard" component={AreaOnBoard} />
