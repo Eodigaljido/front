@@ -1,13 +1,13 @@
 // @ts-nocheck
-import React, { useCallback, useState } from 'react';
-import { View, Text, Pressable, Image, ScrollView, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons, Feather } from '@expo/vector-icons';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import React, { useCallback, useState } from "react";
+import { View, Text, Pressable, Image, ScrollView, Alert } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons, Feather } from "@expo/vector-icons";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 
-import type { RootTabParamList } from '../App';
-import { getMyProfile } from '../api/users';
-import { useAuthStore } from '../store/authStore';
+import type { RootTabParamList } from "../App";
+import { getMyProfile } from "../api/users";
+import { useAuthStore } from "../store/authStore";
 
 type MenuItem = {
   id: string;
@@ -20,9 +20,9 @@ type MenuItem = {
 
 export default function AllScreen(): React.JSX.Element {
   const navigation = useNavigation<any>();
-  const logout = useAuthStore(s => s.logout);
-  const authUser = useAuthStore(s => s.user);
-  const setUser = useAuthStore(s => s.setUser);
+  const logout = useAuthStore((s) => s.logout);
+  const authUser = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
   const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
   const [sharedRouteCount, setSharedRouteCount] = useState<number>(27);
 
@@ -33,12 +33,12 @@ export default function AllScreen(): React.JSX.Element {
       setUser({
         id: (me as any).id ?? 0,
         uuid: me.uuid,
-        userId: me.userId ?? '',
-        email: me.email ?? '',
-        nickname: me.nickname ?? '',
-        role: me.role ?? 'USER',
+        userId: me.userId ?? "",
+        email: me.email ?? "",
+        nickname: me.nickname ?? "",
+        role: me.role ?? "USER",
       });
-      if (typeof (me as any).sharedRouteCount === 'number') {
+      if (typeof (me as any).sharedRouteCount === "number") {
         setSharedRouteCount((me as any).sharedRouteCount);
       }
     } catch {
@@ -148,7 +148,7 @@ export default function AllScreen(): React.JSX.Element {
   );
 
   return (
-    <SafeAreaView className="flex-1 bg-[#f5f5f9]" edges={["left", "right"]}>
+    <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={["left", "right"]}>
       <ScrollView
         contentContainerStyle={{
           paddingHorizontal: 18,
@@ -161,12 +161,14 @@ export default function AllScreen(): React.JSX.Element {
           <View className="flex-row items-start justify-between">
             <View className="flex-row items-center">
               <Image
-                source={{ uri: 'https://i.pravatar.cc/100?img=5' }}
+                source={{ uri: profileImageUrl ?? "https://i.pravatar.cc/100?img=5" }}
                 className="rounded-full h-14 w-14"
               />
               <View className="ml-3">
-                <Text className="text-lg font-bold text-gray-900">juyung</Text>
-                <Text className="mt-0.5 text-sm text-gray-500">btm.email2769@gmail.com</Text>
+                <Text className="text-lg font-bold text-gray-900">{authUser?.nickname ?? ""}</Text>
+                <Text className="mt-0.5 text-sm text-gray-500">
+                  {authUser?.email ?? ""}
+                </Text>
               </View>
             </View>
             <Pressable
@@ -183,9 +185,18 @@ export default function AllScreen(): React.JSX.Element {
           </View>
 
           <View className="flex-row items-center justify-between mt-4">
-            <Text className="text-[17px] font-bold text-gray-900">공유한 루트 : 27개</Text>
-            <Pressable onPress={() => Alert.alert('친구 추가', '친구 추가 기능을 준비 중입니다.')} className="active:opacity-80">
-              <Text className="text-sm font-semibold text-blue-600">+ 친구 추가하기</Text>
+            <Text className="text-[17px] font-bold text-gray-900">
+              공유한 루트 : 27개
+            </Text>
+            <Pressable
+              onPress={() =>
+                Alert.alert("친구 추가", "친구 추가 기능을 준비 중입니다.")
+              }
+              className="active:opacity-80"
+            >
+              <Text className="text-sm font-semibold text-blue-600">
+                + 친구 추가하기
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -195,14 +206,16 @@ export default function AllScreen(): React.JSX.Element {
 
         <Pressable
           onPress={() =>
-            Alert.alert('로그아웃', '정말 로그아웃 하시겠습니까?', [
-              { text: '취소', style: 'cancel' },
+            Alert.alert("로그아웃", "정말 로그아웃 하시겠습니까?", [
+              { text: "취소", style: "cancel" },
               {
-                text: '로그아웃',
-                style: 'destructive',
+                text: "로그아웃",
+                style: "destructive",
                 onPress: async () => {
                   await logout();
-                  navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Login' }] });
+                  navigation
+                    .getParent()
+                    ?.reset({ index: 0, routes: [{ name: "Login" }] });
                 },
               },
             ])
@@ -210,6 +223,14 @@ export default function AllScreen(): React.JSX.Element {
           className="items-center py-4 mt-4 bg-white border border-gray-200 rounded-2xl active:opacity-80"
         >
           <Text className="text-base font-semibold text-red-500">로그아웃</Text>
+        </Pressable>
+        <Pressable
+          className="items-center py-4 mt-4 bg-white border border-gray-200 rounded-2xl active:opacity-80"
+          onPress={() => navigation.getParent()?.navigate("UserProfile", { uuid: authUser?.uuid, email: authUser?.email })}
+        >
+          <Text className="text-base font-semibold text-gray-500">
+            사용자 프로필 조회
+          </Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>
