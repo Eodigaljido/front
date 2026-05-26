@@ -152,6 +152,7 @@ const TRANSIT_TYPE_LABELS = {
   subway: '지하철',
   train: '기차',
 } as const;
+const DEFAULT_PLACE_SEARCH_QUERY = '맛집';
 
 type TransitType = keyof typeof TRANSIT_TYPE_LABELS;
 
@@ -1281,7 +1282,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
       searchCategoryCode && !q
         ? KAKAO_KEYWORD_CATEGORY_OPTIONS.find((x) => x.code === searchCategoryCode)?.label ?? ''
         : '';
-    const effectiveQuery = q || categoryFallbackQuery;
+    const effectiveQuery = q || categoryFallbackQuery || DEFAULT_PLACE_SEARCH_QUERY;
     if (!effectiveQuery) {
       setSearchResults([]);
       setSearchError(null);
@@ -3057,7 +3058,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                   ) : searchResults.length === 0 ? (
                     <Text className="py-8 text-center text-sm text-gray-500">
                       {searchQuery.trim() === ''
-                        ? '필터나 검색을 통해 찾아보세요!'
+                        ? '기본 주변 장소를 찾는 중이에요. 잠시 후 다시 확인해주세요!'
                         : '검색 결과가 없습니다. 필터나 다른 키워드로 찾아보세요!'}
                     </Text>
                   ) : (

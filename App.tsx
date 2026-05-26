@@ -33,6 +33,7 @@ import ChatRoomInfoScreen from './screens/chat/ChatRoomInfoScreen';
 import RouteCreateScreen from './screens/RouteCreateScreen';
 import RouteCollaboratorsScreen from './screens/RouteCollaboratorsScreen';
 import ProfileSettingsScreen from './screens/ProfileSettingsScreen';
+import UserProfileScreen from './screens/UserProfileScreen';
 import FindAccountScreen from './screens/FindAccountScreen';
 import FollowingNewsScreen from './screens/FollowingNewsScreen';
 import NotificationCenterScreen from './screens/NotificationCenterScreen';
@@ -81,6 +82,12 @@ export type RootStackParamList = {
       }
     | undefined;
   ProfileSettings: undefined;
+  UserProfile: {
+    userUuid?: string;
+    userId?: string;
+    nickname?: string;
+    profileImageUrl?: string;
+  };
 
   // Auth 관련
   Login: undefined;
@@ -303,6 +310,7 @@ export default function App(): React.JSX.Element {
                 />
                 <Stack.Screen name="CourseGuide" component={CourseGuideScreen} />
                 <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
+                <Stack.Screen name="UserProfile" component={UserProfileScreen} />
                 <Stack.Screen name="OnBoardStart" component={OnBoardStart} />
                 <Stack.Screen name="AreaOnBoard" component={AreaOnBoard} />
                 <Stack.Screen name="AgeOnBoard" component={AgeOnBoard} />
