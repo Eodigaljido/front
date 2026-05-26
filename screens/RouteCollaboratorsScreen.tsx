@@ -20,15 +20,13 @@ export default function RouteCollaboratorsScreen(): React.JSX.Element {
   const authUser = useAuthStore((s) => s.user);
   const routeId = String(route.params?.routeId ?? '').trim();
   const routeTitle = String(route.params?.routeTitle ?? '루트').trim() || '루트';
-  const refreshTick = Number(route.params?.refreshTick ?? 0);
-
   const members = useMemo(
     () =>
       getRouteMembers(routeId || 'new', {
         hostName: authUser?.nickname ?? '나',
-        refreshTick,
+        hostAvatarUri: authUser?.profileImageUrl,
       }),
-    [routeId, authUser?.nickname, refreshTick],
+    [routeId, authUser?.nickname, authUser?.profileImageUrl],
   );
 
   const host = members.find((m) => m.role === 'host');
@@ -117,8 +115,8 @@ export default function RouteCollaboratorsScreen(): React.JSX.Element {
 
         <View className="mt-4 rounded-2xl bg-blue-50 px-4 py-3 border border-blue-100">
           <Text className="text-xs leading-5 text-blue-800">
-            멤버 목록은 약 3분마다 갱신됩니다. 서버 실시간 연동 후 온라인 상태·편집 잠금이
-            반영됩니다.
+            참여 멤버는 초대·공유 후 채팅방과 함께 표시됩니다. 코스 멤버 API가 준비되면 이
+            목록에 실시간으로 반영됩니다.
           </Text>
         </View>
       </ScrollView>

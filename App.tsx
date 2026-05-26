@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 import { useAuthStore } from './store/authStore';
 import { NavigationContainer } from '@react-navigation/native';
+import { navigationRef } from './navigation/rootNavigation';
 import { BottomTabBar, createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -48,7 +49,7 @@ export type RootTabParamList = {
         initialQuery?: string;
       }
     | undefined;
-  MyRoute: undefined;
+  MyRoute: { viewCourseId?: string } | undefined;
   Chat: undefined;
   All: { friendCode?: string } | undefined;
 
@@ -76,7 +77,7 @@ export type RootStackParamList = {
     | {
         editRouteId?: string;
         collaborative?: boolean;
-        seedMockCourseId?: string;
+        seedSharedCourseId?: string;
       }
     | undefined;
   ProfileSettings: undefined;
@@ -105,7 +106,6 @@ export type RootStackParamList = {
   RouteCollaborators: {
     routeId: string;
     routeTitle?: string;
-    refreshTick?: number;
   };
 };
 
@@ -284,12 +284,13 @@ export default function App(): React.JSX.Element {
       <SafeAreaProvider>
         <ToastProvider>
           <MockDataProvider>
-            <NavigationContainer linking={appLinking}>
-              <StatusBar style="auto" />
-              <Stack.Navigator
-                screenOptions={{ headerShown: false }}
-                initialRouteName={isAuthenticated ? 'Tabs' : 'Login'}
-              >
+            <NavigationContainer ref={navigationRef} linking={appLinking}>
+              <KeyboardProvider>
+                <StatusBar style="auto" />
+                <Stack.Navigator
+                  screenOptions={{ headerShown: false }}
+                  initialRouteName={isAuthenticated ? 'Tabs' : 'Login'}
+                >
                 <Stack.Screen name="Login" component={LoginScreen} />
                 <Stack.Screen name="Signup" component={SignupScreen} />
                 <Stack.Screen name="Tabs" component={TabNavigator} />
@@ -317,7 +318,8 @@ export default function App(): React.JSX.Element {
                 />
                 <Stack.Screen name="ChatRoomScreen" component={ChatRoomScreen} />
                 <Stack.Screen name="ChatRoomInfoScreen" component={ChatRoomInfoScreen} />
-              </Stack.Navigator>
+                </Stack.Navigator>
+              </KeyboardProvider>
             </NavigationContainer>
           </MockDataProvider>
         </ToastProvider>
