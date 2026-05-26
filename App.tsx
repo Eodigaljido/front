@@ -50,6 +50,7 @@ import FollowingNewsScreen from "./screens/FollowingNewsScreen";
 import NotificationCenterScreen from "./screens/NotificationCenterScreen";
 import CourseGuideScreen from "./screens/CourseGuideScreen";
 import { appLinking } from "./constants/shareLinking";
+import UserProfileScreen from "./screens/UserProfileScreen";
 
 export type RootTabParamList = {
   Home: undefined;
@@ -372,6 +373,10 @@ export default function App(): React.JSX.Element {
                   <Stack.Screen
                     name="ChatRoomInfoScreen"
                     component={ChatRoomInfoScreen}
+                  />
+                  <Stack.Screen
+                    name="UserProfile"
+                    component={UserProfileScreen}
                   />
                 </Stack.Navigator>
               </KeyboardProvider>
