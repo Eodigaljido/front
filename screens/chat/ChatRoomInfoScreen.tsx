@@ -649,7 +649,7 @@ const shadow = Platform.select({
 const s = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F4F6FA",
+    backgroundColor: "#F0F5FF",
   },
   header: {
     flexDirection: "row",
@@ -657,7 +657,7 @@ const s = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 8,
     paddingVertical: 10,
-    backgroundColor: "#F4F6FA",
+    backgroundColor: "#F0F5FF",
   },
   headerBackBtn: {
     width: 40,
