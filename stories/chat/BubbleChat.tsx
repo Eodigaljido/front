@@ -16,8 +16,9 @@ export interface BubbleChatProps {
   text?: string;
   imageUrl?: string | null;
   sentAt?: Date;
-  profileImageUrl?: string;
+  profileImageUrl?: string | null;
   userName?: string;
+  showSender?: boolean;
   style?: StyleProp<ViewStyle>;
   onLongPress?: () => void;
   isEdited?: boolean;
@@ -38,7 +39,9 @@ export function BubbleChat({
   imageUrl,
   isMine,
   sentAt,
+  profileImageUrl,
   userName,
+  showSender,
   style,
   onLongPress,
   isEdited,
@@ -130,6 +133,52 @@ export function BubbleChat({
             {userName}
           </Text>
         )}
+      </View>
+    );
+  }
+
+  if (!isMine && showSender) {
+    return (
+      <View style={[styles.wrapper, styles.wrapperOther, style]}>
+        <View style={groupStyles.row}>
+          {profileImageUrl ? (
+            <Image source={{ uri: profileImageUrl }} style={groupStyles.avatar} />
+          ) : (
+            <View style={[groupStyles.avatar, groupStyles.avatarFallback]}>
+              <Text style={groupStyles.avatarInitial}>
+                {userName?.[0]?.toUpperCase() ?? "?"}
+              </Text>
+            </View>
+          )}
+          <View style={{ flexShrink: 1 }}>
+            <Text style={groupStyles.senderName}>{userName}</Text>
+            <TouchableOpacity
+              onLongPress={onLongPress}
+              disabled={!onLongPress}
+              activeOpacity={onLongPress ? 0.7 : 1}
+            >
+              {imageUrl ? (
+                <Image
+                  source={{ uri: imageUrl }}
+                  style={styles.image}
+                  resizeMode="cover"
+                  onLoad={onImageLoad}
+                />
+              ) : (
+                <View style={[styles.bubble, styles.bubbleOther]}>
+                  <Text style={[styles.text, styles.textOther]}>
+                    {text?.replace(/ /g, " ")}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            {sentAt && (
+              <Text style={[styles.time, styles.timeOther]}>
+                {isEdited ? `(수정됨) ${formatTime(sentAt)}` : formatTime(sentAt)}
+              </Text>
+            )}
+          </View>
+        </View>
       </View>
     );
   }
@@ -253,5 +302,34 @@ const styles = StyleSheet.create({
     width: 200,
     height: 200,
     borderRadius: 12,
+  },
+});
+
+const groupStyles = StyleSheet.create({
+  row: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 8,
+  },
+  avatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+  },
+  avatarFallback: {
+    backgroundColor: "#C7C7CC",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarInitial: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  senderName: {
+    fontSize: 12,
+    color: "#8E8E93",
+    marginBottom: 4,
+    marginLeft: 2,
   },
 });
