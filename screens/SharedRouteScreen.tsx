@@ -61,6 +61,7 @@ import FilterBottomSheet, {
   SORT_OPTIONS,
 } from "../components/FilterBottomSheet";
 import { sameCourseId } from "../utils/sameCourseId";
+import { rootNavigate } from "../navigation/rootNavigation";
 
 type SharedRouteParams = {
   openFilter?: boolean;
@@ -990,6 +991,45 @@ export default function SharedRouteScreen(): React.JSX.Element {
                           <Text className="mb-1 text-base font-semibold text-gray-900">
                             {course.title}
                           </Text>
+                          {(() => {
+                            const authorLabel = getCourseAuthorLabel(course, authorCtx);
+                            const authorUuid = String(course.authorUuid ?? "").trim();
+                            const authorUserId = String(course.authorUserId ?? "").trim();
+                            const isMine = authorLabel.includes("(나)") || authorLabel === "내가 제작";
+                            const canOpenProfile = !isMine && Boolean(authorUuid || authorUserId);
+                            return (
+                              <Pressable
+                                disabled={!canOpenProfile}
+                                onPress={() => {
+                                  if (!canOpenProfile) return;
+                                  rootNavigate("UserProfile", {
+                                    userUuid: authorUuid || undefined,
+                                    userId: authorUserId || undefined,
+                                    nickname:
+                                      authorLabel.startsWith("@") || authorLabel === "제작자 미표시"
+                                        ? undefined
+                                        : authorLabel,
+                                  });
+                                }}
+                                className="mb-2 flex-row items-center self-start rounded-full px-3 py-1.5"
+                                style={{
+                                  backgroundColor: canOpenProfile ? "#EFF6FF" : "#F3F4F6",
+                                }}
+                              >
+                                <Ionicons
+                                  name={canOpenProfile ? "person-circle-outline" : "person-outline"}
+                                  size={14}
+                                  color={canOpenProfile ? "#2563EB" : "#6B7280"}
+                                />
+                                <Text
+                                  className="ml-1 text-xs font-semibold"
+                                  style={{ color: canOpenProfile ? "#1D4ED8" : "#6B7280" }}
+                                >
+                                  제작자 {authorLabel}
+                                </Text>
+                              </Pressable>
+                            );
+                          })()}
                           {Array.isArray(course.tags) && course.tags.length > 0 ? (
                             <View className="mb-2 flex-row flex-wrap gap-1">
                               {course.tags.slice(0, 2).map((tag) => (

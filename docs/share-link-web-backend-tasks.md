@@ -21,7 +21,7 @@
 
 ## 2. 공유 URL 형식 (앱·웹·백엔드 공통)
 
-베이스 도메인: `EXPO_PUBLIC_SHARE_BASE_URL` → 예: `https://share.eodigaljido.rjsgud.com`
+베이스 도메인: `EXPO_PUBLIC_SHARE_BASE_URL` → 예: `https://eodigaljido.uk`
 
 | 용도 | URL 패턴 | 앱 딥링크 매핑 (`constants/shareLinking.ts`) |
 |------|----------|---------------------------------------------|
@@ -87,7 +87,7 @@ share-web·카카오/브라우저 프리뷰는 **JWT 없음**. 아래가 **401**
 
 | 설정 | 값 예시 |
 |------|---------|
-| `Access-Control-Allow-Origin` | `https://share.eodigaljido.rjsgud.com` (운영), 로컬 개발 시 `http://localhost:5173` 등 |
+| `Access-Control-Allow-Origin` | `https://eodigaljido.uk` (운영), 로컬 개발 시 `http://localhost:5173` 등 |
 | Methods | `GET`, `OPTIONS` (preview는 GET만이면 GET) |
 | Headers | `Content-Type` |
 
@@ -133,7 +133,7 @@ Spring Security 예: preview 경로만 `permitAll` + CorsConfiguration에 share 
 
 - [ ] `GET /api/courses/public/{courseId}/preview` — **401 없이** 비로그인 조회
 - [ ] `GET /api/friends/code/{friendCode}/preview` — 동일
-- [ ] CORS에 `https://share.eodigaljido.rjsgud.com` (및 스테이징) 등록
+- [ ] CORS에 `https://eodigaljido.uk` (및 스테이징) 등록
 - [ ] `GET /api/courses/collaborative/{courseId}` (또는 동등) — 링크 수신자 편집 권한
 - [ ] (선택) members / invites API
 - [ ] Swagger·팀 문서에 preview·collaborative 경로 명시
@@ -149,7 +149,7 @@ Spring Security 예: preview 경로만 `permitAll` + CorsConfiguration에 share 
 
 | 항목 | 설명 |
 |------|------|
-| **DNS** | `share.eodigaljido.rjsgud.com` → 웹 서버 (CloudFront, Nginx, Vercel 등) |
+| **DNS** | `eodigaljido.uk` → 웹 서버 (CloudFront, Nginx, Vercel 등) |
 | **HTTPS** | App Link / Universal Links는 **HTTPS 필수** |
 | **SPA fallback** | `/courses/public/*`, `/friends/add/*`, `/routes/collaborative/*` 모두 `index.html`로 라우팅 (404 방지) |
 
@@ -198,7 +198,7 @@ Android·iOS가 도메인을 앱에 연결하려면 **웹 호스트**에서 아�
 
 ### 5.6 share-web 체크리스트
 
-- [ ] HTTPS + DNS `share.eodigaljido.rjsgud.com`
+- [ ] HTTPS + DNS `eodigaljido.uk`
 - [ ] SPA 3종 path 라우팅 + fallback
 - [ ] preview API 연동 (토큰 없음)
 - [ ] `assetlinks.json` / `apple-app-site-association` 배포

@@ -38,7 +38,7 @@ npx expo start -c
 | 변수 | 출시 예시 |
 |------|-----------|
 | `EXPO_PUBLIC_API_BASE_URL` | 운영 API URL |
-| `EXPO_PUBLIC_SHARE_BASE_URL` | `https://share.eodigaljido.rjsgud.com` |
+| `EXPO_PUBLIC_SHARE_BASE_URL` | `https://eodigaljido.uk` |
 | `EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY` | (값) |
 | `EXPO_PUBLIC_GOOGLE_MAPS_DIRECTIONS_API_KEY` | (값) |
 | `EXPO_PUBLIC_KAKAO_REST_API_KEY` | (값) |
@@ -126,7 +126,7 @@ share-web에서 `GET /api/courses/public/{id}/preview` 가 **401**이면 **백�
 | **백엔드** | 코스·친구 **preview** + 공개 조회를 **permitAll** (`/api/courses/public/.../preview`, `/api/friends/code/{code}/preview`) + CORS에 share 도메인 |
 | **share-web** | axios에 토큰·쿠키 넣지 않음. 401 시 사용자에게 「앱에서 열기」만 안내 |
 
-앱 공유 URL 형식: `https://share.eodigaljido.rjsgud.com/courses/public/{courseId}` (정상)
+앱 공유 URL 형식: `https://eodigaljido.uk/courses/public/{courseId}` (정상)
 
 ---
 
@@ -136,7 +136,7 @@ share-web에서 `GET /api/courses/public/{id}/preview` 가 **401**이면 **백�
 |------|------|------|
 | 앱 공유 URL·딥링크 | 이 레포 (`shareCourse`, `shareFriend`, `app.config.js`) | 코드 반영됨 |
 | 웹 랜딩 | `eodigaljido-share-web` (Vite, 별도 프로젝트) | 별도 배포 |
-| DNS·HTTPS | `share.eodigaljido.rjsgud.com` | 인프라 |
+| DNS·HTTPS | `eodigaljido.uk` | 인프라 |
 | `/.well-known` | 웹 또는 서버 | App Link용 |
 
 **앱만 올려도** 공유는 URL 문자열 전송까지 가능. **링크 클릭 → 웹/앱 자동 열기**는 웹 랜딩 + well-known 배포 후 확인.
