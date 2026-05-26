@@ -15,6 +15,11 @@ type Props = {
   zoom?: number;
   /** false면 경로 전체 fitBounds 대신 lat/lng·zoom으로 카메라 고정 */
   fitToRoute?: boolean;
+  /** 0–360: 지도 회전(북=0). 안내 모드에서 사용자 방향에 맞춤 */
+  mapHeading?: number;
+  /** true면 lat/lng·zoom으로 사용자 위치 추적( fitBounds 생략 ) */
+  followUser?: boolean;
+  followZoom?: number;
   /** true면 기본 UI·출처 컨트롤 등을 최대한 숨김(임베드용) */
   chromeless?: boolean;
   /** false면 지도 제스처(드래그/줌/회전) 비활성화 */
@@ -125,6 +130,20 @@ function buildGoogleBootstrapHtml(
         fullscreenControl: false,
         ${chromelessOpts}
       });
+      window.__gmMap = map;
+      window.__setGuideCamera = function (cam) {
+        if (!window.__gmMap || !cam) return;
+        var m = window.__gmMap;
+        if (typeof cam.lat === 'number' && typeof cam.lng === 'number') {
+          m.setCenter({ lat: Number(cam.lat), lng: Number(cam.lng) });
+          if (typeof cam.zoom === 'number' && isFinite(cam.zoom)) m.setZoom(cam.zoom);
+        }
+        if (typeof cam.heading === 'number' && isFinite(cam.heading)) {
+          m.setHeading(cam.heading);
+        } else if (cam.resetHeading === true) {
+          m.setHeading(0);
+        }
+      };
       if (google && google.maps && google.maps.event && map) {
         google.maps.event.addListener(map, 'tilesloaded', hideMapAttributionLayers);
       }
@@ -291,20 +310,38 @@ function buildGoogleBootstrapHtml(
           markerSource.forEach(function (p) {
             bounds.extend({ lat: Number(p.lat), lng: Number(p.lng) });
           });
-          if (spec.fitToRoute === false) {
+          if (spec.followUser === true && typeof spec.lat === 'number' && typeof spec.lng === 'number') {
+            map.setCenter({ lat: Number(spec.lat), lng: Number(spec.lng) });
+            map.setZoom(typeof spec.followZoom === 'number' ? spec.followZoom : 17);
+          } else if (spec.fitToRoute === false) {
             map.setCenter(defaultCenter);
             map.setZoom(gZoom);
           } else {
             map.fitBounds(bounds, 48);
           }
+          if (typeof spec.mapHeading === 'number' && isFinite(spec.mapHeading)) {
+            map.setHeading(spec.mapHeading);
+          } else {
+            map.setHeading(0);
+          }
         } else if (linePath.length === 1) {
           map.setCenter(linePath[0]);
           map.setZoom(gZoom);
           markers.push(new google.maps.Marker({ position: linePath[0], map: map, clickable: allowTap }));
+          if (typeof spec.mapHeading === 'number' && isFinite(spec.mapHeading)) {
+            map.setHeading(spec.mapHeading);
+          } else {
+            map.setHeading(0);
+          }
         } else {
           map.setCenter(defaultCenter);
           map.setZoom(gZoom);
           markers.push(new google.maps.Marker({ position: defaultCenter, map: map, clickable: allowTap }));
+          if (typeof spec.mapHeading === 'number' && isFinite(spec.mapHeading)) {
+            map.setHeading(spec.mapHeading);
+          } else {
+            map.setHeading(0);
+          }
         }
         relayoutMap();
         hideMapAttributionLayers();
@@ -386,6 +423,9 @@ export default function GoogleMapWebView({
   level = 8,
   zoom: zoomProp,
   fitToRoute = true,
+  mapHeading,
+  followUser = false,
+  followZoom = 17,
   chromeless = true,
   interactive = true,
   allowTap = true,
@@ -438,6 +478,12 @@ export default function GoogleMapWebView({
       lng,
       zoom,
       fitToRoute,
+      followUser,
+      followZoom,
+      mapHeading:
+        typeof mapHeading === 'number' && Number.isFinite(mapHeading)
+          ? mapHeading
+          : undefined,
       allowTap,
       avoidLineOverlap,
       path: pathArr,
@@ -463,6 +509,9 @@ export default function GoogleMapWebView({
     level,
     zoomProp,
     fitToRoute,
+    mapHeading,
+    followUser,
+    followZoom,
     allowTap,
     avoidLineOverlap,
     pathJson,
@@ -476,6 +525,41 @@ export default function GoogleMapWebView({
     if (Platform.OS === 'web' && !webIframeReady) return;
     injectSpecJs();
   }, [injectSpecJs, webIframeReady]);
+
+  const injectGuideCameraJs = useCallback(() => {
+    const lat = Number(latitude);
+    const lng = Number(longitude);
+    const zoom =
+      typeof zoomProp === 'number' && Number.isFinite(zoomProp)
+        ? Math.max(8, Math.min(20, zoomProp))
+        : levelToGoogleZoom(level);
+    const cam = {
+      lat,
+      lng,
+      zoom: followUser ? (followZoom ?? zoom) : zoom,
+      heading:
+        typeof mapHeading === 'number' && Number.isFinite(mapHeading)
+          ? mapHeading
+          : null,
+      resetHeading: !(typeof mapHeading === 'number' && Number.isFinite(mapHeading)),
+    };
+    const embedded = JSON.stringify(JSON.stringify(cam));
+    const code = `(function(){try{var cam=JSON.parse(${embedded});if(window.__setGuideCamera)window.__setGuideCamera(cam);}catch(e){}true;})();`;
+    if (Platform.OS === 'web') {
+      try {
+        const w = iframeRef.current?.contentWindow;
+        if (w?.__setGuideCamera) w.__setGuideCamera(cam);
+      } catch (_) {}
+      return;
+    }
+    webRef.current?.injectJavaScript(code);
+  }, [latitude, longitude, level, zoomProp, followUser, followZoom, mapHeading]);
+
+  useEffect(() => {
+    if (!mapDomReadyRef.current && Platform.OS !== 'web') return;
+    if (Platform.OS === 'web' && !webIframeReady) return;
+    injectGuideCameraJs();
+  }, [injectGuideCameraJs, webIframeReady]);
 
   const onWebViewLoadEnd = useCallback(() => {
     mapDomReadyRef.current = true;

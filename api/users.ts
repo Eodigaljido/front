@@ -43,13 +43,16 @@ export async function patchMyProfileImage(asset: {
   type?: string;
 }): Promise<UserProfile> {
   const form = new FormData();
-  form.append("file", {
+  form.append("image", {
     uri: asset.uri,
     name: asset.name ?? "profile.jpg",
     type: asset.type ?? "image/jpeg",
   } as any);
   const res = await instance.patch<UserProfile>("users/me/profile-image", form, {
     headers: { "Content-Type": "multipart/form-data" },
+    // axios의 기본 JSON 직렬화를 건너뛰어 FormData를 그대로 전달
+    // React Native XHR 레이어가 boundary 포함 Content-Type을 자동으로 설정
+    transformRequest: (data) => data,
   });
   return res.data;
 }

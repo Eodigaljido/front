@@ -10,6 +10,7 @@ import { StatusBar } from "expo-status-bar";
 import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
 import { useAuthStore } from "./store/authStore";
 import { NavigationContainer } from "@react-navigation/native";
+import { navigationRef } from "./navigation/rootNavigation";
 import {
   BottomTabBar,
   createBottomTabNavigator,
@@ -24,6 +25,7 @@ import { TEXT_STYLE } from "./styles/textStyles";
 
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { MockDataProvider } from "./context/MockDataContext";
+import { ToastProvider } from "./context/ToastContext";
 import HomeScreen from "./screens/HomeScreen";
 import SharedRouteScreen from "./screens/SharedRouteScreen";
 import MyRouteScreen from "./screens/MyRouteScreen";
@@ -38,22 +40,25 @@ import ChatHomeScreen from "./screens/chat/ChatHomeScreen";
 import LoginScreen from "./screens/LoginScreen";
 import SignupScreen from "./screens/SignupScreen";
 import { ChatRoomScreen } from "./screens/chat/ChatRoomScreen";
-import BottomSheetTest from "./screens/BottomSheet";
 import ChatCreatingScreen from "./screens/chat/ChatCreatingScreen";
 import ChatRoomInfoScreen from "./screens/chat/ChatRoomInfoScreen";
 import RouteCreateScreen from "./screens/RouteCreateScreen";
+import RouteCollaboratorsScreen from "./screens/RouteCollaboratorsScreen";
 import ProfileSettingsScreen from "./screens/ProfileSettingsScreen";
 import FindAccountScreen from "./screens/FindAccountScreen";
-import UserProfileScreen from "./screens/UserProfileScreen";
+import FollowingNewsScreen from "./screens/FollowingNewsScreen";
+import NotificationCenterScreen from "./screens/NotificationCenterScreen";
+import CourseGuideScreen from "./screens/CourseGuideScreen";
+import { appLinking } from "./constants/shareLinking";
 
 export type RootTabParamList = {
   Home: undefined;
   SharedRoute:
     | { openFilter?: boolean; openAsPopular?: boolean; viewCourseId?: string }
     | undefined;
-  MyRoute: undefined;
+  MyRoute: { viewCourseId?: string } | undefined;
   Chat: undefined;
-  All: undefined;
+  All: { friendCode?: string } | undefined;
 
   // 온보드 관련
   OnBoardStart: undefined;
@@ -66,18 +71,19 @@ export type RootTabParamList = {
   // 채팅 관련
   ChatRoomScreen: undefined;
   ChatCreatingScreen: undefined;
-
-  // 기타
-  BottomSheet: undefined;
 };
 
 export type RootStackParamList = {
   Tabs: undefined;
+  SharedRouteStack:
+    | { openFilter?: boolean; openAsPopular?: boolean; viewCourseId?: string }
+    | undefined;
+  MyRouteStack: undefined;
   RouteCreate:
     | {
         editRouteId?: string;
         collaborative?: boolean;
-        seedMockCourseId?: string;
+        seedSharedCourseId?: string;
       }
     | undefined;
   ProfileSettings: undefined;
@@ -99,8 +105,15 @@ export type RootStackParamList = {
   ChatCreatingScreen: undefined;
   ChatRoomInfoScreen: { roomUuid: string; roomName: string };
 
-  // 기타
-  BottomSheet: undefined;
+  FollowingNews: undefined;
+  NotificationCenter: undefined;
+  /** 내 코스 카드 「안내」 — 지도 중심, 턴바이턴 없음 (방향성.md) */
+  CourseGuide: { courseId: string; courseTitle?: string };
+  /** 공동 루트 편집 멤버(방장·참여자) */
+  RouteCollaborators: {
+    routeId: string;
+    routeTitle?: string;
+  };
 };
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
@@ -290,60 +303,82 @@ export default function App(): React.JSX.Element {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <KeyboardProvider>
-        <SafeAreaProvider>
+      <SafeAreaProvider>
+        <ToastProvider>
           <MockDataProvider>
-            <NavigationContainer>
-              <StatusBar style="auto" />
-              <Stack.Navigator
-                screenOptions={{ headerShown: false }}
-                initialRouteName={isAuthenticated ? "Tabs" : "Login"}
-              >
-                <Stack.Screen name="Login" component={LoginScreen} />
-                <Stack.Screen name="Signup" component={SignupScreen} />
-                <Stack.Screen name="Tabs" component={TabNavigator} />
-                <Stack.Screen
-                  name="RouteCreate"
-                  component={RouteCreateScreen}
-                />
-                <Stack.Screen
-                  name="ProfileSettings"
-                  component={ProfileSettingsScreen}
-                />
-                <Stack.Screen
-                  name="UserProfile"
-                  component={UserProfileScreen}
-                />
-                <Stack.Screen name="OnBoardStart" component={OnBoardStart} />
-                <Stack.Screen name="AreaOnBoard" component={AreaOnBoard} />
-                <Stack.Screen name="AgeOnBoard" component={AgeOnBoard} />
-                <Stack.Screen
-                  name="ActivityOnBoard"
-                  component={ActivityOnBoard}
-                />
-                <Stack.Screen name="GenderOnBoard" component={GenderOnBoard} />
-                <Stack.Screen name="OnBoardEnd" component={OnBoardEnd} />
-                <Stack.Screen
-                  name="FindAccount"
-                  component={FindAccountScreen}
-                />
-                <Stack.Screen
-                  name="ChatCreatingScreen"
-                  component={ChatCreatingScreen}
-                />
-                <Stack.Screen
-                  name="ChatRoomScreen"
-                  component={ChatRoomScreen}
-                />
-                <Stack.Screen
-                  name="ChatRoomInfoScreen"
-                  component={ChatRoomInfoScreen}
-                />
-              </Stack.Navigator>
+            <NavigationContainer ref={navigationRef} linking={appLinking}>
+              <KeyboardProvider>
+                <StatusBar style="auto" />
+                <Stack.Navigator
+                  screenOptions={{ headerShown: false }}
+                  initialRouteName={isAuthenticated ? "Tabs" : "Login"}
+                >
+                  <Stack.Screen name="Login" component={LoginScreen} />
+                  <Stack.Screen name="Signup" component={SignupScreen} />
+                  <Stack.Screen name="Tabs" component={TabNavigator} />
+                  <Stack.Screen
+                    name="SharedRouteStack"
+                    component={SharedRouteScreen}
+                  />
+                  <Stack.Screen name="MyRouteStack" component={MyRouteScreen} />
+                  <Stack.Screen
+                    name="RouteCreate"
+                    component={RouteCreateScreen}
+                  />
+                  <Stack.Screen
+                    name="RouteCollaborators"
+                    component={RouteCollaboratorsScreen}
+                  />
+                  <Stack.Screen
+                    name="CourseGuide"
+                    component={CourseGuideScreen}
+                  />
+                  <Stack.Screen
+                    name="ProfileSettings"
+                    component={ProfileSettingsScreen}
+                  />
+                  <Stack.Screen name="OnBoardStart" component={OnBoardStart} />
+                  <Stack.Screen name="AreaOnBoard" component={AreaOnBoard} />
+                  <Stack.Screen name="AgeOnBoard" component={AgeOnBoard} />
+                  <Stack.Screen
+                    name="ActivityOnBoard"
+                    component={ActivityOnBoard}
+                  />
+                  <Stack.Screen
+                    name="GenderOnBoard"
+                    component={GenderOnBoard}
+                  />
+                  <Stack.Screen name="OnBoardEnd" component={OnBoardEnd} />
+                  <Stack.Screen
+                    name="FindAccount"
+                    component={FindAccountScreen}
+                  />
+                  <Stack.Screen
+                    name="ChatCreatingScreen"
+                    component={ChatCreatingScreen}
+                  />
+                  <Stack.Screen
+                    name="FollowingNews"
+                    component={FollowingNewsScreen}
+                  />
+                  <Stack.Screen
+                    name="NotificationCenter"
+                    component={NotificationCenterScreen}
+                  />
+                  <Stack.Screen
+                    name="ChatRoomScreen"
+                    component={ChatRoomScreen}
+                  />
+                  <Stack.Screen
+                    name="ChatRoomInfoScreen"
+                    component={ChatRoomInfoScreen}
+                  />
+                </Stack.Navigator>
+              </KeyboardProvider>
             </NavigationContainer>
           </MockDataProvider>
-        </SafeAreaProvider>
-      </KeyboardProvider>
+        </ToastProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

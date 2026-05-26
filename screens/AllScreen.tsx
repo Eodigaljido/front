@@ -1,30 +1,53 @@
 // @ts-nocheck
-import React, { useCallback, useState } from "react";
-import { View, Text, Pressable, Image, ScrollView, Alert } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  View,
+  Text,
+  Pressable,
+  ScrollView,
+  Alert,
+  Modal,
+  ActivityIndicator,
+  Clipboard,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons, Feather } from "@expo/vector-icons";
-import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import {
+  useFocusEffect,
+  useNavigation,
+  useRoute,
+} from "@react-navigation/native";
+import { Ionicons } from "@expo/vector-icons";
 
 import type { RootTabParamList } from "../App";
 import { getMyProfile } from "../api/users";
+import { addFriendByCode, getMyFriendCode } from "../api/friend/friends";
+import { shareFriendInvite } from "../utils/shareFriend";
 import { useAuthStore } from "../store/authStore";
+import MenuSection, { type MenuItem } from "../components/all/MenuSection";
+import ProfileCard from "../components/all/ProfileCard";
 
-type MenuItem = {
-  id: string;
-  title: string;
-  icon: React.ComponentProps<typeof Ionicons>["name"];
-  iconColor: string;
-  iconBg: string;
-  onPress: () => void;
+const CARD_STYLE = {
+  borderWidth: 0.5,
+  borderColor: "rgba(37,99,235,0.12)",
+  borderRadius: 16,
+  backgroundColor: "#fff",
 };
+
+type AllRouteParams = { friendCode?: string };
 
 export default function AllScreen(): React.JSX.Element {
   const navigation = useNavigation<any>();
+  const route = useRoute();
   const logout = useAuthStore((s) => s.logout);
   const authUser = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
   const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
   const [sharedRouteCount, setSharedRouteCount] = useState<number>(27);
+  const [friendCode, setFriendCode] = useState<string | null>(null);
+  const [friendCodeVisible, setFriendCodeVisible] = useState(false);
+  const [friendCodeLoading, setFriendCodeLoading] = useState(false);
+  const [addFriendSubmitting, setAddFriendSubmitting] = useState(false);
+  const handledInviteCodeRef = useRef<string | null>(null);
 
   const refreshMe = useCallback(async () => {
     try {
@@ -67,8 +90,7 @@ export default function AllScreen(): React.JSX.Element {
       icon: "paper-plane-outline",
       iconColor: "#ea580c",
       iconBg: "#ffedd5",
-      onPress: () =>
-        navigation.navigate("SharedRoute" as keyof RootTabParamList),
+      onPress: () => navigation.navigate("SharedRoute"),
     },
     {
       id: "saved-route",
@@ -76,18 +98,16 @@ export default function AllScreen(): React.JSX.Element {
       icon: "bookmark-outline",
       iconColor: "#16a34a",
       iconBg: "#dcfce7",
-      onPress: () => navigation.navigate("MyRoute" as keyof RootTabParamList),
+      onPress: () => navigation.navigate("MyRoute"),
     },
     {
       id: "near-popular",
       title: "내 근처 인기 루트",
       icon: "location-outline",
-      iconColor: "#9ca3af",
-      iconBg: "#f3f4f6",
+      iconColor: "#9333ea",
+      iconBg: "#f3e8ff",
       onPress: () =>
-        navigation.navigate("SharedRoute" as keyof RootTabParamList, {
-          openAsPopular: true,
-        }),
+        navigation.navigate("SharedRoute", { openAsPopular: true }),
     },
   ];
 
@@ -98,16 +118,15 @@ export default function AllScreen(): React.JSX.Element {
       icon: "settings-outline",
       iconColor: "#60a5fa",
       iconBg: "#dbeafe",
-      onPress: () => Alert.alert("준비 중", "앱 설정 기능은 곧 제공됩니다."),
+      onPress: () => {},
     },
     {
       id: "help",
       title: "도움말",
       icon: "help-circle-outline",
       iconColor: "#4b5563",
-      iconBg: "#eef2ff",
-      onPress: () =>
-        Alert.alert("도움말", "문의가 필요하면 고객센터로 연락해주세요."),
+      iconBg: "#f3f4f6",
+      onPress: () => {},
     },
     {
       id: "alarm",
@@ -115,94 +134,111 @@ export default function AllScreen(): React.JSX.Element {
       icon: "notifications-outline",
       iconColor: "#6b7280",
       iconBg: "#e5e7eb",
-      onPress: () => Alert.alert("준비 중", "알림 설정 기능은 곧 제공됩니다."),
+      onPress: () => {},
     },
   ];
 
-  const renderMenuSection = (items: MenuItem[]) => (
-    <View className="px-4 py-2 mt-4 bg-white border border-gray-200 rounded-2xl">
-      {items.map((item, index) => (
-        <Pressable
-          key={item.id}
-          onPress={item.onPress}
-          className="flex-row items-center py-4 active:opacity-80"
-          style={
-            index !== items.length - 1
-              ? { borderBottomWidth: 1, borderBottomColor: "#f3f4f6" }
-              : undefined
-          }
-        >
-          <View
-            className="items-center justify-center w-6 h-6 mr-3 rounded-md"
-            style={{ backgroundColor: item.iconBg }}
-          >
-            <Ionicons name={item.icon} size={14} color={item.iconColor} />
-          </View>
-          <Text className="flex-1 text-base font-semibold text-gray-900">
-            {item.title}
-          </Text>
-          <Feather name="chevron-right" size={16} color="#d1d5db" />
-        </Pressable>
-      ))}
-    </View>
+  const loadMyFriendCode = useCallback(async () => {
+    if (friendCode) return friendCode;
+    setFriendCodeLoading(true);
+    try {
+      const code = await getMyFriendCode();
+      setFriendCode(code);
+      return code;
+    } catch (e: any) {
+      Alert.alert(
+        "오류",
+        e?.response?.data?.message ??
+          e?.message ??
+          "친구 코드를 불러오지 못했습니다.",
+      );
+      return null;
+    } finally {
+      setFriendCodeLoading(false);
+    }
+  }, [friendCode]);
+
+  const handleAddFriend = useCallback(async () => {
+    setFriendCodeVisible(true);
+    await loadMyFriendCode();
+  }, [loadMyFriendCode]);
+
+  const handleShareFriendLink = useCallback(async () => {
+    const code = friendCode ?? (await loadMyFriendCode());
+    if (!code) return;
+    void shareFriendInvite({
+      friendCode: code,
+      inviterName: authUser?.nickname,
+    });
+  }, [friendCode, loadMyFriendCode, authUser?.nickname]);
+
+  const confirmAddFriendFromLink = useCallback(
+    (code: string) => {
+      if (addFriendSubmitting) return;
+      Alert.alert("친구 추가", `친구 코드「${code}」로 추가할까요?`, [
+        { text: "취소", style: "cancel" },
+        {
+          text: "추가",
+          onPress: async () => {
+            setAddFriendSubmitting(true);
+            try {
+              await addFriendByCode(code);
+              Alert.alert("", "친구가 추가되었습니다.");
+              navigation.navigate("Chat");
+            } catch (e: any) {
+              Alert.alert(
+                "오류",
+                e?.response?.data?.message ??
+                  e?.message ??
+                  "친구 추가에 실패했습니다.",
+              );
+            } finally {
+              setAddFriendSubmitting(false);
+            }
+          },
+        },
+      ]);
+    },
+    [addFriendSubmitting, navigation],
   );
 
+  useEffect(() => {
+    const code = String(
+      (route.params as AllRouteParams | undefined)?.friendCode ?? "",
+    ).trim();
+    if (!code || handledInviteCodeRef.current === code) return;
+    handledInviteCodeRef.current = code;
+    navigation.setParams({ friendCode: undefined });
+    confirmAddFriendFromLink(code);
+  }, [route.params, navigation, confirmAddFriendFromLink]);
+
+  const avatarUri = profileImageUrl ?? "https://i.pravatar.cc/100?img=5";
+
   return (
-    <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={["left", "right"]}>
+    <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={["top"]}>
       <ScrollView
         contentContainerStyle={{
-          paddingHorizontal: 18,
-          paddingTop: 0,
+          paddingHorizontal: 16,
+          paddingTop: 40,
           paddingBottom: 120,
-          marginTop: 80,
         }}
       >
-        <View className="px-4 py-4 bg-white border border-gray-200 rounded-2xl">
-          <View className="flex-row items-start justify-between">
-            <View className="flex-row items-center">
-              <Image
-                source={{ uri: profileImageUrl ?? "https://i.pravatar.cc/100?img=5" }}
-                className="rounded-full h-14 w-14"
-              />
-              <View className="ml-3">
-                <Text className="text-lg font-bold text-gray-900">{authUser?.nickname ?? ""}</Text>
-                <Text className="mt-0.5 text-sm text-gray-500">
-                  {authUser?.email ?? ""}
-                </Text>
-              </View>
-            </View>
-            <Pressable
-              onPress={() =>
-                navigation.getParent()?.navigate("ProfileSettings")
-              }
-              className="flex-row items-center active:opacity-80"
-            >
-              <Ionicons name="settings-outline" size={14} color="#111827" />
-              <Text className="ml-1 text-xs font-medium text-gray-900">
-                프로필 설정
-              </Text>
-            </Pressable>
-          </View>
+        <Text className="mb-2 ml-1 text-xs font-semibold tracking-wide text-gray-400 uppercase">
+          프로필
+        </Text>
+        <ProfileCard
+          nickname={authUser?.nickname}
+          email={authUser?.email}
+          avatarUri={avatarUri}
+          sharedRouteCount={sharedRouteCount}
+          onAddFriend={handleAddFriend}
+          onProfileSettings={() =>
+            navigation.getParent()?.navigate("ProfileSettings")
+          }
+        />
 
-          <View className="flex-row items-center justify-between mt-4">
-            <Text className="text-[17px] font-bold text-gray-900">
-              공유한 루트 : 27개
-            </Text>
-            <Pressable
-              onPress={() =>
-                Alert.alert("친구 추가", "친구 추가 기능을 준비 중입니다.")
-              }
-              className="active:opacity-80"
-            >
-              <Text className="text-sm font-semibold text-blue-600">
-                + 친구 추가하기
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-
-        {renderMenuSection(routeMenus)}
-        {renderMenuSection(settingMenus)}
+        <MenuSection label="루트" items={routeMenus} />
+        <MenuSection label="설정" items={settingMenus} />
 
         <Pressable
           onPress={() =>
@@ -220,19 +256,111 @@ export default function AllScreen(): React.JSX.Element {
               },
             ])
           }
-          className="items-center py-4 mt-4 bg-white border border-gray-200 rounded-2xl active:opacity-80"
+          className="items-center py-4 mt-5 active:opacity-80"
+          style={CARD_STYLE}
         >
-          <Text className="text-base font-semibold text-red-500">로그아웃</Text>
+          <Text className="text-[15px] font-semibold text-red-500">
+            로그아웃
+          </Text>
         </Pressable>
         <Pressable
           className="items-center py-4 mt-4 bg-white border border-gray-200 rounded-2xl active:opacity-80"
-          onPress={() => navigation.getParent()?.navigate("UserProfile", { uuid: authUser?.uuid, email: authUser?.email })}
+          onPress={() =>
+            navigation
+              .getParent()
+              ?.navigate("UserProfile", {
+                uuid: authUser?.uuid,
+                email: authUser?.email,
+              })
+          }
         >
           <Text className="text-base font-semibold text-gray-500">
             사용자 프로필 조회
           </Text>
         </Pressable>
       </ScrollView>
+
+      <Modal
+        visible={friendCodeVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFriendCodeVisible(false)}
+      >
+        <Pressable
+          className="flex-1 items-center justify-center"
+          style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
+          onPress={() => setFriendCodeVisible(false)}
+        >
+          <Pressable
+            onPress={(e) => e.stopPropagation()}
+            className="mx-8 rounded-2xl bg-white px-6 py-7"
+            style={{ width: 300 }}
+          >
+            <Pressable
+              onPress={() => setFriendCodeVisible(false)}
+              className="absolute top-4 right-4 h-8 w-8 items-center justify-center"
+            >
+              <Ionicons name="close" size={20} color="#9ca3af" />
+            </Pressable>
+
+            <Text className="mb-1 text-center text-lg font-bold text-gray-900">
+              내 친구 코드
+            </Text>
+            <Text className="mb-5 text-center text-xs text-gray-500">
+              코드를 알려주거나 링크를 공유해 친구를 초대하세요.
+            </Text>
+
+            {friendCodeLoading ? (
+              <ActivityIndicator size="large" color="#2563eb" />
+            ) : (
+              <>
+                <View
+                  className="mb-4 items-center rounded-xl py-4"
+                  style={{ backgroundColor: "#EFF6FF" }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 32,
+                      fontWeight: "800",
+                      letterSpacing: 8,
+                      color: "#2563eb",
+                    }}
+                  >
+                    {friendCode}
+                  </Text>
+                </View>
+                <View className="flex-row gap-2">
+                  <Pressable
+                    onPress={() => {
+                      Clipboard.setString(friendCode ?? "");
+                      Alert.alert(
+                        "복사 완료",
+                        "친구 코드가 클립보드에 복사되었습니다.",
+                      );
+                    }}
+                    className="flex-1 flex-row items-center justify-center gap-1 rounded-xl border border-blue-200 bg-white py-3 active:opacity-80"
+                  >
+                    <Ionicons name="copy-outline" size={15} color="#2563eb" />
+                    <Text className="text-sm font-semibold text-blue-600">
+                      코드 복사
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => void handleShareFriendLink()}
+                    className="flex-1 flex-row items-center justify-center gap-1 rounded-xl py-3 active:opacity-80"
+                    style={{ backgroundColor: "#2563eb" }}
+                  >
+                    <Ionicons name="share-outline" size={15} color="#fff" />
+                    <Text className="text-sm font-semibold text-white">
+                      링크 공유
+                    </Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }

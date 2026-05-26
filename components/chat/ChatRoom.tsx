@@ -1,17 +1,10 @@
 import { View, Text, TouchableOpacity, Image } from "react-native";
-import {
-  useNavigation,
-  NavigationProp,
-  useFocusEffect,
-} from "@react-navigation/native";
+import { useFocusEffect } from "@react-navigation/native";
+import { rootNavigate } from "@/navigation/rootNavigation";
 import { getChatRooms, ChatRoom as ChatRoomType } from "@/api/chat/chat";
 import { useCallback, useState } from "react";
 import { useAuthStore } from "@/store/authStore";
 import { useChatSocket, ChatSocketEvent } from "@/hooks/useChatSocket";
-
-type RootStackParamList = {
-  ChatRoomScreen: { roomUuid: string; roomName: string };
-};
 
 interface ChatRoomProps {
   searchQuery?: string;
@@ -43,7 +36,6 @@ function formatTime(dateStr: string): string {
 }
 
 export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
-  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const [chatRooms, setChatRooms] = useState<ChatRoomType[]>([]);
   const accessToken = useAuthStore((s) => s.accessToken);
 
@@ -89,7 +81,7 @@ export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
           className="flex-row items-center justify-between py-3 mb-2"
           activeOpacity={0.5}
           onPress={() =>
-            navigation.navigate("ChatRoomScreen", {
+            rootNavigate("ChatRoomScreen", {
               roomUuid: room.uuid,
               roomName: room.name,
             })

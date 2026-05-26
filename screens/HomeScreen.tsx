@@ -35,12 +35,14 @@ import {
   saveSharedCourse,
 } from "../api/courses";
 import { useMockData } from "../context/MockDataContext";
+import { userRouteToCourseItem } from "../data/userSavedRoute";
 import { useAuthStore } from "../store/authStore";
 import {
   fetchIntegratedWeather,
   type IntegratedWeatherResponse,
 } from "../data/integratedWeatherApi";
 import { sharePublicCourse } from "../utils/shareCourse";
+import { sanitizeCourseCategory } from "../utils/inferCourseRegionLabel";
 
 type HomeNavProp = BottomTabNavigationProp<RootTabParamList, "Home">;
 
@@ -186,7 +188,7 @@ export default function HomeScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<HomeNavProp>();
   const authUser = useAuthStore((s: any) => s.user);
-  const { savedCourseIds, togglePopularFavorite } = useMockData();
+  const { savedCourseIds, togglePopularFavorite, userSavedRoutes } = useMockData();
   const [homeCourses, setHomeCourses] = useState<any[]>([]);
   const [popularCourses, setPopularCourses] = useState<any[]>([]);
   const [followingNewsApi, setFollowingNewsApi] = useState<any[]>([]);
@@ -270,10 +272,37 @@ export default function HomeScreen(): React.JSX.Element {
       `미세 ${integrated?.air?.pm10Grade ?? "--"}`,
     ];
   }, [integrated?.air?.pm10Grade, integrated?.current]);
+  const myRecentCoursesForHome = useMemo(() => {
+    const seen = new Set<string>();
+    const out = [];
+    const fromUser = [...userSavedRoutes].sort((a, b) =>
+      String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? "")),
+    );
+    for (const r of fromUser) {
+      if (out.length >= 3) break;
+      const c = userRouteToCourseItem(r);
+      const id = String(c.id ?? "");
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      out.push(c);
+    }
+    for (const c of homeCourses) {
+      if (out.length >= 3) break;
+      const id = String(c?.id ?? "");
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      out.push(c);
+    }
+    return out;
+  }, [userSavedRoutes, homeCourses]);
+
   const recentCourses = useMemo(
     () =>
-      homeCourses.slice(0, 3).map((course, idx) => {
+      myRecentCoursesForHome.map((course) => {
         const steps = Array.isArray(course.routeSteps) ? course.routeSteps : [];
+        const tagList = Array.isArray(course.tags)
+          ? course.tags.map((t) => String(t).trim()).filter(Boolean).slice(0, 2)
+          : [];
         return {
         id: `recent-${course.id}`,
         courseId: String(course.id),
@@ -281,27 +310,47 @@ export default function HomeScreen(): React.JSX.Element {
         waypoints: steps.slice(0, 3).map((step) => step?.name ?? ""),
         pinCount: steps.length,
         distanceKm: Number((course.overallDurationMinutes / 55).toFixed(1)),
-        tags: idx % 2 === 0 ? ["카페", "골목"] : ["맛집", "산책"],
+        tags: tagList,
       };
       }),
-    [homeCourses],
+    [myRecentCoursesForHome],
   );
   const trendingCourses = useMemo(
     () =>
-      popularCourses.slice(0, 3).map((course, idx) => {
+      popularCourses.slice(0, 3).map((course) => {
         const steps = Array.isArray(course.routeSteps) ? course.routeSteps : [];
         const saveCount = pickCourseSaveCount(course);
+        const tagList = Array.isArray(course.tags)
+          ? course.tags.map((t) => String(t).trim()).filter(Boolean).slice(0, 2)
+          : [];
+        const catDisplay = sanitizeCourseCategory(course.category);
+        const regionStr = String(course.region ?? "").trim();
+        const author = course.authorUserId
+          ? `@${course.authorUserId}`
+          : regionStr
+            ? `${regionStr} 코스`
+            : tagList.length > 0
+              ? `${tagList.join(" · ")} 코스`
+              : (() => {
+                  const dep = String(course.departure ?? "").trim();
+                  if (dep && dep !== "출발지")
+                    return dep.length > 18 ? `${dep.slice(0, 18)}…` : dep;
+                  return "인기 코스";
+                })();
+        const statsLine = [`핀 ${steps.length}개`, `${Number((course.overallDurationMinutes / 55).toFixed(1))}km`];
+        if (catDisplay) statsLine.push(catDisplay);
+        else if (tagList.length) statsLine.push(tagList.join(" · "));
         return {
         id: `trend-${course.id}`,
         courseId: course.id,
         title: course.title,
-        author: course.authorUserId
-          ? `@${course.authorUserId}`
-          : `${course.region ?? "지역"} 코스`,
+        author,
         saveCount,
         pinCount: steps.length,
         distanceKm: Number((course.overallDurationMinutes / 55).toFixed(1)),
-        category: course.category ?? "기타",
+        category: catDisplay,
+        tags: tagList,
+        statsLine: statsLine.join(" · "),
       };
       }),
     [popularCourses],
@@ -1091,7 +1140,8 @@ export default function HomeScreen(): React.JSX.Element {
                   </Svg>
 
                   <View style={{ position: "absolute", left: 10, bottom: 8, flexDirection: "row" }}>
-                    {course.tags.slice(0, 2).map((tag) => {
+                    {course.tags.length > 0 ? (
+                      course.tags.slice(0, 2).map((tag) => {
                       const tagStyle = getTagStyle(tag);
                       return (
                         <View
@@ -1107,7 +1157,19 @@ export default function HomeScreen(): React.JSX.Element {
                           <Text style={{ color: tagStyle.color, fontSize: 11, fontWeight: "500" }}>{tag}</Text>
                         </View>
                       );
-                    })}
+                    })
+                    ) : (
+                      <View
+                        style={{
+                          backgroundColor: "#E5E7EB",
+                          paddingHorizontal: 8,
+                          paddingVertical: 3,
+                          borderRadius: 999,
+                        }}
+                      >
+                        <Text style={{ color: "#4B5563", fontSize: 11, fontWeight: "500" }}>태그 없음</Text>
+                      </View>
+                    )}
                   </View>
                 </View>
                 <Text style={{ marginTop: 12, fontSize: 14, fontWeight: "600", color: "#1A1A2E" }} numberOfLines={1}>
@@ -1214,8 +1276,30 @@ export default function HomeScreen(): React.JSX.Element {
                         🙂 {course.author}
                       </Text>
                       <Text style={{ marginTop: 2, fontSize: 12, fontWeight: "400", color: "#6B7280" }}>
-                        핀 {course.pinCount}개 · {course.distanceKm}km · {course.category}
+                        {course.statsLine}
                       </Text>
+                      {course.tags.length > 0 ? (
+                        <View className="mt-1.5 flex-row flex-wrap gap-1">
+                          {course.tags.slice(0, 2).map((tag) => {
+                            const tagStyle = getTagStyle(tag);
+                            return (
+                              <View
+                                key={`${course.id}-${tag}`}
+                                style={{
+                                  backgroundColor: tagStyle.bg,
+                                  paddingHorizontal: 8,
+                                  paddingVertical: 2,
+                                  borderRadius: 999,
+                                }}
+                              >
+                                <Text style={{ color: tagStyle.color, fontSize: 11, fontWeight: "500" }}>
+                                  {tag}
+                                </Text>
+                              </View>
+                            );
+                          })}
+                        </View>
+                      ) : null}
                     </View>
                   </Pressable>
                   <View className="items-end pl-1">
@@ -1258,36 +1342,52 @@ export default function HomeScreen(): React.JSX.Element {
 
         <View className="mt-2">
           <SectionHeader
-            title="팔로잉 소식"
+            title="친구 소식"
             actionLabel="전체"
             onPressAction={() =>
               (navigation.getParent() as any)?.navigate("FollowingNews")
             }
           />
           <View className="mt-3">
-            {followingNews.map((news) => (
-              <Pressable
-                key={news.id}
-                onPress={() =>
-                  (navigation.getParent() as any)?.navigate("FollowingNews")
-                }
-                className="mb-2.5 flex-row items-center rounded-[16px] p-3"
-                style={CARD_STYLE}
-              >
-                <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-blue-100">
-                  <Text style={{ fontSize: 13, fontWeight: "600", color: "#2563EB" }}>{news.user.slice(0, 1)}</Text>
-                </View>
-                <View className="min-w-0 flex-1">
-                  <Text style={{ fontSize: 13, fontWeight: "400", color: "#1A1A2E" }} numberOfLines={1}>
-                    <Text style={{ fontWeight: "600" }}>{news.user}</Text>이 {news.action}
-                  </Text>
-                  <Text style={{ marginTop: 2, fontSize: 12, fontWeight: "400", color: "#6B7280" }} numberOfLines={1}>
-                    {news.courseName}
-                  </Text>
-                </View>
-                <Text style={{ marginLeft: 8, fontSize: 12, fontWeight: "400", color: "#6B7280" }}>{news.ago}</Text>
-              </Pressable>
-            ))}
+            {followingNews.length > 0 ? (
+              followingNews.map((news) => (
+                <Pressable
+                  key={news.id}
+                  onPress={() =>
+                    (navigation.getParent() as any)?.navigate("FollowingNews")
+                  }
+                  className="mb-2.5 flex-row items-center rounded-[16px] p-3"
+                  style={CARD_STYLE}
+                >
+                  <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-blue-100">
+                    <Text style={{ fontSize: 13, fontWeight: "600", color: "#2563EB" }}>{news.user.slice(0, 1)}</Text>
+                  </View>
+                  <View className="min-w-0 flex-1">
+                    <Text style={{ fontSize: 13, fontWeight: "400", color: "#1A1A2E" }} numberOfLines={1}>
+                      <Text style={{ fontWeight: "600" }}>{news.user}</Text>님이 {news.action}
+                    </Text>
+                    <Text style={{ marginTop: 2, fontSize: 12, fontWeight: "400", color: "#6B7280" }} numberOfLines={1}>
+                      {news.courseName}
+                    </Text>
+                  </View>
+                  <Text style={{ marginLeft: 8, fontSize: 12, fontWeight: "400", color: "#6B7280" }}>{news.ago}</Text>
+                </Pressable>
+              ))
+            ) : (
+              <View className="mb-2.5 rounded-[16px] p-4" style={CARD_STYLE}>
+                <Text className="text-sm leading-5 text-gray-600">
+                  아직 친구 소식이 없어요. 친구를 맺으면 코스 활동이 여기에 모여요.
+                </Text>
+                <Pressable
+                  onPress={() => navigation.navigate("Chat")}
+                  className="mt-3 self-start active:opacity-80"
+                  accessibilityRole="link"
+                  accessibilityLabel="친구 추가하기, 채팅 탭으로 이동"
+                >
+                  <Text className="text-sm font-semibold text-blue-600 underline">친구 추가하기</Text>
+                </Pressable>
+              </View>
+            )}
           </View>
         </View>
         </Animated.ScrollView>

@@ -54,12 +54,7 @@ export default function FilterBottomSheet({
 }: FilterBottomSheetProps) {
   const insets = useSafeAreaInsets();
   const windowH = Dimensions.get('window').height;
-  const sheetMaxH = useMemo(() => Math.min(windowH * 0.9, 720), [windowH]);
-  /** 헤더·핸들·하단 버튼 줄 확보 후 칩 영역만 스크롤 */
-  const filterScrollMaxH = useMemo(
-    () => Math.max(160, sheetMaxH - 200),
-    [sheetMaxH],
-  );
+  const sheetMaxH = useMemo(() => Math.min(windowH * 0.88, 680), [windowH]);
   const sheetOffY = useMemo(() => Math.min(420, windowH * 0.5), [windowH]);
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const sheetTranslateY = useRef(new Animated.Value(sheetOffY)).current;
@@ -118,36 +113,40 @@ export default function FilterBottomSheet({
         </Animated.View>
         <Animated.View style={{ transform: [{ translateY: sheetTranslateY }] }}>
           <View
-            className="rounded-t-3xl bg-[#F8FBFF] pt-3 pb-2"
+            className="rounded-t-3xl bg-[#F8FBFF] pt-3"
             style={{
-              backgroundColor: "#F8FBFF",
+              backgroundColor: '#F8FBFF',
               paddingHorizontal: 18,
-              maxHeight: sheetMaxH,
+              height: sheetMaxH,
               borderTopWidth: 0.5,
-              borderColor: "rgba(37,99,235,0.15)",
+              borderColor: 'rgba(37,99,235,0.15)',
+              overflow: 'hidden',
+              flexDirection: 'column',
             }}
           >
             <View className="items-center pb-2">
               <View className="h-1.5 w-12 rounded-full bg-blue-100" />
             </View>
 
-            <View className="mb-4 flex-row items-center justify-between">
+            <View className="mb-3 flex-row items-center justify-between">
               <Text className="text-[20px] font-semibold text-[#1A1A2E]">필터</Text>
               <Pressable
                 onPress={onClose}
                 className="h-9 w-9 items-center justify-center rounded-full bg-white"
-                style={{ borderWidth: 0.5, borderColor: "rgba(37,99,235,0.15)" }}
+                style={{ borderWidth: 0.5, borderColor: 'rgba(37,99,235,0.15)' }}
               >
                 <Text className="text-base font-bold text-gray-500">×</Text>
               </Pressable>
             </View>
 
-            <ScrollView
-              style={{ maxHeight: filterScrollMaxH }}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              nestedScrollEnabled
-            >
+            <View style={{ flex: 1, minHeight: 0 }}>
+              <ScrollView
+                style={{ flex: 1 }}
+                contentContainerStyle={{ paddingBottom: 8 }}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled
+              >
               <Text className="mb-2 text-xs font-semibold tracking-wide text-slate-400">카테고리</Text>
               <View className="mb-5 flex-row flex-wrap gap-2">
                 {CATEGORIES.map(cat => (
@@ -228,29 +227,56 @@ export default function FilterBottomSheet({
                   })()
                 ))}
               </View>
-            </ScrollView>
+              </ScrollView>
+            </View>
 
-            <View className="mt-3 flex-row border-t border-blue-100 pt-3">
+            <View
+              style={{
+                flexDirection: 'row',
+                flexShrink: 0,
+                zIndex: 2,
+                backgroundColor: '#F8FBFF',
+                borderTopWidth: StyleSheet.hairlineWidth,
+                borderTopColor: '#dbeafe',
+                paddingTop: 12,
+                paddingBottom: Math.max(insets.bottom, 12),
+              }}
+            >
               <Pressable
                 onPress={onReset}
-                className="items-center rounded-xl border border-gray-300 bg-white py-3"
-                style={{ width: '48%' }}
+                style={{
+                  flex: 1,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: '#d1d5db',
+                  backgroundColor: '#ffffff',
+                  paddingVertical: 14,
+                  marginRight: 6,
+                }}
               >
-                <Text className="text-[13px] font-normal text-gray-600">초기화</Text>
+                <Text style={{ fontSize: 13, color: '#4b5563' }}>초기화</Text>
               </Pressable>
               <Pressable
                 onPress={() => {
                   onApply();
                   onClose();
                 }}
-                className="items-center rounded-xl bg-[#2563EB] py-3"
-                style={{ width: '48%', marginLeft: '4%' }}
+                style={{
+                  flex: 1,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 12,
+                  backgroundColor: '#2563EB',
+                  paddingVertical: 14,
+                  marginLeft: 6,
+                }}
               >
-                <Text className="text-[13px] font-semibold text-white">적용</Text>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: '#ffffff' }}>적용</Text>
               </Pressable>
             </View>
           </View>
-          <View style={{ height: Math.max(insets.bottom, 0), backgroundColor: '#F8FBFF' }} />
         </Animated.View>
       </View>
     </Modal>

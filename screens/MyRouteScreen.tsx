@@ -1,11 +1,12 @@
 // @ts-nocheck
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   View,
   Text,
   TextInput,
   ScrollView,
   TouchableOpacity,
+  Pressable,
   Modal,
   Image,
   FlatList,
@@ -13,8 +14,11 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
-  Switch,
+  Animated,
+  Dimensions,
+  PanResponder,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -28,16 +32,14 @@ import {
   type CourseDetailMapFocus,
   type CourseItem,
 } from "../data/mockData";
-import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { useRoute, useFocusEffect } from "@react-navigation/native";
 import { useMockData } from "../context/MockDataContext";
 import {
-  convertPersonalCourseToPublic,
   deleteMyCourse,
   fetchMyCourseDetail,
   fetchMyCourses,
-  fetchMySharingCourseIds,
+  fetchMyRouteCollaborativeFlag,
   normalizeCourseList,
-  setMyCoursePublic,
 } from "../api/courses";
 import {
   UserSavedRoute,
@@ -46,7 +48,24 @@ import {
   userRouteMapPath,
 } from "../data/userSavedRoute";
 import AppMapView from "../components/AppMapView";
+import { buildMapMarkersFromPathPoints } from "../utils/spreadMapMarkers";
+import { simplifyRoutePath } from "../utils/simplifyRoutePath";
 import FilterBottomSheet from "../components/FilterBottomSheet";
+import { formatOverallDurationLabel } from "../utils/formatOverallDurationLabel";
+import { resolveCourseRegionLabel } from "../utils/inferCourseRegionLabel";
+import { shareCollaborativeRoute } from "../utils/shareCollaborativeRoute";
+import { sameCourseId } from "../utils/sameCourseId";
+import { getCourseAuthorLabel } from "../utils/formatCourseAuthor";
+import { CourseCardAuthorRow } from "../components/CourseCardAuthorRow";
+import { useAuthStore } from "../store/authStore";
+import { rootNavigate } from "../navigation/rootNavigation";
+
+type RouteKindFilter = "all" | "personal" | "collaborative";
+const ROUTE_KIND_CHIPS: { key: RouteKindFilter; label: string }[] = [
+  { key: "all", label: "전체" },
+  { key: "personal", label: "개인" },
+  { key: "collaborative", label: "공동" },
+];
 import { fetchMergedDirectionsPolyline } from "../data/googleDirectionsApi";
 import { useCourseStepWalkingSegments } from "../hooks/useCourseStepWalkingSegments";
 
@@ -57,50 +76,24 @@ const CARD_STYLE = {
   backgroundColor: "#fff",
 };
 
-/** 카드 id(문자열/숫자)와 목록·상세 재조회 id 불일치 방지 */
-function sameCourseId(
-  a: string | number | null | undefined,
-  b: string | number | null | undefined,
-): boolean {
-  return String(a ?? "") === String(b ?? "");
-}
-
-function simplifyRoutePath(
-  path: { latitude: number; longitude: number }[] | null | undefined,
-  maxPoints = 20,
-): { latitude: number; longitude: number }[] | undefined {
-  if (!path || path.length === 0) return undefined;
-  if (path.length <= maxPoints) return path;
-  const first = path[0];
-  const last = path[path.length - 1];
-  const inner = path.slice(1, -1);
-  const keepInner = Math.max(0, maxPoints - 2);
-  if (keepInner <= 0) return [first, last];
-  const step = Math.max(1, Math.ceil(inner.length / keepInner));
-  const sampled = inner.filter((_, idx) => idx % step === 0).slice(0, keepInner);
-  return [first, ...sampled, last];
-}
-
 function CourseCard({
   item,
   onPressCard,
+  onGuide,
   onRemove,
   onEdit,
   isFavorite,
-  isPublic,
-  showPublicToggle,
-  publishBusy,
-  onTogglePublic,
+  isCollaborative,
+  authorLabel,
 }: {
   item: CourseItem;
   onPressCard: () => void;
+  onGuide: () => void;
   onRemove: () => void;
   onEdit: () => void;
   isFavorite?: boolean;
-  isPublic?: boolean;
-  showPublicToggle?: boolean;
-  publishBusy?: boolean;
-  onTogglePublic?: (next: boolean) => void;
+  isCollaborative?: boolean;
+  authorLabel: string;
 }) {
   return (
     <View
@@ -127,7 +120,12 @@ function CourseCard({
             )}
           </View>
           <View className="justify-center flex-1 min-w-0 ml-3">
-            <View className="flex-row items-start gap-1">
+            <View className="flex-row items-start gap-1 flex-wrap">
+              {isCollaborative ? (
+                <View className="rounded-md bg-orange-100 px-1.5 py-0.5 mr-1">
+                  <Text className="text-[10px] font-bold text-orange-700">공동</Text>
+                </View>
+              ) : null}
               {isFavorite ? (
                 <Ionicons name="bookmark" size={15} color="#2563EB" style={{ marginTop: 2 }} />
               ) : null}
@@ -139,7 +137,10 @@ function CourseCard({
                 {item.title}
               </Text>
             </View>
-            <Text className="mt-1 text-xs text-gray-500">{item.meta}</Text>
+            <CourseCardAuthorRow label={authorLabel} />
+            <Text className="mt-1 text-xs text-gray-500" numberOfLines={1}>
+              {item.meta}
+            </Text>
           </View>
           <View className="flex-row items-center">
             <TouchableOpacity
@@ -180,34 +181,17 @@ function CourseCard({
         </View>
       </TouchableOpacity>
 
-      {showPublicToggle ? (
-        <View
-          className="flex-row items-center justify-between border-t border-gray-100 px-3.5 py-2.5"
-          style={{ backgroundColor: isPublic ? "rgba(37,99,235,0.06)" : "#fafafa" }}
+      <View className="border-t border-gray-100 px-3.5 py-2.5">
+        <TouchableOpacity
+          onPress={onGuide}
+          activeOpacity={0.85}
+          className="flex-row items-center justify-center gap-2 rounded-xl bg-blue-50 py-2.5"
+          accessibilityLabel="지도 안내"
         >
-          <View className="flex-row items-center gap-2 flex-1 min-w-0 pr-2">
-            <Ionicons
-              name={isPublic ? "globe" : "lock-closed-outline"}
-              size={16}
-              color={isPublic ? "#2563eb" : "#64748b"}
-            />
-            <Text
-              className="text-xs font-medium"
-              style={{ color: isPublic ? "#2563eb" : "#64748b" }}
-              numberOfLines={1}
-            >
-              {isPublic ? "공개 코스" : "개인 코스"}
-            </Text>
-          </View>
-          <Switch
-            disabled={publishBusy}
-            value={Boolean(isPublic)}
-            onValueChange={(next) => onTogglePublic?.(next)}
-            trackColor={{ false: "#d1d5db", true: "#93c5fd" }}
-            thumbColor={isPublic ? "#2563eb" : "#f4f4f5"}
-          />
-        </View>
-      ) : null}
+          <Ionicons name="map-outline" size={18} color="#2563eb" />
+          <Text className="text-sm font-semibold text-blue-600">안내</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -221,8 +205,31 @@ function getUserRouteStepPoint(
   return userRouteMapCenter(route);
 }
 
+const MY_ROUTE_DETAIL_SHEET_HEIGHT_KEY = "MY_ROUTE_DETAIL_SHEET_MAX_HEIGHT_PX";
+const MY_ROUTE_WINDOW_H = Dimensions.get("window").height;
+/** 시트를 화면 밖으로 밀어 닫을 때 이동 거리 */
+const MY_ROUTE_SHEET_HIDE_Y = Math.ceil(MY_ROUTE_WINDOW_H + 120);
+
+function clampMyRouteDetailSheetHeight(px: number): number {
+  const minH = Math.round(MY_ROUTE_WINDOW_H * 0.45);
+  const maxH = Math.round(MY_ROUTE_WINDOW_H * 0.94);
+  return Math.min(Math.max(Math.round(px), minH), maxH);
+}
+
+type MyRouteParams = { viewCourseId?: string };
+
 export default function MyRouteScreen(): React.JSX.Element {
-  const stackNav = useNavigation<any>();
+  const route = useRoute();
+  const myRouteParams = (route.params || {}) as MyRouteParams;
+  const authUser = useAuthStore((s) => s.user);
+  const authorCtx = useMemo(
+    () => ({
+      myUuid: authUser?.uuid,
+      myUserId: authUser?.userId,
+      myNickname: authUser?.nickname,
+    }),
+    [authUser?.uuid, authUser?.userId, authUser?.nickname],
+  );
   const {
     favoriteCourseIds,
     removeSavedCourse,
@@ -233,17 +240,60 @@ export default function MyRouteScreen(): React.JSX.Element {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [apiMyCourses, setApiMyCourses] = useState<CourseItem[]>([]);
-  /** Swagger GET /api/courses/my/sharing 기준, 공유 활성화된 코스 id */
-  const [sharingIdSet, setSharingIdSet] = useState(() => new Set());
-  const [shareToggleBusy, setShareToggleBusy] = useState(false);
   const [filterVisible, setFilterVisible] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
   const [selectedSort, setSelectedSort] = useState<string | null>("즐겨찾기순");
+  const [selectedRouteKind, setSelectedRouteKind] = useState<RouteKindFilter>("all");
   const [viewingCourseId, setViewingCourseId] = useState<string | null>(null);
   /** 카드에서 연 상세 — 목록 재조회·id 타입 불일치 시에도 동일 코스 표시 */
   const [viewingCourseSnapshot, setViewingCourseSnapshot] =
     useState<CourseItem | null>(null);
+  const [detailModalMounted, setDetailModalMounted] = useState(false);
+  const detailBackdropOpacity = useRef(new Animated.Value(0)).current;
+  const [detailSheetMaxHeightPx, setDetailSheetMaxHeightPx] = useState(() =>
+    clampMyRouteDetailSheetHeight(MY_ROUTE_WINDOW_H * 0.82),
+  );
+  const sheetHeightRef = useRef(
+    clampMyRouteDetailSheetHeight(MY_ROUTE_WINDOW_H * 0.82),
+  );
+  sheetHeightRef.current = detailSheetMaxHeightPx;
+  const sheetPanStartHeight = useRef(0);
+  const sheetPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, g) =>
+        Math.abs(g.dy) > 6 && Math.abs(g.dy) > Math.abs(g.dx) * 0.55,
+      onPanResponderGrant: () => {
+        sheetPanStartHeight.current = sheetHeightRef.current;
+      },
+      onPanResponderMove: (_, g) => {
+        setDetailSheetMaxHeightPx(
+          clampMyRouteDetailSheetHeight(sheetPanStartHeight.current - g.dy),
+        );
+      },
+      onPanResponderRelease: async (_, g) => {
+        const next = clampMyRouteDetailSheetHeight(
+          sheetPanStartHeight.current - g.dy,
+        );
+        setDetailSheetMaxHeightPx(next);
+        try {
+          await AsyncStorage.setItem(
+            MY_ROUTE_DETAIL_SHEET_HEIGHT_KEY,
+            String(next),
+          );
+        } catch {
+          /* ignore */
+        }
+      },
+    }),
+  ).current;
+
+  const detailSheetTranslateY = useRef(
+    new Animated.Value(MY_ROUTE_SHEET_HIDE_Y),
+  ).current;
+  const viewingCourseIdRef = useRef<string | null>(null);
+  viewingCourseIdRef.current = viewingCourseId;
   const [mapFocus, setMapFocus] = useState<CourseDetailMapFocus | null>(null);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [detailMergedPath, setDetailMergedPath] = useState<
@@ -321,11 +371,8 @@ export default function MyRouteScreen(): React.JSX.Element {
     try {
       const courses = await fetchMyCourses();
       setApiMyCourses(normalizeCourseList(courses));
-      const sharingIds = await fetchMySharingCourseIds();
-      setSharingIdSet(new Set(sharingIds));
     } catch {
-      setApiMyCourses([]);
-      setSharingIdSet(new Set());
+      /* 네트워크 오류 시 목록을 비우면 서버 연동 판별이 깨짐 → 이전 상태 유지 */
     }
   }, []);
 
@@ -333,6 +380,96 @@ export default function MyRouteScreen(): React.JSX.Element {
     useCallback(() => {
       reloadMyRoutesAndSharing();
     }, [reloadMyRoutesAndSharing]),
+  );
+
+  useEffect(() => {
+    const vid = String(myRouteParams?.viewCourseId ?? "").trim();
+    if (!vid) return;
+    const fromUser = userSavedRoutes.find((r) => sameCourseId(r.id, vid));
+    const fromApi = apiMyCourses.find((c) => sameCourseId(c.id, vid));
+    const snap = fromUser
+      ? userRouteToCourseItem(fromUser)
+      : fromApi ?? null;
+    if (snap) setViewingCourseSnapshot(snap);
+    setViewingCourseId(vid);
+  }, [myRouteParams?.viewCourseId, userSavedRoutes, apiMyCourses]);
+
+  useEffect(() => {
+    if (viewingCourseId) setDetailModalMounted(true);
+  }, [viewingCourseId]);
+
+  useEffect(() => {
+    if (!(detailModalMounted && viewingCourseId)) return;
+    detailSheetTranslateY.setValue(MY_ROUTE_SHEET_HIDE_Y);
+    detailBackdropOpacity.setValue(0);
+    const id = requestAnimationFrame(() => {
+      Animated.parallel([
+        Animated.timing(detailBackdropOpacity, {
+          toValue: 1,
+          duration: 220,
+          useNativeDriver: true,
+        }),
+        Animated.spring(detailSheetTranslateY, {
+          toValue: 0,
+          useNativeDriver: true,
+          friction: 9,
+          tension: 68,
+        }),
+      ]).start();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [viewingCourseId, detailModalMounted]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(MY_ROUTE_DETAIL_SHEET_HEIGHT_KEY);
+        if (cancelled || raw == null) return;
+        const n = Number(raw);
+        if (!Number.isFinite(n)) return;
+        setDetailSheetMaxHeightPx(clampMyRouteDetailSheetHeight(n));
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const dismissCourseDetailImmediate = useCallback(() => {
+    setViewingCourseId(null);
+    setViewingCourseSnapshot(null);
+    setDetailModalMounted(false);
+    detailBackdropOpacity.setValue(0);
+    detailSheetTranslateY.setValue(MY_ROUTE_SHEET_HIDE_Y);
+  }, [detailBackdropOpacity, detailSheetTranslateY]);
+
+  const closeCourseDetail = useCallback(
+    (afterClose?: () => void) => {
+      if (!viewingCourseIdRef.current) return;
+      Animated.parallel([
+        Animated.timing(detailBackdropOpacity, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(detailSheetTranslateY, {
+          toValue: MY_ROUTE_SHEET_HIDE_Y,
+          duration: 230,
+          useNativeDriver: true,
+        }),
+      ]).start(({ finished }) => {
+        if (finished) {
+          setViewingCourseId(null);
+          setViewingCourseSnapshot(null);
+          setDetailModalMounted(false);
+          afterClose?.();
+        }
+      });
+    },
+    [detailBackdropOpacity, detailSheetTranslateY],
   );
 
   useEffect(() => {
@@ -459,13 +596,22 @@ export default function MyRouteScreen(): React.JSX.Element {
     viewingCourseSnapshot,
   ]);
 
+  const isCollaborativeRouteId = useCallback(
+    (id: string) =>
+      userSavedRoutes.some(
+        (r) => sameCourseId(r.id, id) && r.collaborative === true,
+      ),
+    [userSavedRoutes],
+  );
+
   const mergedCourses = useMemo(() => {
     const fromUser = userSavedRoutes.map(userRouteToCourseItem);
     const combined = [...fromUser, ...apiMyCourses];
     const seen = new Set<string>();
     return combined.filter((c) => {
-      if (seen.has(c.id)) return false;
-      seen.add(c.id);
+      const k = String(c.id ?? "");
+      if (!k || seen.has(k)) return false;
+      seen.add(k);
       return true;
     });
   }, [userSavedRoutes, apiMyCourses]);
@@ -486,6 +632,12 @@ export default function MyRouteScreen(): React.JSX.Element {
           String(c.departure ?? "").toLowerCase().includes(q) ||
           String(c.arrival ?? "").toLowerCase().includes(q),
       );
+    }
+
+    if (selectedRouteKind === "personal") {
+      list = list.filter((c) => !isCollaborativeRouteId(c.id));
+    } else if (selectedRouteKind === "collaborative") {
+      list = list.filter((c) => isCollaborativeRouteId(c.id));
     }
 
     if (selectedSort === "즐겨찾기순" || selectedSort === null) {
@@ -509,6 +661,8 @@ export default function MyRouteScreen(): React.JSX.Element {
     selectedRegion,
     selectedSort,
     favoriteCourseIds,
+    selectedRouteKind,
+    isCollaborativeRouteId,
   ]);
 
   const isUserSavedRouteId = (id: string) =>
@@ -516,156 +670,6 @@ export default function MyRouteScreen(): React.JSX.Element {
 
   const isServerBackedMyCourse = (id: string) =>
     apiMyCourses.some((c) => sameCourseId(c.id, id));
-
-  /** 루트 제작 등으로 직접 만든 코스만 공유 토글 허용 (공유 탭에서만 저장한 목록 등 제외) */
-  const isUserAuthoredMyRoute = (id: string, courseLike: CourseItem) => {
-    if (isUserSavedRouteId(id)) return true;
-    const cat = String(courseLike?.category ?? "");
-    const meta = String(courseLike?.meta ?? "");
-    if (cat === "직접제작" || cat.includes("직접")) return true;
-    if (/직접\s*제작|루트\s*제작/.test(meta)) return true;
-    return false;
-  };
-
-  const canShareMyRouteToPublic = (id: string, courseLike: CourseItem) =>
-    isServerBackedMyCourse(id) && isUserAuthoredMyRoute(id, courseLike);
-
-  /** 직접 만든 코스 — 서버 저장·기기 전용 모두 공개 토글 표시 */
-  const canShowPublicToggle = (id: string, courseLike: CourseItem) => {
-    if (!isUserAuthoredMyRoute(id, courseLike)) return false;
-    if (canShareMyRouteToPublic(id, courseLike)) return true;
-    return userSavedRoutes.some((r) => sameCourseId(r.id, id));
-  };
-
-  const isCoursePublic = useCallback(
-    (id: string) => {
-      for (const sid of sharingIdSet) {
-        if (sameCourseId(sid, id)) return true;
-      }
-      return false;
-    },
-    [sharingIdSet],
-  );
-
-  const applySharingState = useCallback((courseId: string, isPublic: boolean) => {
-    setSharingIdSet((prev) => {
-      const n = new Set(prev);
-      for (const sid of [...n]) {
-        if (sameCourseId(sid, courseId)) n.delete(sid);
-      }
-      if (isPublic) n.add(String(courseId));
-      return n;
-    });
-  }, []);
-
-  const handleSetCoursePublic = useCallback(
-    async (courseId: string, makePublic: boolean) => {
-      setShareToggleBusy(true);
-      try {
-        const ok = await setMyCoursePublic(courseId, makePublic);
-        if (!ok) {
-          Alert.alert(
-            "실패",
-            makePublic
-              ? "공개 코스로 전환하지 못했습니다. 네트워크 또는 서버 상태를 확인해 주세요."
-              : "비공개로 전환하지 못했습니다.",
-          );
-          return false;
-        }
-        applySharingState(courseId, makePublic);
-        await reloadMyRoutesAndSharing();
-        return true;
-      } finally {
-        setShareToggleBusy(false);
-      }
-    },
-    [applySharingState, reloadMyRoutesAndSharing],
-  );
-
-  const handleConvertLocalRouteToPublic = useCallback(
-    async (ur: UserSavedRoute) => {
-      const start = ur.stops[0];
-      const end = ur.stops[ur.stops.length - 1];
-      if (start?.lat == null || end?.lat == null) {
-        Alert.alert(
-          "공개 불가",
-          "출발·도착 좌표가 있는 루트만 공개할 수 있어요. 루트 제작에서 장소를 다시 지정한 뒤 저장해 주세요.",
-        );
-        return;
-      }
-      setShareToggleBusy(true);
-      try {
-        const result = await convertPersonalCourseToPublic(ur);
-        if (!result.ok) {
-          if (result.reason === "UPLOAD_FAILED") {
-            Alert.alert(
-              "업로드 실패",
-              "서버에 코스를 올리지 못했습니다. 네트워크 연결 후 다시 시도해 주세요.",
-            );
-          } else {
-            Alert.alert(
-              "공개 실패",
-              "코스는 서버에 저장됐지만 공개 설정에 실패했습니다. 잠시 후 상세에서 다시 켜 주세요.",
-            );
-            if (result.serverId) applySharingState(result.serverId, false);
-          }
-          return;
-        }
-        if (result.migratedFromLocalId) {
-          deleteUserRoute(result.migratedFromLocalId);
-        }
-        upsertUserRoute({
-          ...ur,
-          id: result.serverId,
-          updatedAt: new Date().toISOString(),
-        });
-        applySharingState(result.serverId, true);
-        if (sameCourseId(viewingCourseId, ur.id)) {
-          setViewingCourseId(result.serverId);
-          setViewingCourseSnapshot((prev) =>
-            prev && sameCourseId(prev.id, ur.id)
-              ? { ...prev, id: result.serverId }
-              : prev,
-          );
-        }
-        await reloadMyRoutesAndSharing();
-      } finally {
-        setShareToggleBusy(false);
-      }
-    },
-    [
-      applySharingState,
-      deleteUserRoute,
-      reloadMyRoutesAndSharing,
-      upsertUserRoute,
-      viewingCourseId,
-    ],
-  );
-
-  const handleToggleCoursePublic = useCallback(
-    async (
-      courseId: string,
-      course: CourseItem,
-      ur: UserSavedRoute | undefined,
-      makePublic: boolean,
-    ) => {
-      if (makePublic) {
-        if (ur && !isServerBackedMyCourse(courseId)) {
-          await handleConvertLocalRouteToPublic(ur);
-          return;
-        }
-        await handleSetCoursePublic(courseId, true);
-        return;
-      }
-      if (!isServerBackedMyCourse(courseId)) return;
-      await handleSetCoursePublic(courseId, false);
-    },
-    [
-      handleConvertLocalRouteToPublic,
-      handleSetCoursePublic,
-      isServerBackedMyCourse,
-    ],
-  );
 
   const handleRemove = (item: CourseItem) => {
     Alert.alert(
@@ -687,8 +691,7 @@ export default function MyRouteScreen(): React.JSX.Element {
               removeSavedCourse(item.id);
             }
             if (sameCourseId(viewingCourseId, item.id)) {
-              setViewingCourseId(null);
-              setViewingCourseSnapshot(null);
+              dismissCourseDetailImmediate();
             }
           },
         },
@@ -697,16 +700,14 @@ export default function MyRouteScreen(): React.JSX.Element {
   };
 
   const openRouteCreateEdit = (routeId: string, collaborative: boolean) => {
-    stackNav.getParent()?.navigate("RouteCreate", {
+    rootNavigate("RouteCreate", {
       editRouteId: routeId,
       collaborative,
     });
   };
 
-  const openRouteCreateFromMockCourse = (mockCourseId: string) => {
-    stackNav
-      .getParent()
-      ?.navigate("RouteCreate", { seedMockCourseId: mockCourseId });
+  const openRouteCreateFromSharedCourse = (sharedCourseId: string) => {
+    rootNavigate("RouteCreate", { seedSharedCourseId: sharedCourseId });
   };
 
   return (
@@ -723,7 +724,7 @@ export default function MyRouteScreen(): React.JSX.Element {
             </View>
             <TouchableOpacity
               activeOpacity={0.7}
-              onPress={() => stackNav.getParent()?.navigate("RouteCreate")}
+              onPress={() => rootNavigate("RouteCreate")}
               className="px-3 py-2 rounded-lg bg-white/20 active:opacity-90"
             >
               <Text className="text-xs font-semibold text-white">루트 제작</Text>
@@ -785,6 +786,27 @@ export default function MyRouteScreen(): React.JSX.Element {
         </TouchableOpacity>
       </View>
 
+      <View className="flex-row gap-2 px-4 pb-1">
+        {ROUTE_KIND_CHIPS.map((chip) => {
+          const on = selectedRouteKind === chip.key;
+          return (
+            <Pressable
+              key={chip.key}
+              onPress={() => setSelectedRouteKind(chip.key)}
+              className={`rounded-full px-3.5 py-1.5 border ${
+                on ? "bg-blue-600 border-blue-600" : "bg-white border-blue-200"
+              }`}
+            >
+              <Text
+                className={`text-xs font-semibold ${on ? "text-white" : "text-blue-700"}`}
+              >
+                {chip.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
       {/* 저장 코스 수 */}
       <View className="px-4 py-1.5">
         <Text className="text-sm text-gray-500">
@@ -811,22 +833,27 @@ export default function MyRouteScreen(): React.JSX.Element {
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => {
             const ur = userSavedRoutes.find((r) => sameCourseId(r.id, item.id));
-            const showToggle = canShowPublicToggle(item.id, item);
+            const authorLabel = getCourseAuthorLabel(item, {
+              ...authorCtx,
+              isLocalOwnRoute: Boolean(ur),
+            });
             return (
               <CourseCard
                 item={item}
+                authorLabel={authorLabel}
                 isFavorite={favoriteCourseIds.some((fid) =>
                   sameCourseId(fid, item.id),
                 )}
-                isPublic={isCoursePublic(item.id)}
-                showPublicToggle={showToggle}
-                publishBusy={shareToggleBusy}
-                onTogglePublic={(next) =>
-                  handleToggleCoursePublic(item.id, item, ur, next)
-                }
+                isCollaborative={ur?.collaborative === true}
                 onPressCard={() => {
                   setViewingCourseSnapshot(item);
                   setViewingCourseId(String(item.id));
+                }}
+                onGuide={() => {
+                  rootNavigate("CourseGuide", {
+                    courseId: String(item.id),
+                    courseTitle: item.title,
+                  });
                 }}
                 onRemove={() => handleRemove(item)}
                 onEdit={() => {
@@ -836,9 +863,11 @@ export default function MyRouteScreen(): React.JSX.Element {
                       ur?.collaborative === true,
                     );
                   } else if (isServerBackedMyCourse(item.id)) {
-                    openRouteCreateEdit(item.id, false);
+                    void fetchMyRouteCollaborativeFlag(item.id).then((collab) =>
+                      openRouteCreateEdit(item.id, collab),
+                    );
                   } else {
-                    openRouteCreateFromMockCourse(item.id);
+                    openRouteCreateFromSharedCourse(item.id);
                   }
                 }}
               />
@@ -872,47 +901,48 @@ export default function MyRouteScreen(): React.JSX.Element {
         onApply={() => {}}
       />
 
-      {/* 코스 상세 보기 모달 */}
+      {/* 코스 상세 보기 모달 — 배경은 페이드, 시트만 슬라이드 (Modal slide는 백드롭까지 같이 움직임) */}
       <Modal
-        visible={!!viewingCourseId}
+        visible={detailModalMounted}
         transparent
-        animationType="slide"
-        onRequestClose={() => {
-          setViewingCourseId(null);
-          setViewingCourseSnapshot(null);
-        }}
+        animationType="none"
+        onRequestClose={() => closeCourseDetail()}
       >
         <View style={{ flex: 1 }}>
-          <View
-            pointerEvents="none"
+          <Animated.View
             style={[
               StyleSheet.absoluteFillObject,
-              { backgroundColor: "rgba(107,114,128,0.45)" },
+              { opacity: detailBackdropOpacity },
             ]}
-          />
-          <TouchableOpacity
-            style={StyleSheet.absoluteFillObject}
-            activeOpacity={1}
-            onPress={() => {
-              setViewingCourseId(null);
-              setViewingCourseSnapshot(null);
-            }}
-          />
+          >
+            <Pressable
+              style={[
+                StyleSheet.absoluteFillObject,
+                { backgroundColor: "rgba(107,114,128,0.45)" },
+              ]}
+              onPress={() => closeCourseDetail()}
+            />
+          </Animated.View>
 
           <View
             style={{ flex: 1, justifyContent: "flex-end" }}
             pointerEvents="box-none"
           >
-            <View
-              className="overflow-hidden rounded-t-3xl"
+            <Animated.View
               style={{
-                maxHeight: "82%",
                 width: "100%",
-                backgroundColor: "#F8FBFF",
-                zIndex: 2,
-                elevation: 12,
+                height: detailSheetMaxHeightPx,
+                maxHeight: clampMyRouteDetailSheetHeight(MY_ROUTE_WINDOW_H * 0.94),
+                transform: [{ translateY: detailSheetTranslateY }],
               }}
             >
+              <View
+                className="overflow-hidden rounded-t-3xl flex-1"
+                style={{
+                  height: "100%",
+                  backgroundColor: "#F8FBFF",
+                }}
+              >
               {viewingCourseId &&
                 (() => {
                   const ur = userSavedRoutes.find((r) =>
@@ -955,10 +985,7 @@ export default function MyRouteScreen(): React.JSX.Element {
                           </Text>
                         )}
                         <TouchableOpacity
-                          onPress={() => {
-                            setViewingCourseId(null);
-                            setViewingCourseSnapshot(null);
-                          }}
+                          onPress={() => closeCourseDetail()}
                           className="mt-6 rounded-xl bg-blue-600 px-5 py-2.5"
                         >
                           <Text className="text-sm font-semibold text-white">
@@ -969,10 +996,24 @@ export default function MyRouteScreen(): React.JSX.Element {
                     );
                   }
 
-                  const hours = (course.overallDurationMinutes / 60).toFixed(1);
+                  const mapBlockHeight = Math.min(
+                    240,
+                    Math.max(110, Math.floor(detailSheetMaxHeightPx * 0.3)),
+                  );
                   const routeSteps = Array.isArray(course.routeSteps)
                     ? course.routeSteps
                     : [];
+                  const midStepNames = routeSteps
+                    .slice(1, -1)
+                    .map((s) => String(s?.name ?? "").trim())
+                    .filter(Boolean);
+                  const regionChip =
+                    resolveCourseRegionLabel(
+                      course.region,
+                      course.departure,
+                      course.arrival,
+                      midStepNames,
+                    ) || null;
                   let pathPts:
                     | { latitude: number; longitude: number }[]
                     | undefined;
@@ -998,23 +1039,7 @@ export default function MyRouteScreen(): React.JSX.Element {
                   }
                   const mapMarkers =
                     pathPts && pathPts.length >= 1
-                      ? pathPts.map((pt, i) => ({
-                          latitude: pt.latitude,
-                          longitude: pt.longitude,
-                          label: `${i + 1}`,
-                          kind:
-                            i === 0
-                              ? "start"
-                              : i === pathPts.length - 1
-                                ? "end"
-                                : "waypoint",
-                          color:
-                            i === 0
-                              ? "#2563EB"
-                              : i === pathPts.length - 1
-                                ? "#EF4444"
-                                : "#64748B",
-                        }))
+                      ? buildMapMarkersFromPathPoints(pathPts)
                       : undefined;
                   // 실경로가 있으면 단순화해서 사용하고, 없으면 경유지 연결선으로 대체
                   const polylinePath = simplifyRoutePath(
@@ -1059,7 +1084,7 @@ export default function MyRouteScreen(): React.JSX.Element {
                     course.arrival;
 
                   return (
-                    <>
+                    <View style={{ flex: 1 }}>
                       <View
                         style={{
                           backgroundColor: "#EEF5FF",
@@ -1077,7 +1102,7 @@ export default function MyRouteScreen(): React.JSX.Element {
                             코스 위치
                           </Text>
                           <TouchableOpacity
-                            onPress={() => setViewingCourseId(null)}
+                            onPress={() => closeCourseDetail()}
                             hitSlop={12}
                           >
                             <Ionicons name="close" size={26} color="#64748b" />
@@ -1085,7 +1110,7 @@ export default function MyRouteScreen(): React.JSX.Element {
                         </View>
                         <View
                           style={{
-                            height: 200,
+                            height: mapBlockHeight,
                             marginHorizontal: 10,
                             borderRadius: 14,
                             overflow: "hidden",
@@ -1124,7 +1149,7 @@ export default function MyRouteScreen(): React.JSX.Element {
                                 : undefined
                             }
                             markers={mapMarkers}
-                            style={{ width: "100%", height: 200 }}
+                            style={{ width: "100%", height: mapBlockHeight }}
                           />
                           {(detailPathLoading ||
                             (stepMapFocused && stepWalkLoading)) ? (
@@ -1159,16 +1184,18 @@ export default function MyRouteScreen(): React.JSX.Element {
                         </View>
                         <Text className="mt-2 px-4 text-[11px] font-medium text-slate-500">
                           {showWalkOnMap
-                            ? "주황색 선: 선택 구간 도보 경로"
+                            ? "도보 구간: 주황"
                             : pathPts && pathPts.length >= 2
-                              ? `선 방향: 1번(${startStepName}) → ${pathPts.length}번(${endStepName})`
-                              : "선 방향: 출발 지점 기준"}
+                              ? `1(${startStepName}) → ${pathPts.length}(${endStepName})`
+                              : "출발 기준"}
                         </Text>
                       </View>
 
+
                       <ScrollView
                         showsVerticalScrollIndicator={false}
-                        className="bg-white"
+                        className="bg-white flex-1"
+                        style={{ flexGrow: 1 }}
                         contentContainerStyle={{
                           paddingHorizontal: 20,
                           paddingTop: 16,
@@ -1179,20 +1206,41 @@ export default function MyRouteScreen(): React.JSX.Element {
                           <Text className="text-xl font-bold text-gray-900">
                             코스 상세
                           </Text>
-                          <View className="flex-row items-center gap-2">
+                          <View className="flex-row items-center gap-2 flex-wrap justify-end">
+                            {ur?.collaborative === true ? (
+                              <TouchableOpacity
+                                onPress={() => {
+                                  void shareCollaborativeRoute({
+                                    routeId: String(course.id),
+                                    title: course.title,
+                                  });
+                                }}
+                                className="flex-row items-center gap-1 rounded-xl bg-orange-50 px-3 py-2"
+                              >
+                                <Ionicons
+                                  name="share-social-outline"
+                                  size={16}
+                                  color="#ea580c"
+                                />
+                                <Text className="text-sm font-semibold text-orange-600">
+                                  초대
+                                </Text>
+                              </TouchableOpacity>
+                            ) : null}
                             <TouchableOpacity
                               onPress={() => {
-                                setViewingCourseId(null);
-                                if (ur) {
-                                  openRouteCreateEdit(
-                                    ur.id,
-                                    ur.collaborative === true,
-                                  );
-                                } else if (isServerBackedMyCourse(course.id)) {
-                                  openRouteCreateEdit(course.id, false);
-                                } else {
-                                  openRouteCreateFromMockCourse(course.id);
-                                }
+                                closeCourseDetail(() => {
+                                  if (ur) {
+                                    openRouteCreateEdit(
+                                      ur.id,
+                                      ur.collaborative === true,
+                                    );
+                                  } else if (isServerBackedMyCourse(course.id)) {
+                                    openRouteCreateEdit(course.id, false);
+                                  } else {
+                                    openRouteCreateFromMockCourse(course.id);
+                                  }
+                                });
                               }}
                               className="flex-row items-center gap-1 rounded-xl bg-blue-50 px-3 py-2"
                             >
@@ -1207,8 +1255,7 @@ export default function MyRouteScreen(): React.JSX.Element {
                             </TouchableOpacity>
                             <TouchableOpacity
                               onPress={() => {
-                                setViewingCourseId(null);
-                                handleRemove(course);
+                                closeCourseDetail(() => handleRemove(course));
                               }}
                               className="flex-row items-center gap-1 rounded-xl bg-red-50 px-3 py-2"
                             >
@@ -1227,24 +1274,35 @@ export default function MyRouteScreen(): React.JSX.Element {
                         <Text className="mb-1 text-base font-semibold text-gray-900">
                           {course.title}
                         </Text>
-                        <Text className="mb-2 text-sm text-gray-500">
-                          {course.meta}
-                        </Text>
+                        {Array.isArray(course.tags) && course.tags.length > 0 ? (
+                          <View className="mb-2 flex-row flex-wrap gap-1.5">
+                            {course.tags.slice(0, 2).map((tag) => (
+                              <View
+                                key={String(tag)}
+                                className="rounded-full bg-indigo-50 px-2.5 py-0.5"
+                              >
+                                <Text className="text-xs font-medium text-indigo-800">{tag}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        ) : (
+                          <Text className="mb-2 text-xs text-gray-500">
+                            선택된 태그가 없어요
+                          </Text>
+                        )}
 
                         <View className="flex-row flex-wrap items-center gap-2 mb-3">
-                          <View className="px-3 py-1 bg-gray-100 rounded-full">
-                            <Text className="text-xs text-gray-700">
-                              {course.category}
-                            </Text>
-                          </View>
-                          <View className="px-3 py-1 bg-gray-100 rounded-full">
-                            <Text className="text-xs text-gray-700">
-                              {course.region}
-                            </Text>
-                          </View>
+                          {regionChip ? (
+                            <View className="px-3 py-1 rounded-full bg-slate-100">
+                              <Text className="text-xs font-medium text-slate-700">{regionChip}</Text>
+                            </View>
+                          ) : null}
                           <View className="px-3 py-1 rounded-full bg-blue-50">
                             <Text className="text-xs text-blue-700">
-                              예상 소요 약 {hours}시간
+                              예상 소요{" "}
+                              {formatOverallDurationLabel(
+                                course.overallDurationMinutes,
+                              )}
                             </Text>
                           </View>
                           <View className="px-3 py-1 rounded-full bg-yellow-50">
@@ -1277,41 +1335,6 @@ export default function MyRouteScreen(): React.JSX.Element {
                             </Text>
                           </View>
                         </View>
-
-                        {canShowPublicToggle(course.id, course) ? (
-                          <View className="mb-6 rounded-xl border border-blue-100 bg-blue-50/90 p-3.5">
-                            <View className="flex-row items-center justify-between">
-                              <View className="flex-1 pr-3">
-                                <Text className="text-sm font-semibold text-gray-900">
-                                  공개 코스
-                                </Text>
-                                <Text className="mt-1 text-[11px] leading-4 text-gray-600">
-                                  {isCoursePublic(course.id)
-                                    ? "공유 코스 탭에 노출 중이에요."
-                                    : ur && !isServerBackedMyCourse(course.id)
-                                      ? "켜면 서버에 올린 뒤 공유 코스 탭에 공개돼요."
-                                      : "켜면 공유 코스 탭에 노출돼요."}
-                                </Text>
-                              </View>
-                              <Switch
-                                disabled={shareToggleBusy}
-                                value={isCoursePublic(course.id)}
-                                onValueChange={(next) =>
-                                  handleToggleCoursePublic(
-                                    course.id,
-                                    course,
-                                    ur,
-                                    next,
-                                  )
-                                }
-                                trackColor={{ false: "#d1d5db", true: "#93c5fd" }}
-                                thumbColor={
-                                  isCoursePublic(course.id) ? "#2563eb" : "#f4f4f5"
-                                }
-                              />
-                            </View>
-                          </View>
-                        ) : null}
 
                         <Text className="mb-2 text-sm font-semibold text-gray-900">
                           코스 경로
@@ -1372,10 +1395,11 @@ export default function MyRouteScreen(): React.JSX.Element {
                           ))}
                         </View>
                       </ScrollView>
-                    </>
+                    </View>
                   );
                 })()}
-            </View>
+              </View>
+            </Animated.View>
           </View>
         </View>
       </Modal>
