@@ -11,6 +11,9 @@ type Props = {
   level?: number;
   zoom?: number;
   fitToRoute?: boolean;
+  mapHeading?: number;
+  followUser?: boolean;
+  followZoom?: number;
   /** WebView·임베드에서 지도 기본 UI·표기 최소화 */
   chromeless?: boolean;
   /** false면 지도 제스처(드래그/줌/회전) 비활성화 */
@@ -258,10 +261,21 @@ function AppMapViewExpoGoogleMapsImpl({
 
 export default function AppMapView(props: Props): React.JSX.Element {
   const useNativeGoogle = Platform.OS === "android" && !isExpoGoClient();
+  const needsGuideCamera =
+    props.followUser === true ||
+    (typeof props.mapHeading === "number" && Number.isFinite(props.mapHeading));
 
-  if (useNativeGoogle) {
+  if (useNativeGoogle && !needsGuideCamera) {
     return <AppMapViewExpoGoogleMapsImpl {...props} />;
   }
 
-  return <GoogleMapWebView {...props} fitToRoute={props.fitToRoute ?? true} />;
+  return (
+    <GoogleMapWebView
+      {...props}
+      fitToRoute={props.fitToRoute ?? true}
+      mapHeading={props.mapHeading}
+      followUser={props.followUser}
+      followZoom={props.followZoom}
+    />
+  );
 }

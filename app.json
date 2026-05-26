@@ -20,7 +20,7 @@
     },
     "android": {
       "package": "com.eodigaljido.app",
-      "versionCode": 3,
+      "versionCode": 6,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",

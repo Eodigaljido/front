@@ -1,5 +1,12 @@
 import { instance } from "../axios";
 
+export type ChatMemberSummary = {
+  uuid: string;
+  userId?: string;
+  nickname?: string;
+  profileImageUrl?: string | null;
+};
+
 export interface ChatRoom {
   uuid: string;
   name: string;
@@ -7,11 +14,27 @@ export interface ChatRoom {
   memberCount: number;
   ownerUuid: string;
   ownerUserId: string;
-  memberUuids: string[];
-  memberUserIds: string[];
+  memberUuids?: string[];
+  memberUserIds?: string[];
+  members?: ChatMemberSummary[];
   lastMessage: string;
   lastMessageAt: string;
   unreadCount: number;
+}
+
+/** Swagger: GET /chats/{roomUuid} */
+export async function getChatRoom(
+  accessToken: string,
+  roomUuid: string,
+): Promise<ChatRoom | null> {
+  try {
+    const res = await instance.get<ChatRoom>(`/chats/${roomUuid}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    return res.data ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export interface ChatMessage {
@@ -153,37 +176,30 @@ export async function renameChatRoom(
   );
 }
 
-// 이미지 메시지 전송
-export async function sendImageMessage(
+/** Swagger: POST /chats/{roomUuid}/members — 친구(userId) 초대 */
+export async function inviteChatMember(
   accessToken: string,
   roomUuid: string,
-  imageUri: string,
-): Promise<ChatMessage> {
-  const baseUrl = String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").replace(
-    /\/+$/,
-    "",
+  userId: string,
+): Promise<ChatRoom> {
+  const res = await instance.post<ChatRoom>(
+    `/chats/${roomUuid}/members`,
+    { userId: String(userId ?? "").trim() },
+    { headers: { Authorization: `Bearer ${accessToken}` } },
   );
+  return res.data;
+}
 
-  const fileName = imageUri.split("/").pop() ?? "image.jpg";
-  const ext = fileName.split(".").pop()?.toLowerCase() ?? "jpg";
-  const mimeType =
-    ext === "png" ? "image/png" : ext === "gif" ? "image/gif" : "image/jpeg";
-
-  const form = new FormData();
-  form.append("image", { uri: imageUri, name: fileName, type: mimeType } as any);
-
-  // fetch를 직접 사용: Content-Type을 지정하지 않으면 React Native가
-  // multipart/form-data; boundary=... 를 자동으로 설정함
-  const res = await fetch(`${baseUrl}/chats/${roomUuid}/images`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}` },
-    body: form,
-  });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => String(res.status));
-    throw new Error(`이미지 업로드 실패 (${res.status}): ${body}`);
-  }
-
-  return res.json() as Promise<ChatMessage>;
+/** Swagger: POST /chats/{roomUuid}/route — 루트 공유 메시지(ROUTE 타입) */
+export async function shareRouteToChat(
+  accessToken: string,
+  roomUuid: string,
+  routeUuid: string,
+): Promise<ChatMessage> {
+  const res = await instance.post<ChatMessage>(
+    `/chats/${roomUuid}/route`,
+    { routeUuid: String(routeUuid ?? "").trim() },
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  return res.data;
 }

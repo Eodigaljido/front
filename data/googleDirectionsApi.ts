@@ -295,8 +295,27 @@ async function enrichTransitWalkSegmentsWithTmap(
   };
 }
 
-export function parseDirectionsLeg(body: any): DirectionsLegResult {
-  const route = body?.routes?.[0];
+function formatDirectionsTimeField(t: any): string {
+  if (!t) return '';
+  if (typeof t.text === 'string' && t.text.trim()) return t.text.trim();
+  const sec = Number(t.value);
+  if (Number.isFinite(sec) && sec > 0) {
+    return new Date(sec * 1000).toLocaleTimeString('ko-KR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+  }
+  return '';
+}
+
+function countTransitRides(leg: any): number {
+  const steps = Array.isArray(leg?.steps) ? leg.steps : [];
+  return steps.filter((s: unknown) => String((s as { travel_mode?: string })?.travel_mode ?? '') === 'TRANSIT')
+    .length;
+}
+
+export function parseDirectionsRoute(route: any): DirectionsLegResult {
   if (!route) throw new Error('NO_ROUTE');
   const leg = route.legs?.[0];
   if (!leg) throw new Error('NO_LEG');
@@ -402,6 +421,11 @@ export function parseDirectionsLeg(body: any): DirectionsLegResult {
   return { path, segments, durationMinutes, distanceMeters, summary, detail, source: 'google' };
 }
 
+export function parseDirectionsLeg(body: any): DirectionsLegResult {
+  const route = body?.routes?.[0];
+  return parseDirectionsRoute(route);
+}
+
 async function fetchDirectionsJson(
   from: LatLng,
   to: LatLng,
@@ -410,6 +434,7 @@ async function fetchDirectionsJson(
   signal: AbortSignal | undefined,
   region: string | undefined,
   transitType?: DirectionsTransitType,
+  departureTimeSec?: number,
 ): Promise<any> {
   const q = new URLSearchParams({
     origin: `${from.latitude},${from.longitude}`,
@@ -419,7 +444,10 @@ async function fetchDirectionsJson(
     language: 'ko',
   });
   if (region) q.set('region', region);
-  if (mode === 'transit' && transitType) q.set('transit_mode', transitType);
+  if (mode === 'transit') {
+    q.set('departure_time', String(departureTimeSec ?? Math.floor(Date.now() / 1000)));
+    if (transitType) q.set('transit_mode', transitType);
+  }
   const url = `https://maps.googleapis.com/maps/api/directions/json?${q.toString()}`;
   const res = await fetch(url, { method: 'GET', signal });
   if (!res.ok) throw new Error(`Directions 요청 실패 (${res.status})`);
@@ -566,6 +594,343 @@ export async function fetchGoogleDirectionsLeg(params: {
     parsed = await enrichTransitWalkSegmentsWithTmap(parsed, params.signal);
   }
   return parsed;
+}
+
+export type WalkRouteCandidate = {
+  id: string;
+  label: string;
+  summary: string;
+  detail: string;
+  path: LatLng[];
+  segments: DirectionsLegResult['segments'];
+  durationMinutes: number;
+  distanceMeters: number;
+  source: string;
+};
+
+function pathLengthMeters(path: LatLng[]): number {
+  let total = 0;
+  for (let i = 1; i < path.length; i++) {
+    total += haversineMeters(path[i - 1], path[i]);
+  }
+  return total;
+}
+
+function pathMidpoint(path: LatLng[]): LatLng | null {
+  if (path.length < 1) return null;
+  return path[Math.floor(path.length / 2)];
+}
+
+/** 중간 지점·총 길이가 비슷하면 같은 보도로 간주 */
+function isSimilarWalkPath(a: LatLng[], b: LatLng[]): boolean {
+  const ma = pathMidpoint(a);
+  const mb = pathMidpoint(b);
+  if (!ma || !mb) return true;
+  if (haversineMeters(ma, mb) >= 50) return false;
+  const la = pathLengthMeters(a);
+  const lb = pathLengthMeters(b);
+  if (la < 20 || lb < 20) return true;
+  const ratio = la / lb;
+  return ratio > 0.9 && ratio < 1.1;
+}
+
+/**
+ * 루트 제작「도보 후보」용 Google 단일 호출.
+ * `fetchGoogleDirectionsLeg` 과 동일하게 ZERO_RESULTS 시 자전거·운전 등으로 폴리라인을 확보하고,
+ * 그래도 안 되면 카카오 자동차 경로를 시도한다. (직선 폴백은 호출 측 `fetchWalkingRouteAlternatives` 에서만)
+ */
+async function fetchGoogleWalkingLegOnly(
+  from: LatLng,
+  to: LatLng,
+  signal?: AbortSignal,
+): Promise<DirectionsLegResult | null> {
+  const key = getGoogleMapsWebServiceKey();
+  if (!key) return null;
+
+  let body = await fetchDirectionsJson(from, to, 'walking', key, signal, 'kr');
+
+  if (body?.status === 'ZERO_RESULTS') {
+    const chain = DIRECTIONS_ZERO_FALLBACKS.walking;
+    for (const fb of chain) {
+      const b = await fetchDirectionsJson(from, to, fb.mode, key, signal, fb.region, undefined);
+      if (b?.status === 'OK') {
+        body = b;
+        break;
+      }
+    }
+  }
+
+  if (body?.status !== 'OK') {
+    const st = String(body?.status ?? '');
+    if (st === 'ZERO_RESULTS' || st === 'NOT_FOUND') {
+      const kakaoFb = await fetchKakaoNaviCarDirectionsLeg({
+        from,
+        to,
+        requestedMode: 'walking',
+        signal,
+      });
+      if (kakaoFb) {
+        return { ...kakaoFb, source: 'kakao' };
+      }
+    }
+    return null;
+  }
+
+  return parseDirectionsLeg(body);
+}
+
+function toWalkCandidate(
+  id: string,
+  label: string,
+  r: DirectionsLegResult,
+  source: string,
+): WalkRouteCandidate {
+  return {
+    id,
+    label,
+    summary: r.summary,
+    detail: r.detail,
+    path: r.path,
+    segments: r.segments,
+    durationMinutes: r.durationMinutes,
+    distanceMeters: r.distanceMeters,
+    source,
+  };
+}
+
+/**
+ * 도보 구간용 보도 후보 2~3개 (Tmap 옵션 + Google 도보).
+ * 사용자가 직접 고를 수 있도록 서로 다른 경로만 반환한다.
+ */
+export async function fetchWalkingRouteAlternatives(params: {
+  from: LatLng;
+  to: LatLng;
+  signal?: AbortSignal;
+}): Promise<WalkRouteCandidate[]> {
+  const from = normalizeLatLngForDirections(params.from.latitude, params.from.longitude);
+  const to = normalizeLatLngForDirections(params.to.latitude, params.to.longitude);
+
+  if (haversineMeters(from, to) < 12) {
+    const t = trivialDirectionsLeg(from, to, 'walking');
+    return [toWalkCandidate('walk-a', '직선', t, 'fallback')];
+  }
+
+  const sources: Array<{
+    id: string;
+    label: string;
+    source: string;
+    run: () => Promise<DirectionsLegResult | null>;
+  }> = [
+    {
+      id: 'walk-tmap-0',
+      label: '추천 보도',
+      source: 'tmap',
+      run: async () => {
+        const t = await fetchTmapDirectionsLeg({
+          from,
+          to,
+          requestedMode: 'walking',
+          searchOption: '0',
+          signal: params.signal,
+        });
+        return t ? { ...t, source: 'tmap' as const } : null;
+      },
+    },
+    {
+      id: 'walk-tmap-2',
+      label: '빠른 길',
+      source: 'tmap',
+      run: async () => {
+        const t = await fetchTmapDirectionsLeg({
+          from,
+          to,
+          requestedMode: 'walking',
+          searchOption: '2',
+          signal: params.signal,
+        });
+        return t ? { ...t, source: 'tmap' as const } : null;
+      },
+    },
+    {
+      id: 'walk-tmap-4',
+      label: '계단 적음',
+      source: 'tmap',
+      run: async () => {
+        const t = await fetchTmapDirectionsLeg({
+          from,
+          to,
+          requestedMode: 'walking',
+          searchOption: '4',
+          signal: params.signal,
+        });
+        return t ? { ...t, source: 'tmap' as const } : null;
+      },
+    },
+    {
+      id: 'walk-google',
+      label: '다른 보도',
+      source: 'google',
+      run: () => fetchGoogleWalkingLegOnly(from, to, params.signal),
+    },
+  ];
+
+  const settled = await Promise.all(sources.map((s) => s.run()));
+  const out: WalkRouteCandidate[] = [];
+
+  for (let i = 0; i < sources.length; i++) {
+    const r = settled[i];
+    if (!r || r.path.length < 2) continue;
+    const dup = out.some((c) => isSimilarWalkPath(c.path, r.path));
+    if (dup) continue;
+    out.push(toWalkCandidate(sources[i].id, sources[i].label, r, sources[i].source));
+    if (out.length >= 3) break;
+  }
+
+  if (out.length === 0) {
+    const fb = straightLineFallbackLeg(from, to, 'walking');
+    out.push(toWalkCandidate('walk-fallback', '직선 표시', fb, 'fallback'));
+  }
+
+  out.sort((a, b) => a.durationMinutes - b.durationMinutes);
+  return out.slice(0, 3);
+}
+
+export type TransitRouteCandidate = {
+  id: string;
+  label: string;
+  summary: string;
+  detail: string;
+  path: LatLng[];
+  segments: DirectionsLegResult['segments'];
+  durationMinutes: number;
+  distanceMeters: number;
+  departureLabel: string;
+  arrivalLabel: string;
+  transfers: number;
+  source: string;
+};
+
+function transitCandidateSignature(c: TransitRouteCandidate): string {
+  return `${c.summary}|${c.departureLabel}|${c.durationMinutes}`;
+}
+
+function toTransitCandidate(
+  id: string,
+  label: string,
+  r: DirectionsLegResult,
+  departureLabel: string,
+  arrivalLabel: string,
+  transfers: number,
+): TransitRouteCandidate {
+  return {
+    id,
+    label,
+    summary: r.summary,
+    detail: r.detail,
+    path: r.path,
+    segments: r.segments,
+    durationMinutes: r.durationMinutes,
+    distanceMeters: r.distanceMeters,
+    departureLabel,
+    arrivalLabel,
+    transfers,
+    source: r.source ?? 'google',
+  };
+}
+
+/**
+ * 대중교통 구간 후보 — Google Directions routes[] (출발·도착 시각 포함).
+ */
+export async function fetchTransitRouteAlternatives(params: {
+  from: LatLng;
+  to: LatLng;
+  transitType?: DirectionsTransitType;
+  signal?: AbortSignal;
+}): Promise<TransitRouteCandidate[]> {
+  const key = getGoogleMapsWebServiceKey();
+  if (!key) throw new Error('Google Directions API 키가 없습니다.');
+
+  const from = normalizeLatLngForDirections(params.from.latitude, params.from.longitude);
+  const to = normalizeLatLngForDirections(params.to.latitude, params.to.longitude);
+
+  if (haversineMeters(from, to) < 12) {
+    const t = trivialDirectionsLeg(from, to, 'transit');
+    return [
+      toTransitCandidate('transit-fallback', '직선', t, '', '', 0),
+    ];
+  }
+
+  const departureTimeSec = Math.floor(Date.now() / 1000);
+  let body = await fetchDirectionsJson(
+    from,
+    to,
+    'transit',
+    key,
+    params.signal,
+    'kr',
+    params.transitType,
+    departureTimeSec,
+  );
+
+  if (body?.status !== 'OK' && params.transitType) {
+    body = await fetchDirectionsJson(
+      from,
+      to,
+      'transit',
+      key,
+      params.signal,
+      'kr',
+      undefined,
+      departureTimeSec,
+    );
+  }
+
+  if (body?.status !== 'OK') {
+    const st = String(body?.status ?? '');
+    if (st === 'ZERO_RESULTS' || st === 'NOT_FOUND') {
+      const fb = straightLineFallbackLeg(from, to, 'transit');
+      return [toTransitCandidate('transit-fallback', '경로 없음', fb, '', '', 0)];
+    }
+    throw new Error(`대중교통 조회 오류: ${body?.status ?? 'UNKNOWN'}`);
+  }
+
+  const routes = Array.isArray(body?.routes) ? body.routes : [];
+  const out: TransitRouteCandidate[] = [];
+  const seen = new Set<string>();
+
+  for (let ri = 0; ri < routes.length && out.length < 6; ri++) {
+    try {
+      let parsed = parseDirectionsRoute(routes[ri]);
+      parsed = await enrichTransitWalkSegmentsWithTmap(parsed, params.signal);
+      const leg = routes[ri]?.legs?.[0];
+      const dep = formatDirectionsTimeField(leg?.departure_time);
+      const arr = formatDirectionsTimeField(leg?.arrival_time);
+      const departureLabel = dep ? `${dep} 출발` : '';
+      const arrivalLabel = arr ? `${arr} 도착` : '';
+      const transfers = Math.max(0, countTransitRides(leg) - 1);
+      const label =
+        transfers > 0
+          ? `${parsed.summary} · 환승 ${transfers}회 · 약 ${parsed.durationMinutes}분`
+          : `${parsed.summary} · 약 ${parsed.durationMinutes}분`;
+      const candidate = toTransitCandidate(
+        `transit-${ri}`,
+        label,
+        parsed,
+        departureLabel,
+        arrivalLabel,
+        transfers,
+      );
+      const sig = transitCandidateSignature(candidate);
+      if (seen.has(sig)) continue;
+      seen.add(sig);
+      out.push(candidate);
+    } catch {
+      // skip malformed route
+    }
+  }
+
+  out.sort((a, b) => a.durationMinutes - b.durationMinutes);
+  return out.slice(0, 5);
 }
 
 /** @deprecated 내부용 — polyline만 필요할 때 */
