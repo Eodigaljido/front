@@ -34,6 +34,10 @@ export type UserSavedRoute = {
   tags?: string[];
   /** true면 공동 수정(프로필·채팅 UI). 개인 루트는 false/미설정 */
   collaborative?: boolean;
+  /** 공동 루트 단체 채팅방 uuid (채팅 탭 목록과 연동) */
+  chatRoomUuid?: string;
+  /** 루트 카드·목록용 대표 이미지 (로컬 uri) */
+  coverImageUri?: string | null;
   /** 사용자가 공개(공유)로 둔 경우 true — 서버 PATCH 후 공개가 풀리면 저장 시 다시 맞춤 */
   publishedToPublic?: boolean;
 };
@@ -59,7 +63,7 @@ export function userRouteToCourseItem(r: UserSavedRoute): CourseItem {
     tags,
     departure: start?.title ?? '',
     arrival: end?.title ?? '',
-    thumbnail: null,
+    thumbnail: r.coverImageUri ? String(r.coverImageUri) : null,
     category: '직접제작',
     region: region || '',
     createdAt: dateStr,

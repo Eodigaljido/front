@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -35,9 +35,13 @@ import * as ImagePicker from "expo-image-picker";
 
 import {
   deleteChatRoom,
+  getChatRoom,
+  inviteChatMember,
   leaveChatRoom,
   renameChatRoom,
 } from "@/api/chat/index";
+import { getFriends } from "@/api/friend/friends";
+import { getUserProfileByUuid } from "@/api/users";
 import { useAuthStore } from "@/store/authStore";
 
 type ChatRoomInfoRouteProp = RouteProp<
@@ -52,11 +56,7 @@ type Member = {
   isOwner?: boolean;
 };
 
-type Friend = { id: string; name: string };
-
-const MOCK_MEMBERS: Member[] = [];
-
-const MOCK_FRIENDS: Friend[] = [];
+type InvitableFriend = { id: string; uuid: string; name: string; userId?: string };
 
 const PRESET_IMAGES = [
   { id: "p1", color: "#4FC3F7", emoji: "🐧" },
@@ -91,11 +91,12 @@ export default function ChatRoomInfoScreen() {
   const { roomUuid, roomName: initialRoomName } = route.params;
 
   const accessToken = useAuthStore((s) => s.accessToken);
+  const myUuid = useAuthStore((s) => s.user?.uuid);
 
-  const isOwner = true;
-
+  const [isOwner, setIsOwner] = useState(false);
   const [roomName, setRoomName] = useState(initialRoomName);
-  const [members, setMembers] = useState<Member[]>(MOCK_MEMBERS);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [friends, setFriends] = useState<InvitableFriend[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState("p1");
   const [localImageUri, setLocalImageUri] = useState<string | null>(null);
 
@@ -115,8 +116,41 @@ export default function ChatRoomInfoScreen() {
   const currentPreset = PRESET_IMAGES.find((p) => p.id === selectedPresetId);
   const tempPreset = PRESET_IMAGES.find((p) => p.id === tempPresetId);
 
-  const invitableFriends = MOCK_FRIENDS.filter(
-    (f) => !members.some((m) => m.uuid === `invited-${f.id}`),
+  const loadRoom = useCallback(async () => {
+    if (!accessToken) return;
+    const room = await getChatRoom(accessToken, roomUuid);
+    if (!room) return;
+    setIsOwner(String(room.ownerUuid) === String(myUuid ?? ""));
+    const mapped: Member[] = (room.members ?? []).map((m, i) => ({
+      uuid: m.uuid,
+      nickname: m.userId ?? m.uuid.slice(0, 8),
+      color: FRIEND_COLORS[i % FRIEND_COLORS.length],
+      isOwner: m.uuid === room.ownerUuid,
+    }));
+    setMembers(mapped);
+  }, [accessToken, roomUuid, myUuid]);
+
+  useEffect(() => {
+    void loadRoom();
+  }, [loadRoom]);
+
+  useEffect(() => {
+    if (!inviteModalVisible || !accessToken) return;
+    getFriends(accessToken)
+      .then((list) =>
+        setFriends(
+          list.map((f) => ({
+            id: String(f.friendId),
+            uuid: f.uuid,
+            name: f.nickname,
+          })),
+        ),
+      )
+      .catch(() => setFriends([]));
+  }, [inviteModalVisible, accessToken]);
+
+  const invitableFriends = friends.filter(
+    (f) => !members.some((m) => m.uuid === f.uuid),
   );
 
   const handleSaveName = async () => {
@@ -174,23 +208,26 @@ export default function ChatRoomInfoScreen() {
     );
   };
 
-  const handleConfirmInvite = () => {
-    const newMembers: Member[] = [...selectedFriends]
-      .map((id) => {
-        const friend = MOCK_FRIENDS.find((f) => f.id === id);
-        if (!friend) return null;
-        return {
-          uuid: `invited-${id}`,
-          nickname: friend.name,
-          color:
-            FRIEND_COLORS[
-              parseInt(id.replace("f", ""), 10) % FRIEND_COLORS.length
-            ],
-        };
-      })
-      .filter((m): m is Member => m != null);
-    setMembers((prev) => [...prev, ...newMembers]);
+  const handleConfirmInvite = async () => {
+    if (!accessToken || selectedFriends.size === 0) {
+      setInviteModalVisible(false);
+      return;
+    }
+    for (const id of selectedFriends) {
+      const friend = friends.find((f) => f.id === id);
+      if (!friend) continue;
+      try {
+        const profile = await getUserProfileByUuid(friend.uuid);
+        const userId = profile.userId;
+        if (!userId) continue;
+        await inviteChatMember(accessToken, roomUuid, userId);
+      } catch {
+        /* skip failed invite */
+      }
+    }
+    setSelectedFriends(new Set());
     setInviteModalVisible(false);
+    void loadRoom();
   };
 
   const handleLeaveRoom = async () => {
