@@ -88,7 +88,12 @@ export type RootStackParamList = {
       }
     | undefined;
   ProfileSettings: undefined;
-  UserProfile: { uuid: string; email?: string };
+  UserProfile: {
+    userUuid?: string;
+    userId?: string;
+    nickname?: string;
+    profileImageUrl?: string;
+  };
 
   // Auth 관련
   Login: undefined;
@@ -338,6 +343,10 @@ export default function App(): React.JSX.Element {
                     name="ProfileSettings"
                     component={ProfileSettingsScreen}
                   />
+                  <Stack.Screen
+                    name="UserProfile"
+                    component={UserProfileScreen}
+                  />
                   <Stack.Screen name="OnBoardStart" component={OnBoardStart} />
                   <Stack.Screen name="AreaOnBoard" component={AreaOnBoard} />
                   <Stack.Screen name="AgeOnBoard" component={AgeOnBoard} />
@@ -373,10 +382,6 @@ export default function App(): React.JSX.Element {
                   <Stack.Screen
                     name="ChatRoomInfoScreen"
                     component={ChatRoomInfoScreen}
-                  />
-                  <Stack.Screen
-                    name="UserProfile"
-                    component={UserProfileScreen}
                   />
                 </Stack.Navigator>
               </KeyboardProvider>

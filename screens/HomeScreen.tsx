@@ -1273,7 +1273,7 @@ export default function HomeScreen(): React.JSX.Element {
                         {course.title}
                       </Text>
                       <Text style={{ marginTop: 2, fontSize: 13, fontWeight: "400", color: "#6B7280" }}>
-                        🙂 {course.author}
+                      {course.author}
                       </Text>
                       <Text style={{ marginTop: 2, fontSize: 12, fontWeight: "400", color: "#6B7280" }}>
                         {course.statsLine}

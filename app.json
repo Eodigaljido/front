@@ -4,7 +4,7 @@
     "slug": "Eodigaljido",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/Eodigaljido.png",
     "userInterfaceStyle": "light",
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -20,12 +20,10 @@
     },
     "android": {
       "package": "com.eodigaljido.app",
-      "versionCode": 6,
+      "versionCode": 7,
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "foregroundImage": "./assets/Eodigaljido.png",
+        "backgroundColor": "#000000"
       },
       "softwareKeyboardLayoutMode": "pan"
     },
