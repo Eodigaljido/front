@@ -4,7 +4,7 @@ import { parseSharePathFromUrl } from '../utils/parseSharePath';
 import { setPendingShareLink } from '../utils/pendingShareLink';
 
 /** 공유·Universal Link 호스트 (EXPO_PUBLIC_SHARE_BASE_URL과 동일 도메인) */
-export const SHARE_LINK_HOST = 'share.eodigaljido.rjsgud.com';
+export const SHARE_LINK_HOST = 'eodigaljido.uk';
 
 export const APP_SCHEME = 'eodigaljido';
 
@@ -27,7 +27,7 @@ const linkingConfig = {
         SharedRoute: {
           path: 'courses/public/:viewCourseId',
         },
-        /** https://share.eodigaljido.rjsgud.com/friends/add/{friendCode} */
+        /** https://eodigaljido.uk/friends/add/{friendCode} */
         All: {
           path: 'friends/add/:friendCode',
           parse: {

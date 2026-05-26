@@ -29,7 +29,7 @@ import {
 } from '../api/users';
 import { sendPhoneCode, verifyPhoneCode } from '../api/auth/phone';
 
-const DEFAULT_AVATAR_URI = 'https://i.pravatar.cc/100?img=5';
+const DEFAULT_AVATAR_URI = '';
 
 export default function ProfileSettingsScreen(): React.JSX.Element {
   const navigation = useNavigation<any>();
@@ -277,19 +277,23 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
           contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 40 }}
           keyboardShouldPersistTaps="handled"
         >
-          {loadingProfile ? (
-            <View className="items-center justify-center py-12">
-              <ActivityIndicator size="large" color="#111827" />
-              <Text className="mt-3 text-sm text-gray-500">프로필 불러오는 중...</Text>
-            </View>
-          ) : null}
-
           <View className="items-center rounded-2xl border border-gray-200 bg-white px-4 py-6">
             <View className="relative">
-              <Image
-                source={{ uri: avatarUri }}
-                className="h-24 w-24 rounded-full bg-gray-100"
-              />
+              {avatarUri ? (
+                <Image
+                  source={{ uri: avatarUri }}
+                  className="h-24 w-24 rounded-full bg-gray-100"
+                />
+              ) : (
+                <View className="h-24 w-24 items-center justify-center rounded-full bg-gray-100">
+                  <Ionicons name="person" size={42} color="#9ca3af" />
+                </View>
+              )}
+              {loadingProfile ? (
+                <View className="absolute inset-0 items-center justify-center rounded-full bg-white/65">
+                  <ActivityIndicator size="small" color="#111827" />
+                </View>
+              ) : null}
               <Pressable
                 onPress={pickFromGallery}
                 disabled={pickingImage}
