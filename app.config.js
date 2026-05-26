@@ -7,7 +7,7 @@ const shareHost =
   (process.env.EXPO_PUBLIC_SHARE_BASE_URL ?? '')
     .trim()
     .replace(/^https?:\/\//i, '')
-    .replace(/\/+$/, '') || 'share.eodigaljido.rjsgud.com';
+    .replace(/\/+$/, '') || 'eodigaljido.uk';
 
 module.exports = ({ config }) => ({
   ...config,
