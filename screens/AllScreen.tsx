@@ -29,7 +29,6 @@ export default function AllScreen(): React.JSX.Element {
   const logout = useAuthStore(s => s.logout);
   const authUser = useAuthStore(s => s.user);
   const setUser = useAuthStore(s => s.setUser);
-  const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
   const [sharedRouteCount, setSharedRouteCount] = useState<number>(27);
   const [friendCode, setFriendCode] = useState<string | null>(null);
   const [friendCodeVisible, setFriendCodeVisible] = useState(false);
@@ -40,7 +39,6 @@ export default function AllScreen(): React.JSX.Element {
   const refreshMe = useCallback(async () => {
     try {
       const me = await getMyProfile();
-      setProfileImageUrl(me.profileImageUrl ?? null);
       setUser({
         id: (me as any).id ?? 0,
         uuid: me.uuid,
@@ -48,6 +46,7 @@ export default function AllScreen(): React.JSX.Element {
         email: me.email ?? '',
         nickname: me.nickname ?? '',
         role: me.role ?? 'USER',
+        profileImageUrl: me.profileImageUrl ?? null,
       });
       if (typeof (me as any).sharedRouteCount === 'number') {
         setSharedRouteCount((me as any).sharedRouteCount);
@@ -190,7 +189,7 @@ export default function AllScreen(): React.JSX.Element {
     confirmAddFriendFromLink(code);
   }, [route.params, navigation, confirmAddFriendFromLink]);
 
-  const avatarUri = profileImageUrl ?? 'https://i.pravatar.cc/100?img=5';
+  const avatarUri = authUser?.profileImageUrl ?? 'https://i.pravatar.cc/100?img=5';
 
   return (
     <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={['top']}>
