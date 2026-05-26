@@ -25,6 +25,7 @@ import {
 import { kakaoOAuth, googleOAuth } from '../api/auth';
 import OAuthWebViewModal from '../components/OAuthWebViewModal';
 import { tokenStorage } from '../utils/tokenStorage';
+import { resetToMainAfterAuth } from '../utils/pendingShareLink';
 
 const KAKAO_REST_KEY = process.env.EXPO_PUBLIC_KAKAO_REST_API_KEY ?? '';
 const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID ?? '';
@@ -78,7 +79,7 @@ export default function LoginScreen() {
       if (!completed) {
         navigation.reset({ index: 0, routes: [{ name: 'OnBoardStart' }] });
       } else {
-        navigation.reset({ index: 0, routes: [{ name: 'Tabs' }] });
+        resetToMainAfterAuth(navigation);
       }
     } catch {
       setLoginError('소셜 로그인에 실패했습니다. 다시 시도해주세요.');
@@ -108,7 +109,7 @@ export default function LoginScreen() {
             routes: [{ name: 'OnBoardStart' }],
           });
         } else {
-          navigation.reset({ index: 0, routes: [{ name: 'Tabs' }] });
+          resetToMainAfterAuth(navigation);
         }
       } catch {
         if (!cancelled) {
@@ -202,7 +203,7 @@ export default function LoginScreen() {
                       routes: [{ name: 'OnBoardStart' }],
                     });
                   } else {
-                    navigation.reset({ index: 0, routes: [{ name: 'Tabs' }] });
+                    resetToMainAfterAuth(navigation);
                   }
                 } catch {
                   setLoginError('아이디 혹은 비밀번호가 틀렸습니다.');

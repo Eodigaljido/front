@@ -19,7 +19,8 @@ import {
   Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRoute, useFocusEffect } from "@react-navigation/native";
+import { useRoute, useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useAuthStore } from "../store/authStore";
 import { Ionicons } from "@expo/vector-icons";
 import {
   COURSE_DETAIL_MAP_OVERVIEW_LEVEL,
@@ -38,6 +39,7 @@ import { useToast } from "../context/ToastContext";
 import {
   fetchSharedCourses,
   fetchSharedCourseDetail,
+  fetchMyCourses,
   normalizeCourseList,
   pickCourseSaveCount,
   sortCoursesBySaveCount,
@@ -45,9 +47,12 @@ import {
   submitSharedCourseReview,
 } from "../api/courses";
 import { displayCourseRegionChip } from "../utils/inferCourseRegionLabel";
+import { getCourseAuthorLabel } from "../utils/formatCourseAuthor";
+import { CourseCardAuthorRow } from "../components/CourseCardAuthorRow";
 import AppMapView from "../components/AppMapView";
 import { buildMapMarkersFromPathPoints } from "../utils/spreadMapMarkers";
 import { simplifyRoutePath } from "../utils/simplifyRoutePath";
+import { sharePublicCourse } from "../utils/shareCourse";
 import { fetchMergedDirectionsPolyline } from "../data/googleDirectionsApi";
 import { useCourseStepWalkingSegments } from "../hooks/useCourseStepWalkingSegments";
 import FilterBottomSheet, {
@@ -55,6 +60,7 @@ import FilterBottomSheet, {
   REGIONS,
   SORT_OPTIONS,
 } from "../components/FilterBottomSheet";
+import { sameCourseId } from "../utils/sameCourseId";
 
 type SharedRouteParams = {
   openFilter?: boolean;
@@ -102,9 +108,11 @@ function mergeSharedCourseWithExtraReviews(
 function CourseCard({
   item,
   onPress,
+  authorLabel,
 }: {
   item: CourseItem;
   onPress: () => void;
+  authorLabel: string;
 }) {
   return (
     <Pressable
@@ -133,6 +141,7 @@ function CourseCard({
           >
             {item.title}
           </Text>
+          <CourseCardAuthorRow label={authorLabel} />
           {Array.isArray(item.tags) && item.tags.length > 0 ? (
             <View className="mt-1.5 flex-row flex-wrap gap-1">
               {item.tags.slice(0, 2).map((tag) => (
@@ -179,10 +188,26 @@ function CourseCard({
 
 export default function SharedRouteScreen(): React.JSX.Element {
   const route = useRoute();
+  const navigation = useNavigation<any>();
   const params = (route.params || {}) as SharedRouteParams;
-  const { addSavedCourse, addSharedCourseReview, extraSharedCourseReviews, savedCourseIds } =
-    useMockData();
+  const {
+    addSavedCourse,
+    addSharedCourseReview,
+    extraSharedCourseReviews,
+    savedCourseIds,
+    userSavedRoutes,
+  } = useMockData();
   const { showToast } = useToast();
+  const authUser = useAuthStore((s) => s.user);
+  const authorCtx = useMemo(
+    () => ({
+      myUuid: authUser?.uuid,
+      myUserId: authUser?.userId,
+      myNickname: authUser?.nickname,
+    }),
+    [authUser?.uuid, authUser?.userId, authUser?.nickname],
+  );
+  const [apiMyCourses, setApiMyCourses] = useState<CourseItem[]>([]);
 
   const [activeTab, setActiveTab] = useState<TabId>("all");
   const [coursesData, setCoursesData] = useState<CourseItem[]>([]);
@@ -252,10 +277,38 @@ export default function SharedRouteScreen(): React.JSX.Element {
     }
   }, []);
 
+  const reloadMyCourses = useCallback(async () => {
+    try {
+      const courses = await fetchMyCourses();
+      setApiMyCourses(normalizeCourseList(courses));
+    } catch {
+      setApiMyCourses([]);
+    }
+  }, []);
+
+  const isOwnMyRoute = useCallback(
+    (course: CourseItem) => {
+      const id = String(course?.id ?? "");
+      if (!id) return false;
+      if (
+        authorCtx.myUuid &&
+        course.authorUuid &&
+        String(course.authorUuid) === String(authorCtx.myUuid)
+      ) {
+        return true;
+      }
+      if (userSavedRoutes.some((r) => sameCourseId(r.id, id))) return true;
+      if (apiMyCourses.some((c) => sameCourseId(c.id, id))) return true;
+      return false;
+    },
+    [userSavedRoutes, apiMyCourses, authorCtx.myUuid],
+  );
+
   useFocusEffect(
     useCallback(() => {
       reloadSharedCourses();
-    }, [reloadSharedCourses]),
+      reloadMyCourses();
+    }, [reloadSharedCourses, reloadMyCourses]),
   );
 
   useEffect(() => {
@@ -564,7 +617,11 @@ export default function SharedRouteScreen(): React.JSX.Element {
         data={filteredCourses ?? []}
         keyExtractor={(item: CourseItem) => item.id}
         renderItem={({ item }: { item: CourseItem }) => (
-          <CourseCard item={item} onPress={() => setViewingCourseId(item.id)} />
+          <CourseCard
+            item={item}
+            authorLabel={getCourseAuthorLabel(item, authorCtx)}
+            onPress={() => setViewingCourseId(item.id)}
+          />
         )}
         contentContainerStyle={{ paddingTop: 8, paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
@@ -842,59 +899,92 @@ export default function SharedRouteScreen(): React.JSX.Element {
                             <Text className="flex-1 text-xl font-bold text-gray-900">
                               코스 상세
                             </Text>
+                            <View className="flex-row items-center gap-2">
                             <Pressable
-                              disabled={
-                                savingMyRoute || savedCourseIds.includes(course.id)
+                              onPress={() =>
+                                void sharePublicCourse({
+                                  courseId: course.id,
+                                  title: course.title,
+                                })
                               }
-                              onPress={async () => {
-                                if (savedCourseIds.includes(course.id)) {
-                                  showToast('이미 저장된 코스예요');
-                                  return;
-                                }
-                                setSavingMyRoute(true);
-                                try {
-                                  const result = await saveSharedCourse(course.id);
-                                  if (result.ok) {
-                                    addSavedCourse(course.id);
-                                    showToast('저장 완료');
-                                  } else if (result.reason === "NOT_ON_SERVER") {
-                                    showToast('코스를 찾을 수 없어요');
-                                  } else {
-                                    showToast('저장하지 못했어요');
-                                  }
-                                } finally {
-                                  setSavingMyRoute(false);
-                                }
-                              }}
-                              className="flex-row items-center rounded-lg px-3 py-2 active:opacity-90"
-                              style={{
-                                backgroundColor: savedCourseIds.includes(course.id)
-                                  ? "#93c5fd"
-                                  : "#2563EB",
-                                opacity:
-                                  savingMyRoute ||
-                                  savedCourseIds.includes(course.id)
-                                    ? 0.85
-                                    : 1,
-                              }}
+                              className="flex-row items-center rounded-lg border border-gray-300 bg-white px-3 py-2 active:opacity-90"
                             >
-                              {savingMyRoute ? (
-                                <ActivityIndicator size="small" color="#fff" />
-                              ) : (
-                                <Ionicons
-                                  name="add-circle-outline"
-                                  size={18}
-                                  color="#fff"
-                                />
-                              )}
-                              <Text className="ml-1 text-xs font-bold text-white">
-                                {savedCourseIds.includes(course.id)
-                                  ? "내 루트에 있음"
-                                  : savingMyRoute
-                                    ? "저장 중…"
-                                    : "내 루트 추가"}
+                              <Ionicons name="share-outline" size={18} color="#2563eb" />
+                              <Text className="ml-1 text-xs font-semibold text-blue-600">
+                                공유
                               </Text>
                             </Pressable>
+                            {isOwnMyRoute(course) ? (
+                              <Pressable
+                                onPress={() => {
+                                  closeCourseDetail();
+                                  navigation.navigate("MyRoute", {
+                                    viewCourseId: String(course.id),
+                                  });
+                                }}
+                                className="flex-row items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 active:opacity-90"
+                              >
+                                <Ionicons name="map-outline" size={18} color="#2563eb" />
+                                <Text className="ml-1 text-xs font-bold text-blue-700">
+                                  내 루트에서 보기
+                                </Text>
+                              </Pressable>
+                            ) : (
+                              <Pressable
+                                disabled={
+                                  savingMyRoute || savedCourseIds.includes(course.id)
+                                }
+                                onPress={async () => {
+                                  if (savedCourseIds.includes(course.id)) {
+                                    showToast('이미 저장된 코스예요');
+                                    return;
+                                  }
+                                  setSavingMyRoute(true);
+                                  try {
+                                    const result = await saveSharedCourse(course.id);
+                                    if (result.ok) {
+                                      addSavedCourse(course.id);
+                                      showToast('저장 완료');
+                                    } else if (result.reason === "NOT_ON_SERVER") {
+                                      showToast('코스를 찾을 수 없어요');
+                                    } else {
+                                      showToast('저장하지 못했어요');
+                                    }
+                                  } finally {
+                                    setSavingMyRoute(false);
+                                  }
+                                }}
+                                className="flex-row items-center rounded-lg px-3 py-2 active:opacity-90"
+                                style={{
+                                  backgroundColor: savedCourseIds.includes(course.id)
+                                    ? "#93c5fd"
+                                    : "#2563EB",
+                                  opacity:
+                                    savingMyRoute ||
+                                    savedCourseIds.includes(course.id)
+                                      ? 0.85
+                                      : 1,
+                                }}
+                              >
+                                {savingMyRoute ? (
+                                  <ActivityIndicator size="small" color="#fff" />
+                                ) : (
+                                  <Ionicons
+                                    name="add-circle-outline"
+                                    size={18}
+                                    color="#fff"
+                                  />
+                                )}
+                                <Text className="ml-1 text-xs font-bold text-white">
+                                  {savedCourseIds.includes(course.id)
+                                    ? "내 루트에 있음"
+                                    : savingMyRoute
+                                      ? "저장 중…"
+                                      : "내 루트 추가"}
+                                </Text>
+                              </Pressable>
+                            )}
+                            </View>
                           </View>
 
                           <Text className="mb-1 text-base font-semibold text-gray-900">

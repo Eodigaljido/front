@@ -32,12 +32,13 @@ import {
   type CourseDetailMapFocus,
   type CourseItem,
 } from "../data/mockData";
-import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { useRoute, useFocusEffect } from "@react-navigation/native";
 import { useMockData } from "../context/MockDataContext";
 import {
   deleteMyCourse,
   fetchMyCourseDetail,
   fetchMyCourses,
+  fetchMyRouteCollaborativeFlag,
   normalizeCourseList,
 } from "../api/courses";
 import {
@@ -52,6 +53,19 @@ import { simplifyRoutePath } from "../utils/simplifyRoutePath";
 import FilterBottomSheet from "../components/FilterBottomSheet";
 import { formatOverallDurationLabel } from "../utils/formatOverallDurationLabel";
 import { resolveCourseRegionLabel } from "../utils/inferCourseRegionLabel";
+import { shareCollaborativeRoute } from "../utils/shareCollaborativeRoute";
+import { sameCourseId } from "../utils/sameCourseId";
+import { getCourseAuthorLabel } from "../utils/formatCourseAuthor";
+import { CourseCardAuthorRow } from "../components/CourseCardAuthorRow";
+import { useAuthStore } from "../store/authStore";
+import { rootNavigate } from "../navigation/rootNavigation";
+
+type RouteKindFilter = "all" | "personal" | "collaborative";
+const ROUTE_KIND_CHIPS: { key: RouteKindFilter; label: string }[] = [
+  { key: "all", label: "전체" },
+  { key: "personal", label: "개인" },
+  { key: "collaborative", label: "공동" },
+];
 import { fetchMergedDirectionsPolyline } from "../data/googleDirectionsApi";
 import { useCourseStepWalkingSegments } from "../hooks/useCourseStepWalkingSegments";
 
@@ -62,14 +76,6 @@ const CARD_STYLE = {
   backgroundColor: "#fff",
 };
 
-/** 카드 id(문자열/숫자)와 목록·상세 재조회 id 불일치 방지 */
-function sameCourseId(
-  a: string | number | null | undefined,
-  b: string | number | null | undefined,
-): boolean {
-  return String(a ?? "") === String(b ?? "");
-}
-
 function CourseCard({
   item,
   onPressCard,
@@ -77,6 +83,8 @@ function CourseCard({
   onRemove,
   onEdit,
   isFavorite,
+  isCollaborative,
+  authorLabel,
 }: {
   item: CourseItem;
   onPressCard: () => void;
@@ -84,6 +92,8 @@ function CourseCard({
   onRemove: () => void;
   onEdit: () => void;
   isFavorite?: boolean;
+  isCollaborative?: boolean;
+  authorLabel: string;
 }) {
   return (
     <View
@@ -110,7 +120,12 @@ function CourseCard({
             )}
           </View>
           <View className="justify-center flex-1 min-w-0 ml-3">
-            <View className="flex-row items-start gap-1">
+            <View className="flex-row items-start gap-1 flex-wrap">
+              {isCollaborative ? (
+                <View className="rounded-md bg-orange-100 px-1.5 py-0.5 mr-1">
+                  <Text className="text-[10px] font-bold text-orange-700">공동</Text>
+                </View>
+              ) : null}
               {isFavorite ? (
                 <Ionicons name="bookmark" size={15} color="#2563EB" style={{ marginTop: 2 }} />
               ) : null}
@@ -122,7 +137,10 @@ function CourseCard({
                 {item.title}
               </Text>
             </View>
-            <Text className="mt-1 text-xs text-gray-500">{item.meta}</Text>
+            <CourseCardAuthorRow label={authorLabel} />
+            <Text className="mt-1 text-xs text-gray-500" numberOfLines={1}>
+              {item.meta}
+            </Text>
           </View>
           <View className="flex-row items-center">
             <TouchableOpacity
@@ -198,8 +216,20 @@ function clampMyRouteDetailSheetHeight(px: number): number {
   return Math.min(Math.max(Math.round(px), minH), maxH);
 }
 
+type MyRouteParams = { viewCourseId?: string };
+
 export default function MyRouteScreen(): React.JSX.Element {
-  const stackNav = useNavigation<any>();
+  const route = useRoute();
+  const myRouteParams = (route.params || {}) as MyRouteParams;
+  const authUser = useAuthStore((s) => s.user);
+  const authorCtx = useMemo(
+    () => ({
+      myUuid: authUser?.uuid,
+      myUserId: authUser?.userId,
+      myNickname: authUser?.nickname,
+    }),
+    [authUser?.uuid, authUser?.userId, authUser?.nickname],
+  );
   const {
     favoriteCourseIds,
     removeSavedCourse,
@@ -214,6 +244,7 @@ export default function MyRouteScreen(): React.JSX.Element {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
   const [selectedSort, setSelectedSort] = useState<string | null>("즐겨찾기순");
+  const [selectedRouteKind, setSelectedRouteKind] = useState<RouteKindFilter>("all");
   const [viewingCourseId, setViewingCourseId] = useState<string | null>(null);
   /** 카드에서 연 상세 — 목록 재조회·id 타입 불일치 시에도 동일 코스 표시 */
   const [viewingCourseSnapshot, setViewingCourseSnapshot] =
@@ -350,6 +381,18 @@ export default function MyRouteScreen(): React.JSX.Element {
       reloadMyRoutesAndSharing();
     }, [reloadMyRoutesAndSharing]),
   );
+
+  useEffect(() => {
+    const vid = String(myRouteParams?.viewCourseId ?? "").trim();
+    if (!vid) return;
+    const fromUser = userSavedRoutes.find((r) => sameCourseId(r.id, vid));
+    const fromApi = apiMyCourses.find((c) => sameCourseId(c.id, vid));
+    const snap = fromUser
+      ? userRouteToCourseItem(fromUser)
+      : fromApi ?? null;
+    if (snap) setViewingCourseSnapshot(snap);
+    setViewingCourseId(vid);
+  }, [myRouteParams?.viewCourseId, userSavedRoutes, apiMyCourses]);
 
   useEffect(() => {
     if (viewingCourseId) setDetailModalMounted(true);
@@ -553,6 +596,14 @@ export default function MyRouteScreen(): React.JSX.Element {
     viewingCourseSnapshot,
   ]);
 
+  const isCollaborativeRouteId = useCallback(
+    (id: string) =>
+      userSavedRoutes.some(
+        (r) => sameCourseId(r.id, id) && r.collaborative === true,
+      ),
+    [userSavedRoutes],
+  );
+
   const mergedCourses = useMemo(() => {
     const fromUser = userSavedRoutes.map(userRouteToCourseItem);
     const combined = [...fromUser, ...apiMyCourses];
@@ -583,6 +634,12 @@ export default function MyRouteScreen(): React.JSX.Element {
       );
     }
 
+    if (selectedRouteKind === "personal") {
+      list = list.filter((c) => !isCollaborativeRouteId(c.id));
+    } else if (selectedRouteKind === "collaborative") {
+      list = list.filter((c) => isCollaborativeRouteId(c.id));
+    }
+
     if (selectedSort === "즐겨찾기순" || selectedSort === null) {
       const favRank = new Map(favoriteCourseIds.map((id, i) => [id, i]));
       list = [...list].sort((a, b) => {
@@ -604,6 +661,8 @@ export default function MyRouteScreen(): React.JSX.Element {
     selectedRegion,
     selectedSort,
     favoriteCourseIds,
+    selectedRouteKind,
+    isCollaborativeRouteId,
   ]);
 
   const isUserSavedRouteId = (id: string) =>
@@ -641,16 +700,14 @@ export default function MyRouteScreen(): React.JSX.Element {
   };
 
   const openRouteCreateEdit = (routeId: string, collaborative: boolean) => {
-    stackNav.getParent()?.navigate("RouteCreate", {
+    rootNavigate("RouteCreate", {
       editRouteId: routeId,
       collaborative,
     });
   };
 
-  const openRouteCreateFromMockCourse = (mockCourseId: string) => {
-    stackNav
-      .getParent()
-      ?.navigate("RouteCreate", { seedMockCourseId: mockCourseId });
+  const openRouteCreateFromSharedCourse = (sharedCourseId: string) => {
+    rootNavigate("RouteCreate", { seedSharedCourseId: sharedCourseId });
   };
 
   return (
@@ -667,7 +724,7 @@ export default function MyRouteScreen(): React.JSX.Element {
             </View>
             <TouchableOpacity
               activeOpacity={0.7}
-              onPress={() => stackNav.getParent()?.navigate("RouteCreate")}
+              onPress={() => rootNavigate("RouteCreate")}
               className="px-3 py-2 rounded-lg bg-white/20 active:opacity-90"
             >
               <Text className="text-xs font-semibold text-white">루트 제작</Text>
@@ -729,6 +786,27 @@ export default function MyRouteScreen(): React.JSX.Element {
         </TouchableOpacity>
       </View>
 
+      <View className="flex-row gap-2 px-4 pb-1">
+        {ROUTE_KIND_CHIPS.map((chip) => {
+          const on = selectedRouteKind === chip.key;
+          return (
+            <Pressable
+              key={chip.key}
+              onPress={() => setSelectedRouteKind(chip.key)}
+              className={`rounded-full px-3.5 py-1.5 border ${
+                on ? "bg-blue-600 border-blue-600" : "bg-white border-blue-200"
+              }`}
+            >
+              <Text
+                className={`text-xs font-semibold ${on ? "text-white" : "text-blue-700"}`}
+              >
+                {chip.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
       {/* 저장 코스 수 */}
       <View className="px-4 py-1.5">
         <Text className="text-sm text-gray-500">
@@ -755,18 +833,24 @@ export default function MyRouteScreen(): React.JSX.Element {
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => {
             const ur = userSavedRoutes.find((r) => sameCourseId(r.id, item.id));
+            const authorLabel = getCourseAuthorLabel(item, {
+              ...authorCtx,
+              isLocalOwnRoute: Boolean(ur),
+            });
             return (
               <CourseCard
                 item={item}
+                authorLabel={authorLabel}
                 isFavorite={favoriteCourseIds.some((fid) =>
                   sameCourseId(fid, item.id),
                 )}
+                isCollaborative={ur?.collaborative === true}
                 onPressCard={() => {
                   setViewingCourseSnapshot(item);
                   setViewingCourseId(String(item.id));
                 }}
                 onGuide={() => {
-                  stackNav.getParent()?.navigate("CourseGuide", {
+                  rootNavigate("CourseGuide", {
                     courseId: String(item.id),
                     courseTitle: item.title,
                   });
@@ -779,9 +863,11 @@ export default function MyRouteScreen(): React.JSX.Element {
                       ur?.collaborative === true,
                     );
                   } else if (isServerBackedMyCourse(item.id)) {
-                    openRouteCreateEdit(item.id, false);
+                    void fetchMyRouteCollaborativeFlag(item.id).then((collab) =>
+                      openRouteCreateEdit(item.id, collab),
+                    );
                   } else {
-                    openRouteCreateFromMockCourse(item.id);
+                    openRouteCreateFromSharedCourse(item.id);
                   }
                 }}
               />
@@ -1120,7 +1206,27 @@ export default function MyRouteScreen(): React.JSX.Element {
                           <Text className="text-xl font-bold text-gray-900">
                             코스 상세
                           </Text>
-                          <View className="flex-row items-center gap-2">
+                          <View className="flex-row items-center gap-2 flex-wrap justify-end">
+                            {ur?.collaborative === true ? (
+                              <TouchableOpacity
+                                onPress={() => {
+                                  void shareCollaborativeRoute({
+                                    routeId: String(course.id),
+                                    title: course.title,
+                                  });
+                                }}
+                                className="flex-row items-center gap-1 rounded-xl bg-orange-50 px-3 py-2"
+                              >
+                                <Ionicons
+                                  name="share-social-outline"
+                                  size={16}
+                                  color="#ea580c"
+                                />
+                                <Text className="text-sm font-semibold text-orange-600">
+                                  초대
+                                </Text>
+                              </TouchableOpacity>
+                            ) : null}
                             <TouchableOpacity
                               onPress={() => {
                                 closeCourseDetail(() => {

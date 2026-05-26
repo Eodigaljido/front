@@ -19,9 +19,9 @@ type MockDataContextValue = {
   removeSavedCourse: (id: string) => void;
   /** 인기 코스 북마크 토글 → 내 루트 저장 목록·즐겨찾기 순서에 반영 */
   togglePopularFavorite: (courseId: string) => void;
-  /** 공개한 코스 목 mock id (7개 등) */
+  /** 서버 공개 코스 id (로컬 목록 없음) */
   publicCourseIds: string[];
-  /** 루트 제작에서 저장한 목 루트 */
+  /** 루트 제작에서 저장한 로컬 루트 (기기·세션) */
   userSavedRoutes: UserSavedRoute[];
   upsertUserRoute: (route: UserSavedRoute) => void;
   deleteUserRoute: (id: string) => void;
@@ -36,7 +36,7 @@ type MockDataContextValue = {
 
 const MockDataContext = createContext<MockDataContextValue | null>(null);
 
-const MOCK_PUBLIC_IDS: string[] = [];
+const EMPTY_PUBLIC_IDS: string[] = [];
 
 export function MockDataProvider({ children }: { children: React.ReactNode }) {
   const [savedCourseIds, setSavedCourseIds] = useState<string[]>([]);
@@ -120,7 +120,7 @@ export function MockDataProvider({ children }: { children: React.ReactNode }) {
       addSavedCourse,
       removeSavedCourse,
       togglePopularFavorite,
-      publicCourseIds: MOCK_PUBLIC_IDS,
+      publicCourseIds: EMPTY_PUBLIC_IDS,
       userSavedRoutes,
       upsertUserRoute,
       deleteUserRoute,

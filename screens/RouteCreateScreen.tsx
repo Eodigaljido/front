@@ -22,6 +22,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import * as Location from 'expo-location';
+import * as ImagePicker from 'expo-image-picker';
 import AppMapView from '../components/AppMapView';
 import type { MapRouteSegment } from '../components/mapTypes';
 import { buildMapMarkersFromRouteStops } from '../utils/spreadMapMarkers';
@@ -33,8 +34,18 @@ import {
   type TransportMode,
   type MockPlace,
   estimateMinutes,
-  MOCK_COLLABORATORS,
 } from '../data/routeCreateMocks';
+import { getRouteMembers, hasCollaboratorPeers } from '../data/collaborativeRoute';
+import { rootNavigate } from '../navigation/rootNavigation';
+import CollaboratorAvatarStack from '../components/CollaboratorAvatarStack';
+import { CollaborativeFriendInviteModal } from '../components/CollaborativeFriendInviteModal';
+import { RouteCollaborativeChatSheet } from '../components/RouteCollaborativeChatSheet';
+import { presentCollaborativeShareOptions } from '../utils/shareCollaborativeRoute';
+import { useAuthStore } from '../store/authStore';
+import {
+  linkRouteToGroupChat,
+  inviteFriendsToRouteChat,
+} from '../data/routeCollaborativeChat';
 import {
   searchKakaoPlacesByKeyword,
   KAKAO_KEYWORD_CATEGORY_OPTIONS,
@@ -51,6 +62,7 @@ import {
 import {
   createMyRoute,
   fetchMyCourseDetail,
+  fetchMyRouteCollaborativeFlag,
   fetchMySharingCourseIds,
   fetchSharedCourseDetail,
   setMyCoursePublic,
@@ -154,7 +166,8 @@ function pickFastestModeByKey(_placeKey: string): TransportMode {
 }
 
 /** 공유 루트 목 코스 → 루트 제작 정류장/구간 (저장 시 새 내 루트로 추가) */
-function seedRouteFromMockCourse(course: CourseItem): { stops: RouteStop[]; legs: RouteLeg[] } {
+/** API 코스 상세 → 루트 제작 정류장/구간 */
+function courseItemToRouteStops(course: CourseItem): { stops: RouteStop[]; legs: RouteLeg[] } {
   const steps = course.routeSteps;
   if (steps.length === 0) {
     return { stops: ROUTE_CREATE_EMPTY_STOPS.map((s) => ({ ...s })), legs: [] };
@@ -726,6 +739,8 @@ function ViaDragHandle({
 export default function RouteCreateScreen(): React.JSX.Element {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
+  const authUser = useAuthStore((s) => s.user);
+  const accessToken = useAuthStore((s) => s.accessToken);
   const { showToast } = useToast();
   const insets = useSafeAreaInsets();
   const { height: windowH } = useWindowDimensions();
@@ -890,14 +905,17 @@ export default function RouteCreateScreen(): React.JSX.Element {
   const initialMapCenterFetchedRef = useRef(false);
 
   const [chatOpen, setChatOpen] = useState(false);
-  const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<
     { id: string; from: 'me' | 'other'; name: string; text: string; at: number }[]
   >([]);
+  const [routeChatRoomUuid, setRouteChatRoomUuid] = useState<string | null>(null);
+  const [friendInviteOpen, setFriendInviteOpen] = useState(false);
+  const [friendInviteSubmitting, setFriendInviteSubmitting] = useState(false);
 
   const [editingStop, setEditingStop] = useState<RouteStop | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [routeTitle, setRouteTitle] = useState('새 루트');
+  const [routeCoverImageUri, setRouteCoverImageUri] = useState<string | null>(null);
   /** 홈·공유 목록 카드용, 최대 2개 */
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [editingLegId, setEditingLegId] = useState<string | null>(null);
@@ -921,22 +939,52 @@ export default function RouteCreateScreen(): React.JSX.Element {
     [],
   );
 
-  const isCollaborative = useMemo(() => {
+  const [collaborativeDraft, setCollaborativeDraft] = useState(
+    () => route.params?.collaborative === true,
+  );
+  const isCollaborative = collaborativeDraft;
+
+  /** 공동 루트로 진입·편집 시 개인 루트 전환 불가 */
+  const collaborativeModeLocked = useMemo(() => {
     if (route.params?.collaborative === true) return true;
+    const eid = route.params?.editRouteId as string | undefined;
+    if (!eid) return false;
+    const r = userSavedRoutes.find((x) => String(x.id) === String(eid));
+    return r?.collaborative === true;
+  }, [route.params?.collaborative, route.params?.editRouteId, userSavedRoutes]);
+
+  const activeRouteId = String(persistedRouteId ?? editRouteIdParam ?? 'new');
+
+  const collabMembers = useMemo(
+    () =>
+      getRouteMembers(activeRouteId, {
+        hostName: authUser?.nickname ?? '나',
+        hostAvatarUri: authUser?.profileImageUrl,
+      }),
+    [activeRouteId, authUser?.nickname, authUser?.profileImageUrl],
+  );
+
+  const showCollabMemberBar = isCollaborative && hasCollaboratorPeers(collabMembers);
+
+  useEffect(() => {
+    if (route.params?.collaborative === true) setCollaborativeDraft(true);
     const eid = route.params?.editRouteId as string | undefined;
     if (eid) {
       const r = userSavedRoutes.find((x) => String(x.id) === String(eid));
-      if (r?.collaborative === true) return true;
+      if (r?.collaborative === true) setCollaborativeDraft(true);
     }
-    return false;
   }, [route.params?.collaborative, route.params?.editRouteId, userSavedRoutes]);
+
+  useEffect(() => {
+    if (collaborativeModeLocked) setCollaborativeDraft(true);
+  }, [collaborativeModeLocked]);
 
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
 
       const editId = route.params?.editRouteId as string | undefined;
-      const seedId = route.params?.seedMockCourseId as string | undefined;
+      const seedId = route.params?.seedSharedCourseId as string | undefined;
       const collab =
         route.params?.collaborative === true ||
         (editId
@@ -953,6 +1001,8 @@ export default function RouteCreateScreen(): React.JSX.Element {
         setStops(ROUTE_CREATE_EMPTY_STOPS.map((s) => ({ ...s })));
         setLegs([]);
         setChatMessages([]);
+        setRouteChatRoomUuid(null);
+        setRouteCoverImageUri(null);
       };
 
       if (editId) {
@@ -960,6 +1010,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
         if (r) {
           setPersistedRouteId(r.id);
           setRouteTitle(r.title);
+          setRouteCoverImageUri(r.coverImageUri ?? null);
           setSelectedTags(
             Array.isArray(r.tags)
               ? r.tags.map((t) => String(t).trim()).filter(Boolean).slice(0, MAX_ROUTE_TAGS)
@@ -981,6 +1032,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
             })),
           );
           setChatMessages([]);
+          setRouteChatRoomUuid(r.chatRoomUuid ?? null);
           void syncPublishToPublicFromRoute(r.id, r.publishedToPublic);
           return () => {
             cancelled = true;
@@ -991,8 +1043,11 @@ export default function RouteCreateScreen(): React.JSX.Element {
           try {
             const detail = await fetchMyCourseDetail(editId);
             if (cancelled) return;
+            const collabFromApi = await fetchMyRouteCollaborativeFlag(editId);
+            if (cancelled) return;
+            if (collabFromApi) setCollaborativeDraft(true);
             if (detail?.routeSteps?.length) {
-              const { stops: nextStops, legs: nextLegs } = seedRouteFromMockCourse(detail);
+              const { stops: nextStops, legs: nextLegs } = courseItemToRouteStops(detail);
               setPersistedRouteId(editId);
               setRouteTitle(detail.title);
               const detailTagList = Array.isArray(detail.tags)
@@ -1034,7 +1089,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
               return;
             }
             const { stops: nextStops, legs: nextLegs } =
-              seedRouteFromMockCourse(c);
+              courseItemToRouteStops(c);
             setPersistedRouteId(null);
             setRouteTitle(c.title);
             setSelectedTags(
@@ -1058,13 +1113,14 @@ export default function RouteCreateScreen(): React.JSX.Element {
       }
 
       applyEmptyRoute();
+      if (collab) setCollaborativeDraft(true);
       return () => {
         cancelled = true;
       };
     }, [
       route.params?.collaborative,
       route.params?.editRouteId,
-      route.params?.seedMockCourseId,
+      route.params?.seedSharedCourseId,
       userSavedRoutes,
       syncPublishToPublicFromRoute,
     ]),
@@ -1073,7 +1129,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
   /** 신규 루트: 화면 진입 시 1회 현재 위치로 지도 중심 */
   useEffect(() => {
     const editId = route.params?.editRouteId as string | undefined;
-    const seedId = route.params?.seedMockCourseId as string | undefined;
+    const seedId = route.params?.seedSharedCourseId as string | undefined;
     if (editId || seedId || initialMapCenterFetchedRef.current) return;
 
     let cancelled = false;
@@ -1099,7 +1155,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [route.params?.editRouteId, route.params?.seedMockCourseId]);
+  }, [route.params?.editRouteId, route.params?.seedSharedCourseId]);
 
   /** 거리순 정렬 기준: 현재 루트에 찍힌 정류장들의 무게중심 (없으면 거리순 비활성) */
   const searchMapCenter = useMemo(() => {
@@ -1991,15 +2047,93 @@ export default function RouteCreateScreen(): React.JSX.Element {
     setEditingStop(null);
   };
 
-  const sendChat = () => {
+  const sendChatFallback = (text: string) => {
     if (!isCollaborative) return;
-    const t = chatInput.trim();
+    const t = text.trim();
     if (!t) return;
     setChatMessages((m) => [
       ...m,
-      { id: uid(), from: 'me', name: '나', text: t, at: Date.now() },
+      { id: uid(), from: 'me', name: authUser?.nickname ?? '나', text: t, at: Date.now() },
     ]);
-    setChatInput('');
+  };
+
+  const pickRouteCoverImage = useCallback(async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('', '사진 접근 권한이 필요해요.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    });
+    if (!result.canceled && result.assets[0]?.uri) {
+      setRouteCoverImageUri(result.assets[0].uri);
+    }
+  }, []);
+
+  const patchRouteChatRoom = useCallback(
+    (routeId: string, chatRoomUuid: string | null, base?: ReturnType<typeof getUserRoute>) => {
+      const prev =
+        base ?? getUserRoute(routeId) ?? userSavedRoutes.find((x) => String(x.id) === String(routeId));
+      if (!prev) return;
+      upsertUserRoute({
+        ...prev,
+        chatRoomUuid: chatRoomUuid ?? undefined,
+        coverImageUri: routeCoverImageUri ?? prev.coverImageUri,
+      });
+      setRouteChatRoomUuid(chatRoomUuid);
+    },
+    [getUserRoute, userSavedRoutes, upsertUserRoute, routeCoverImageUri],
+  );
+
+  /** 상단 공유 — 공동(공유) 루트 모드로 전환 후 초대·링크 공유 */
+  const handleTopSharePress = useCallback(() => {
+    setCollaborativeDraft(true);
+    const rid = String(persistedRouteId ?? editRouteIdParam ?? '').trim();
+    if (!rid || rid.startsWith('ur-')) {
+      showToast('루트를 저장한 뒤 공유·초대할 수 있어요.');
+      return;
+    }
+    presentCollaborativeShareOptions({
+      routeId: rid,
+      title: routeTitle.trim() || '루트',
+      onInviteFriends: () => setFriendInviteOpen(true),
+    });
+  }, [persistedRouteId, editRouteIdParam, routeTitle, showToast]);
+
+  const handleInviteFriendsToRoute = async (friendUuids: string[]) => {
+    const rid = String(persistedRouteId ?? editRouteIdParam ?? '').trim();
+    if (!rid || String(rid).startsWith('ur-')) {
+      Alert.alert('', '루트를 한 번 저장한 뒤 친구에게 공유할 수 있어요.');
+      return;
+    }
+    if (!accessToken || !authUser?.uuid) {
+      Alert.alert('', '로그인 후 친구에게 공유할 수 있어요.');
+      return;
+    }
+    setFriendInviteSubmitting(true);
+    try {
+      const title = routeTitle.trim() || '루트';
+      const { chatRoomUuid, sent } = await inviteFriendsToRouteChat({
+        accessToken,
+        myUuid: authUser.uuid,
+        routeId: rid,
+        routeTitle: title,
+        friendUuids,
+        existingChatRoomUuid: routeChatRoomUuid,
+      });
+      if (chatRoomUuid) patchRouteChatRoom(rid, chatRoomUuid);
+      setFriendInviteOpen(false);
+      showToast(
+        sent
+          ? `${friendUuids.length}명에게 초대했어요 · 채팅 탭에서 확인`
+          : '초대에 실패했어요',
+      );
+    } finally {
+      setFriendInviteSubmitting(false);
+    }
   };
 
   const saveRoute = async () => {
@@ -2011,7 +2145,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
     const now = new Date().toISOString();
     const localId = persistedRouteId ?? `ur-${uid()}`;
     const prev = getUserRoute(localId) ?? getUserRoute(persistedRouteId ?? '');
-    const wantPublic = publishToPublic && !isCollaborative;
+    const wantPublic = publishToPublic && !collaborativeDraft;
     const serverBackedPersisted =
       persistedRouteId && !String(persistedRouteId).startsWith('ur-')
         ? String(persistedRouteId)
@@ -2022,7 +2156,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
       .slice(0, MAX_ROUTE_TAGS);
     const routePayload = {
       title,
-      collaborative: isCollaborative,
+      collaborative: collaborativeDraft,
       ...(tagsForSave.length > 0 ? { tags: tagsForSave } : {}),
       stops: stops.map((s) => ({
         id: s.id,
@@ -2048,11 +2182,13 @@ export default function RouteCreateScreen(): React.JSX.Element {
       title,
       createdAt: prev?.createdAt ?? now,
       updatedAt: now,
-      collaborative: isCollaborative,
+      collaborative: collaborativeDraft,
       tags: tagsForSave,
       stops: routePayload.stops,
       legs: routePayload.legs,
       publishedToPublic: wantPublic,
+      coverImageUri: routeCoverImageUri,
+      chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
     });
 
     let apiSaved = false;
@@ -2067,11 +2203,13 @@ export default function RouteCreateScreen(): React.JSX.Element {
           title,
           createdAt: prev?.createdAt ?? now,
           updatedAt: now,
-          collaborative: isCollaborative,
+          collaborative: collaborativeDraft,
           tags: tagsForSave,
           stops: routePayload.stops,
           legs: routePayload.legs,
           publishedToPublic: wantPublic,
+          coverImageUri: routeCoverImageUri,
+          chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
         });
       }
     } else {
@@ -2087,11 +2225,13 @@ export default function RouteCreateScreen(): React.JSX.Element {
           title,
           createdAt: prev?.createdAt ?? now,
           updatedAt: now,
-          collaborative: isCollaborative,
+          collaborative: collaborativeDraft,
           tags: tagsForSave,
           stops: routePayload.stops,
           legs: routePayload.legs,
           publishedToPublic: wantPublic,
+          coverImageUri: routeCoverImageUri,
+          chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
         });
       }
     }
@@ -2100,14 +2240,46 @@ export default function RouteCreateScreen(): React.JSX.Element {
       apiSaved &&
       effectiveId &&
       !String(effectiveId).startsWith('ur-') &&
-      !isCollaborative
+      !collaborativeDraft
     ) {
       await setMyCoursePublic(String(effectiveId), wantPublic);
     }
 
     setPersistedRouteId(effectiveId);
 
-    showToast(apiSaved ? '저장 완료' : '저장하지 못했어요');
+    if (collaborativeDraft && accessToken && authUser?.uuid) {
+      const ensured = await linkRouteToGroupChat({
+        accessToken,
+        myUuid: authUser.uuid,
+        routeId: effectiveId,
+        routeTitle: title,
+        existingChatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid ?? null,
+      });
+      if (ensured) {
+        patchRouteChatRoom(effectiveId, ensured, {
+          ...(getUserRoute(effectiveId) ?? {
+            id: effectiveId,
+            title,
+            createdAt: prev?.createdAt ?? now,
+            updatedAt: now,
+            collaborative: true,
+            tags: tagsForSave,
+            stops: routePayload.stops,
+            legs: routePayload.legs,
+            publishedToPublic: wantPublic,
+          }),
+          chatRoomUuid: ensured,
+        });
+      }
+    }
+
+    showToast(
+      apiSaved
+        ? collaborativeDraft
+          ? '저장 완료 · 채팅 탭에 단체 채팅이 생겼어요'
+          : '저장 완료'
+        : '저장하지 못했어요',
+    );
     if (apiSaved) {
       navigation.goBack();
     }
@@ -2273,7 +2445,40 @@ export default function RouteCreateScreen(): React.JSX.Element {
             </Text>
             <Ionicons name="search-outline" size={22} color="#6b7280" />
           </Pressable>
+
+          <Pressable
+            onPress={handleTopSharePress}
+            className="h-11 w-11 items-center justify-center rounded-full bg-white shadow-md active:opacity-90"
+            style={{
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.12,
+              shadowRadius: 6,
+              elevation: 4,
+            }}
+            accessibilityLabel="공유 루트로 전환 및 공유"
+          >
+            <Ionicons
+              name="share-social-outline"
+              size={22}
+              color={isCollaborative ? '#ea580c' : '#2563eb'}
+            />
+          </Pressable>
         </View>
+
+        {showCollabMemberBar ? (
+          <View className="mt-2 px-3" pointerEvents="box-none">
+            <CollaboratorAvatarStack
+              members={collabMembers}
+              onPress={() =>
+                rootNavigate('RouteCollaborators', {
+                  routeId: activeRouteId,
+                  routeTitle: routeTitle.trim() || '루트',
+                })
+              }
+            />
+          </View>
+        ) : null}
 
         <View style={{ flex: 1, minHeight: 0 }} pointerEvents="none" />
 
@@ -2315,17 +2520,41 @@ export default function RouteCreateScreen(): React.JSX.Element {
             />
           </View>
         ) : null}
-        <View className="flex-row items-center border-b border-gray-50 px-4 pt-3 pb-2">
-          <TextInput
-            value={routeTitle}
-            onChangeText={setRouteTitle}
-            placeholder="루트 이름 입력"
-            placeholderTextColor="#9ca3af"
-            className="flex-1 text-[17px] font-bold text-gray-900"
-            maxLength={30}
-          />
-          <Text className="ml-2 text-xs font-medium text-gray-400">
-            {formatOverallDurationLabel(totalMinutes)}
+        <View className="border-b border-gray-50 px-4 pt-3 pb-2">
+          <View className="flex-row items-center">
+            <Pressable
+              onPress={() => void pickRouteCoverImage()}
+              className="mr-3 h-14 w-14 overflow-hidden rounded-xl bg-slate-100 active:opacity-90"
+              accessibilityLabel="루트 대표 이미지 설정"
+            >
+              {routeCoverImageUri ? (
+                <Image
+                  source={{ uri: routeCoverImageUri }}
+                  className="h-full w-full"
+                  resizeMode="cover"
+                />
+              ) : (
+                <View className="h-full w-full items-center justify-center">
+                  <Ionicons name="camera-outline" size={22} color="#94a3b8" />
+                </View>
+              )}
+            </Pressable>
+            <View className="min-w-0 flex-1 flex-row items-center">
+              <TextInput
+                value={routeTitle}
+                onChangeText={setRouteTitle}
+                placeholder="루트 이름 입력"
+                placeholderTextColor="#9ca3af"
+                className="flex-1 text-[17px] font-bold text-gray-900"
+                maxLength={30}
+              />
+              <Text className="ml-2 text-xs font-medium text-gray-400">
+                {formatOverallDurationLabel(totalMinutes)}
+              </Text>
+            </View>
+          </View>
+          <Text className="mt-1.5 text-[10px] text-gray-400">
+            대표 이미지 · 내 루트·공유 목록 카드에 표시돼요
           </Text>
         </View>
 
@@ -2357,39 +2586,20 @@ export default function RouteCreateScreen(): React.JSX.Element {
           </View>
         </View>
 
-        <View className="flex-row items-center border-b border-gray-100 px-3 py-2.5">
-          <View className="min-w-0 flex-1 flex-row items-center">
-            {isCollaborative ? (
-              <View className="flex-row items-center">
-                {MOCK_COLLABORATORS.length > 0 ? (
-                  MOCK_COLLABORATORS.map((c, i) => (
-                    <Image
-                      key={c.id}
-                      accessibilityLabel={`${c.name} 참여 중`}
-                      source={{
-                        uri: `https://i.pravatar.cc/96?u=${encodeURIComponent(c.id)}`,
-                      }}
-                      style={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: 18,
-                        borderWidth: 2.5,
-                        borderColor: '#ffffff',
-                        marginLeft: i === 0 ? 0 : -12,
-                      }}
-                    />
-                  ))
-                ) : (
-                  <Text className="text-xs font-medium text-gray-500">
-                    공동 편집 · 멤버는 서버 연동 후 표시
-                  </Text>
-                )}
-              </View>
-            ) : (
-              <Text className="text-xs font-medium text-gray-500">개인 루트</Text>
-            )}
-          </View>
+        <View className="border-b border-gray-100 px-3 py-2.5">
           <View className="flex-row items-center gap-2">
+          {isCollaborative ? (
+            <View className="min-w-0 flex-1">
+              <Text className="text-xs font-medium text-gray-500">
+                {showCollabMemberBar
+                  ? '멤버와 함께 편집 · 상단 공유로 초대'
+                  : '상단 공유로 친구를 초대해 보세요'}
+              </Text>
+            </View>
+          ) : (
+            <View className="min-w-0 flex-1" />
+          )}
+          <View className="flex-row items-center gap-2 shrink-0">
             {isCollaborative ? (
               <Pressable
                 onPress={() => setChatOpen(true)}
@@ -2421,6 +2631,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
             >
               <Text className="text-sm font-bold text-white">저장</Text>
             </Pressable>
+          </View>
           </View>
         </View>
 
@@ -2477,12 +2688,16 @@ export default function RouteCreateScreen(): React.JSX.Element {
                   </View>
 
                   <View
-                    className="mb-2 ml-2 flex-1 rounded-xl border border-gray-100 bg-gray-50/80 p-3"
+                    className="mb-2 ml-2 flex-1 rounded-xl bg-gray-50/80 p-3"
                     style={{
                       opacity: cardOpacity,
-                      borderStyle: isDragRow ? 'dashed' : 'solid',
-                      borderColor: isDragRow ? '#60a5fa' : undefined,
-                      borderWidth: isDragRow ? 2 : 1,
+                      ...(isDragRow
+                        ? {
+                            borderWidth: 2,
+                            borderStyle: 'dashed' as const,
+                            borderColor: '#93c5fd',
+                          }
+                        : {}),
                     }}
                   >
                     <View className="flex-row items-start justify-between">
@@ -2899,54 +3114,24 @@ export default function RouteCreateScreen(): React.JSX.Element {
         </View>
       </Modal>
 
-      <Modal visible={chatOpen} animationType="slide" transparent>
-        <View className="flex-1 justify-end bg-black/40">
-          <Pressable className="flex-1" onPress={() => setChatOpen(false)} />
-          <View
-            className="max-h-[70%] rounded-t-3xl bg-white"
-            style={{ paddingBottom: insets.bottom }}
-          >
-            <View className="flex-row items-center justify-between border-b border-gray-100 px-4 py-3">
-              <Text className="text-lg font-bold text-gray-900">루트 협업 채팅</Text>
-              <Pressable onPress={() => setChatOpen(false)}>
-                <Ionicons name="close" size={26} color="#64748b" />
-              </Pressable>
-            </View>
-            <Text className="border-b border-gray-50 bg-sky-50 px-4 py-2 text-center text-[11px] text-sky-900">
-              같은 루트를 편집 중인 멤버와 실시간으로 조율할 수 있어요. (목업 · 서버 연동 전)
-            </Text>
-            <ScrollView className="max-h-80 px-3 py-2">
-              {chatMessages.map((msg) => (
-                <View
-                  key={msg.id}
-                  className={`mb-2 rounded-xl px-3 py-2 ${
-                    msg.from === 'me' ? 'self-end bg-sky-100' : 'self-start bg-gray-100'
-                  }`}
-                  style={{ alignSelf: msg.from === 'me' ? 'flex-end' : 'flex-start', maxWidth: '88%' }}
-                >
-                  <Text className="text-[10px] font-semibold text-gray-500">{msg.name}</Text>
-                  <Text className="text-sm text-gray-900">{msg.text}</Text>
-                </View>
-              ))}
-            </ScrollView>
-            <View className="flex-row items-center gap-2 border-t border-gray-100 px-3 py-2">
-              <TextInput
-                value={chatInput}
-                onChangeText={setChatInput}
-                placeholder="메시지 입력..."
-                className="flex-1 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-base"
-                onSubmitEditing={sendChat}
-              />
-              <Pressable
-                onPress={sendChat}
-                className="rounded-xl bg-orange-500 px-4 py-2.5 active:opacity-90"
-              >
-                <Text className="font-bold text-white">전송</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <RouteCollaborativeChatSheet
+        visible={chatOpen}
+        onClose={() => setChatOpen(false)}
+        accessToken={accessToken}
+        myUuid={authUser?.uuid}
+        chatRoomUuid={routeChatRoomUuid}
+        routeTitle={routeTitle.trim() || '루트'}
+        fallbackMessages={chatMessages}
+        onFallbackSend={sendChatFallback}
+      />
+
+      <CollaborativeFriendInviteModal
+        visible={friendInviteOpen}
+        onClose={() => setFriendInviteOpen(false)}
+        accessToken={accessToken}
+        onConfirm={handleInviteFriendsToRoute}
+        submitting={friendInviteSubmitting}
+      />
 
       <Modal visible={!!editingLegId} transparent animationType="fade">
         <View className="flex-1 justify-center px-6">

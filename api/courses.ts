@@ -376,6 +376,8 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
       text: r.text ?? "",
       date: r.date ?? new Date().toISOString().slice(0, 10),
     })),
+    authorUuid: raw.authorUuid != null ? String(raw.authorUuid) : undefined,
+    authorUserId: raw.authorUserId != null ? String(raw.authorUserId) : undefined,
   };
 }
 
@@ -482,6 +484,21 @@ export async function fetchMyCourseDetail(
   return fetchCourseDetailFromCandidates(DETAIL_CANDIDATE_ENDPOINTS.my(courseId));
 }
 
+/** 내 코스 편집 API 원본 — 공동 루트 여부 등 */
+export async function fetchMyRouteCollaborativeFlag(
+  courseId: string,
+): Promise<boolean> {
+  const id = normalizeServerCourseId(courseId);
+  if (!id) return false;
+  try {
+    const res = await instance.get(`/api/courses/my/${encodeURIComponent(id)}`);
+    const data = res.data?.data ?? res.data;
+    return data?.collaborative === true;
+  } catch {
+    return false;
+  }
+}
+
 export type SaveSharedCourseResult =
   | { ok: true }
   | { ok: false; reason: "NOT_ON_SERVER" | "OTHER" };
@@ -490,6 +507,30 @@ export type SaveSharedCourseResult =
  * Swagger: POST /api/courses/{courseId}/save
  * 서버에 해당 공유 코스가 없으면 404 → 목(mock) ID로 저장 시도 시 실패함.
  */
+/** Swagger: DELETE /api/courses/{courseId}/save — 저장한 공유 코스 해제 */
+export async function unsaveSharedCourse(courseId: string): Promise<boolean> {
+  const id = String(courseId ?? "").trim();
+  if (!id) return false;
+  try {
+    await instance.delete(`/api/courses/${encodeURIComponent(id)}/save`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Swagger: POST /api/courses/{courseId}/copy — 공유 코스를 내 루트로 복사 */
+export async function copySharedCourseToMy(courseId: string): Promise<string | null> {
+  const id = String(courseId ?? "").trim();
+  if (!id) return null;
+  try {
+    const res = await instance.post(`/api/courses/${encodeURIComponent(id)}/copy`);
+    return extractMyCourseUuidFromResponse(res.data);
+  } catch {
+    return null;
+  }
+}
+
 export async function saveSharedCourse(courseId: string): Promise<SaveSharedCourseResult> {
   const id = String(courseId ?? "").trim();
   if (!id) return { ok: false, reason: "OTHER" };
