@@ -39,7 +39,7 @@ import {
   inviteChatMember,
   leaveChatRoom,
   renameChatRoom,
-} from "@/api/chat/index";
+} from "@/api/chat/chat";
 import { getFriends } from "@/api/friend/friends";
 import { getUserProfileByUuid } from "@/api/users";
 import { useAuthStore } from "@/store/authStore";
@@ -56,7 +56,12 @@ type Member = {
   isOwner?: boolean;
 };
 
-type InvitableFriend = { id: string; uuid: string; name: string; userId?: string };
+type InvitableFriend = {
+  id: string;
+  uuid: string;
+  name: string;
+  userId?: string;
+};
 
 const PRESET_IMAGES = [
   { id: "p1", color: "#4FC3F7", emoji: "🐧" },
@@ -352,11 +357,6 @@ export default function ChatRoomInfoScreen() {
               <Text style={s.nameEditPillText}>수정</Text>
             </View>
           </TouchableOpacity>
-
-          <View style={s.memberCountPill}>
-            <Users color="#6B7280" size={13} />
-            <Text style={s.memberCountText}>{members.length}명</Text>
-          </View>
         </View>
 
         {/* 멤버 카드 */}
@@ -695,7 +695,7 @@ const shadow = Platform.select({
 const s = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F4F6FA",
+    backgroundColor: "#F0F5FF",
   },
   header: {
     flexDirection: "row",
@@ -703,7 +703,7 @@ const s = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 8,
     paddingVertical: 10,
-    backgroundColor: "#F4F6FA",
+    backgroundColor: "#F0F5FF",
   },
   headerBackBtn: {
     width: 40,

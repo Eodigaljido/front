@@ -42,13 +42,14 @@ export interface ChatMessage {
   senderUuid: string;
   senderNickname: string;
   senderProfileImageUrl: string | null;
-  messageType: string;
-  content: string;
-  routeUuid: string;
-  routeTitle: string;
-  routeThumbnailUrl: string;
+  messageType: "TEXT" | "IMAGE" | "ROUTE" | string;
+  content: string | null;
+  attachmentUrl: string | null;
+  routeUuid: string | null;
+  routeTitle: string | null;
+  routeThumbnailUrl: string | null;
   createdAt: string;
-  editedAt: string;
+  editedAt: string | null;
   isDeleted: boolean;
   mentionedUserUuids?: string[];
 }
@@ -185,6 +186,31 @@ export async function inviteChatMember(
     `/chats/${roomUuid}/members`,
     { userId: String(userId ?? "").trim() },
     { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  return res.data;
+}
+
+// 이미지 메시지 전송
+export async function sendImageMessage(
+  accessToken: string,
+  roomUuid: string,
+  imageUri: string,
+): Promise<ChatMessage> {
+  const form = new FormData();
+  const filename = imageUri.split("/").pop() ?? "image.jpg";
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "jpg";
+  const mime = ext === "png" ? "image/png" : ext === "gif" ? "image/gif" : ext === "webp" ? "image/webp" : "image/jpeg";
+  form.append("image", { uri: imageUri, name: filename, type: mime } as any);
+  const res = await instance.post<ChatMessage>(
+    `/chats/${roomUuid}/images`,
+    form,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "multipart/form-data",
+      },
+      transformRequest: (data) => data,
+    },
   );
   return res.data;
 }

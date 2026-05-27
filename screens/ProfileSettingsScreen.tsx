@@ -257,12 +257,12 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
   }, [logout, navigation]);
 
   return (
-    <SafeAreaView className="flex-1 bg-[#f5f5f9]" edges={['top', 'left', 'right']}>
+    <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={['top', 'left', 'right']}>
       <KeyboardAvoidingView
         className="flex-1"
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View className="flex-row items-center gap-2 border-b border-gray-200 bg-[#f5f5f9] px-4 py-3">
+        <View className="flex-row items-center gap-2 border-b border-gray-200 bg-[#F0F5FF] px-4 py-3">
           <Pressable
             onPress={() => navigation.goBack()}
             className="h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white active:opacity-80"

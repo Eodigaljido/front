@@ -84,6 +84,7 @@ export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
             rootNavigate("ChatRoomScreen", {
               roomUuid: room.uuid,
               roomName: room.name,
+              memberCount: room.memberCount,
             })
           }
         >
