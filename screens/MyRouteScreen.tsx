@@ -58,6 +58,11 @@ import { sameCourseId } from "../utils/sameCourseId";
 import { getCourseAuthorLabel, isOwnServerCourse } from "../utils/formatCourseAuthor";
 import { CourseCardAuthorRow } from "../components/CourseCardAuthorRow";
 import { useAuthStore } from "../store/authStore";
+import {
+  applyMineAuthorToPersonalRoutes,
+  dedupeMyCourseList,
+  mergeApiAndLocalCourseLists,
+} from "../utils/mergeCourseThumbnails";
 import { rootNavigate } from "../navigation/rootNavigation";
 
 type RouteKindFilter = "all" | "personal" | "collaborative";
@@ -606,15 +611,25 @@ export default function MyRouteScreen(): React.JSX.Element {
 
   const mergedCourses = useMemo(() => {
     const fromUser = userSavedRoutes.map(userRouteToCourseItem);
-    const combined = [...fromUser, ...apiMyCourses];
-    const seen = new Set<string>();
-    return combined.filter((c) => {
+    const apiTitles = new Set(
+      apiMyCourses
+        .map((c) => String(c.title ?? "").trim())
+        .filter(Boolean),
+    );
+    const merged = mergeApiAndLocalCourseLists(apiMyCourses, fromUser);
+    const filtered = merged.filter((c) => {
       const k = String(c.id ?? "");
-      if (!k || seen.has(k)) return false;
-      seen.add(k);
-      return true;
+      if (
+        k.startsWith("ur-") &&
+        apiTitles.has(String(c.title ?? "").trim())
+      ) {
+        return false;
+      }
+      return Boolean(k);
     });
-  }, [userSavedRoutes, apiMyCourses]);
+    const deduped = dedupeMyCourseList(filtered, userSavedRoutes);
+    return applyMineAuthorToPersonalRoutes(deduped, userSavedRoutes, authorCtx);
+  }, [userSavedRoutes, apiMyCourses, authorCtx]);
 
   const filteredCourses = useMemo(() => {
     let list = mergedCourses;
@@ -673,11 +688,14 @@ export default function MyRouteScreen(): React.JSX.Element {
 
   const canEditAsOwnMyCourse = useCallback(
     (course: CourseItem) => {
+      if (userSavedRoutes.some((r) => sameCourseId(r.id, course.id))) {
+        return true;
+      }
       const fromApi = apiMyCourses.find((c) => sameCourseId(c.id, course.id));
       if (!fromApi) return false;
       return isOwnServerCourse(course, authorCtx);
     },
-    [apiMyCourses, authorCtx],
+    [apiMyCourses, authorCtx, userSavedRoutes],
   );
 
   const handleRemove = (item: CourseItem) => {

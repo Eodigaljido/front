@@ -64,6 +64,8 @@ import FilterBottomSheet, {
   SORT_OPTIONS,
 } from "../components/FilterBottomSheet";
 import { sameCourseId } from "../utils/sameCourseId";
+import { courseMatchesTagOrCategory } from "../utils/courseTagFilter";
+import { mergeLocalThumbnailsIntoCourses } from "../utils/mergeCourseThumbnails";
 import { rootNavigate } from "../navigation/rootNavigation";
 
 type SharedRouteParams = {
@@ -279,11 +281,14 @@ export default function SharedRouteScreen(): React.JSX.Element {
   const reloadSharedCourses = useCallback(async () => {
     try {
       const courses = await fetchSharedCourses();
-      setCoursesData(normalizeCourseList(courses));
+      const normalized = normalizeCourseList(courses);
+      setCoursesData(
+        mergeLocalThumbnailsIntoCourses(normalized, userSavedRoutes),
+      );
     } catch {
       setCoursesData([]);
     }
-  }, []);
+  }, [userSavedRoutes]);
 
   const reloadMyCourses = useCallback(async () => {
     try {
@@ -473,25 +478,38 @@ export default function SharedRouteScreen(): React.JSX.Element {
     let list = [...coursesData];
 
     if (activeTab === "date")
-      list = list.filter((c) => c.category === "데이트");
+      list = list.filter((c) => courseMatchesTagOrCategory(c, "데이트"));
     else if (activeTab === "friends")
-      list = list.filter((c) => c.category === "친구모임");
+      list = list.filter((c) => courseMatchesTagOrCategory(c, "친구모임"));
     else if (activeTab === "popular")
       list = sortCoursesBySaveCount(list);
 
     if (selectedCategory)
-      list = list.filter((c) => c.category === selectedCategory);
-    if (selectedRegion) list = list.filter((c) => c.region === selectedRegion);
+      list = list.filter((c) => courseMatchesTagOrCategory(c, selectedCategory));
+    if (selectedRegion) {
+      const region = selectedRegion.trim();
+      list = list.filter((c) => {
+        const r = String(c.region ?? "").trim();
+        return r === region || r.startsWith(`${region} `) || r.startsWith(region);
+      });
+    }
 
     const q = searchQuery.trim().toLowerCase();
     if (q) {
-      list = list.filter(
-        (c) =>
+      list = list.filter((c) => {
+        const tagHit = (Array.isArray(c.tags) ? c.tags : []).some((t) =>
+          String(t ?? "")
+            .toLowerCase()
+            .includes(q),
+        );
+        return (
+          tagHit ||
           String(c.title ?? "").toLowerCase().includes(q) ||
           String(c.meta ?? "").toLowerCase().includes(q) ||
           String(c.departure ?? "").toLowerCase().includes(q) ||
-          String(c.arrival ?? "").toLowerCase().includes(q),
-      );
+          String(c.arrival ?? "").toLowerCase().includes(q)
+        );
+      });
     }
 
     if (selectedSort === "인기순" || selectedSort === "저장순")

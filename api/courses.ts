@@ -6,6 +6,9 @@ import {
   sanitizeCourseCategory,
 } from "../utils/inferCourseRegionLabel";
 import { pickAuthorProfilePublicFromRaw } from "../utils/authorProfileVisibility";
+import { findPersonalRouteIdForForkSource } from "../data/userSavedRoute";
+import { isLocalThumbnailUri, isRemoteThumbnailUri } from "../utils/courseThumbnailUri";
+import { sameCourseId } from "../utils/sameCourseId";
 
 type ApiCourseLike = {
   id?: string | number;
@@ -618,19 +621,60 @@ export async function resolveCourseDetailForRoute(
   };
 }
 
+/**
+ * fork·수정 저장 시 쓸 개인 루트 id
+ * (이미 내 코스이면 copy 없이 해당 id로 PATCH)
+ */
+export async function resolvePersonalRouteIdForForkSave(
+  forkSourceId: string,
+  userSavedRoutes: Array<{ id: string; forkedFromSharedId?: string | null }>,
+  serverBackedId?: string | null,
+): Promise<string | null> {
+  const forkId = String(forkSourceId ?? "").trim();
+  if (!forkId) return null;
+
+  const fromMeta = findPersonalRouteIdForForkSource(forkId, userSavedRoutes);
+  if (fromMeta) return fromMeta;
+
+  const serverId = normalizeServerCourseId(serverBackedId);
+  if (serverId && !sameCourseId(serverId, forkId)) return serverId;
+
+  const my = await fetchMyCourseDetail(forkId);
+  if (hasMeaningfulRouteSteps(my)) return forkId;
+
+  return null;
+}
+
 /** 공유(저장) 코스를 복사한 뒤 편집 내용을 반영해 개인 루트 id 반환 */
 export async function forkSharedCourseToPersonalRoute(
   sharedCourseId: string,
   payload: UpsertMyRoutePayload,
+  existingPersonalId?: string | null,
 ): Promise<string | null> {
   const sourceId = String(sharedCourseId ?? "").trim();
   if (!sourceId) return createMyRoute(payload);
 
-  const copiedId = await copySharedCourseToMy(sourceId);
-  if (copiedId) {
-    const updated = await updateMyRoute(copiedId, payload);
-    if (updated) return copiedId;
+  const existing = normalizeServerCourseId(existingPersonalId);
+  if (existing && !sameCourseId(existing, sourceId)) {
+    const ok = await updateMyRoute(existing, payload);
+    return ok ? existing : null;
   }
+
+  const owned = await fetchMyCourseDetail(sourceId);
+  if (hasMeaningfulRouteSteps(owned)) {
+    const ok = await updateMyRoute(sourceId, payload);
+    return ok ? sourceId : null;
+  }
+
+  const copiedId = await copySharedCourseToMy(sourceId);
+  if (copiedId && !sameCourseId(copiedId, sourceId)) {
+    const ok = await updateMyRoute(copiedId, payload);
+    return ok ? copiedId : null;
+  }
+
+  const updated = await updateMyRoute(sourceId, payload);
+  if (updated) return sourceId;
+
   return createMyRoute(payload);
 }
 
@@ -840,7 +884,12 @@ export type UpsertMyRoutePayload = {
 };
 
 function extractMyCourseUuidFromResponse(data: any): string | null {
-  const d = data?.data ?? data?.result ?? data;
+  if (data == null) return null;
+  if (typeof data === "string" || typeof data === "number") {
+    const s = String(data).trim();
+    return s.length ? s : null;
+  }
+  const d = data?.data ?? data?.result ?? data?.course ?? data;
   if (!d || typeof d !== "object") return null;
   const v = d.id ?? d.uuid ?? d.courseId;
   if (v == null) return null;
@@ -848,14 +897,93 @@ function extractMyCourseUuidFromResponse(data: any): string | null {
   return s.length ? s : null;
 }
 
+/** API 전송용 — 과도하게 긴 길안내 문자열 제거(요청 실패 방지) */
+function trimLegTextForApi(value: string | undefined, max = 4000): string | undefined {
+  const s = String(value ?? "").trim();
+  if (!s) return undefined;
+  return s.length > max ? `${s.slice(0, max)}…` : s;
+}
+
+/** 좌표 없는 초안 저장 시 legs 제거 — 서버 500 방지 */
+export function sanitizeUpsertMyRoutePayload(
+  payload: UpsertMyRoutePayload,
+): UpsertMyRoutePayload {
+  const stops = payload.stops.map((s) => ({
+    id: s.id,
+    kind: s.kind,
+    title: String(s.title ?? "").trim() || "경유지",
+    timeLine: String(s.timeLine ?? "").trim() || "",
+    ...(s.lat != null &&
+    s.lng != null &&
+    !Number.isNaN(Number(s.lat)) &&
+    !Number.isNaN(Number(s.lng))
+      ? { lat: Number(s.lat), lng: Number(s.lng) }
+      : {}),
+  }));
+  const hasCoords = stops.some(
+    (s) => s.lat != null && s.lng != null,
+  );
+  const legs = hasCoords
+    ? payload.legs.map((l) => ({
+        id: l.id,
+        mode:
+          l.mode === "walk" ||
+          l.mode === "car" ||
+          l.mode === "bike" ||
+          l.mode === "transit"
+            ? l.mode
+            : "walk",
+        minutes: Math.max(1, Number(l.minutes ?? 10)),
+        ...(l.transitType ? { transitType: l.transitType } : {}),
+        ...(trimLegTextForApi(l.directionsSummary)
+          ? { directionsSummary: trimLegTextForApi(l.directionsSummary) }
+          : {}),
+        ...(trimLegTextForApi(l.directionsDetail)
+          ? { directionsDetail: trimLegTextForApi(l.directionsDetail) }
+          : {}),
+        ...(l.distanceMeters != null
+          ? { distanceMeters: l.distanceMeters }
+          : {}),
+      }))
+    : [];
+  const tags = (payload.tags ?? [])
+    .map((t) => String(t).trim())
+    .filter(Boolean)
+    .slice(0, 2);
+  return {
+    title: String(payload.title ?? "").trim() || "새 루트",
+    collaborative: payload.collaborative === true,
+    ...(tags.length > 0 ? { tags } : {}),
+    stops,
+    legs,
+  };
+}
+
 /** Swagger: POST /api/courses/my → 201 + `MyCourseDetailResponse`(uuid). 실패 시 null */
 export async function createMyRoute(
   payload: UpsertMyRoutePayload,
 ): Promise<string | null> {
+  const body = sanitizeUpsertMyRoutePayload(payload);
   try {
-    const res = await instance.post("/api/courses/my", payload);
-    return extractMyCourseUuidFromResponse(res.data);
-  } catch {
+    const res = await instance.post("/api/courses/my", body);
+    const id = extractMyCourseUuidFromResponse(res.data);
+    if (id) return id;
+    if (res.status >= 200 && res.status < 300) {
+      const list = await fetchMyCourses();
+      const title = String(body.title ?? "").trim();
+      const hit = list.find((c) => String(c.title ?? "").trim() === title);
+      return hit?.id ?? null;
+    }
+    return null;
+  } catch (e: any) {
+    if (__DEV__) {
+      console.warn(
+        "[createMyRoute]",
+        e?.response?.status,
+        e?.response?.data,
+        e?.message,
+      );
+    }
     return null;
   }
 }
@@ -864,10 +992,22 @@ export async function updateMyRoute(
   courseId: string,
   payload: UpsertMyRoutePayload,
 ): Promise<boolean> {
+  const id = normalizeServerCourseId(courseId);
+  if (!id) return false;
   try {
-    await instance.patch(`/api/courses/my/${courseId}`, payload);
+    const body = sanitizeUpsertMyRoutePayload(payload);
+    await instance.patch(`/api/courses/my/${encodeURIComponent(id)}`, body);
     return true;
-  } catch {
+  } catch (e: any) {
+    if (__DEV__) {
+      console.warn(
+        "[updateMyRoute]",
+        id,
+        e?.response?.status,
+        e?.response?.data,
+        e?.message,
+      );
+    }
     return false;
   }
 }
@@ -999,4 +1139,176 @@ export async function fetchFollowingNews(
 /** Swagger: GET /api/courses/my/sharing — 현재 공유(공개) 중인 내 코스 전체 목록 */
 export async function fetchMySharedCourses(): Promise<CourseItem[]> {
   return fetchCoursesFromCandidates(["/api/courses/my/sharing"]);
+}
+
+function pickThumbnailUrlFromUploadResponse(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const d = data as Record<string, unknown>;
+  const inner =
+    d.data && typeof d.data === "object"
+      ? (d.data as Record<string, unknown>)
+      : d;
+  const raw =
+    inner.thumbnail ??
+    inner.imageUrl ??
+    inner.url ??
+    inner.profileImageUrl;
+  const s = String(raw ?? "").trim();
+  return isRemoteThumbnailUri(s) ? s : null;
+}
+
+function buildCourseImageFormData(
+  asset: { uri: string; name?: string; type?: string },
+  fieldName: "image" | "file",
+): FormData {
+  const form = new FormData();
+  const rawType = String(asset.type ?? "image/jpeg");
+  const mime =
+    rawType === "image/heic" || rawType === "image/heif"
+      ? "image/jpeg"
+      : rawType.startsWith("image/")
+        ? rawType
+        : "image/jpeg";
+  let fileName = asset.name ?? "cover.jpg";
+  if (!/\.(jpe?g|png|webp)$/i.test(fileName)) {
+    fileName = "cover.jpg";
+  }
+  form.append(fieldName, {
+    uri: asset.uri,
+    name: fileName,
+    type: mime,
+  } as any);
+  return form;
+}
+
+const multipartHeaders = {
+  transformRequest: (data: unknown, headers?: Record<string, unknown>) => {
+    if (headers) {
+      delete headers["Content-Type"];
+      delete headers["content-type"];
+    }
+    return data;
+  },
+};
+
+type ThumbnailUploadAttempt = {
+  method: "patch" | "post";
+  path: string;
+};
+
+function thumbnailUploadAttempts(courseId: string): ThumbnailUploadAttempt[] {
+  const enc = encodeURIComponent(courseId);
+  return [
+    { method: "patch", path: `/api/courses/my/${enc}/thumbnail` },
+    { method: "post", path: `/api/courses/my/${enc}/thumbnail` },
+    { method: "patch", path: `/api/courses/my/${enc}/profile-image` },
+    { method: "patch", path: `/api/courses/my/${enc}/cover-image` },
+  ];
+}
+
+async function uploadMultipartThumbnail(
+  courseId: string,
+  attempt: ThumbnailUploadAttempt,
+  asset: { uri: string; name?: string; type?: string },
+): Promise<string | null> {
+  for (const field of ["image", "file"] as const) {
+    const form = buildCourseImageFormData(asset, field);
+    try {
+      const res =
+        attempt.method === "post"
+          ? await instance.post(attempt.path, form, multipartHeaders)
+          : await instance.patch(attempt.path, form, multipartHeaders);
+      const url = pickThumbnailUrlFromUploadResponse(res.data);
+      if (url) return url;
+      if (res.status >= 200 && res.status < 300) {
+        const detail = await fetchMyCourseDetail(courseId);
+        const fromDetail = String(detail?.thumbnail ?? "").trim();
+        if (isRemoteThumbnailUri(fromDetail)) return fromDetail;
+      }
+    } catch (e: any) {
+      const status = e?.response?.status;
+      if (status === 404 || status === 405) return null;
+      if (status === 400 && field === "image") continue;
+      if (__DEV__) {
+        console.warn(
+          "[uploadMyCourseThumbnail]",
+          attempt.method,
+          attempt.path,
+          field,
+          status,
+          e?.response?.data,
+        );
+      }
+    }
+  }
+  return null;
+}
+
+async function patchThumbnailUrlOnCourse(
+  courseId: string,
+  thumbnailUrl: string,
+): Promise<string | null> {
+  const url = String(thumbnailUrl ?? "").trim();
+  if (!isRemoteThumbnailUri(url)) return null;
+  try {
+    const res = await instance.patch(
+      `/api/courses/my/${encodeURIComponent(courseId)}`,
+      { thumbnail: url },
+    );
+    return pickThumbnailUrlFromUploadResponse(res.data) ?? url;
+  } catch (e: any) {
+    if (__DEV__) {
+      console.warn(
+        "[patchThumbnailUrlOnCourse]",
+        courseId,
+        e?.response?.status,
+        e?.response?.data,
+      );
+    }
+    return null;
+  }
+}
+
+/**
+ * 코스 대표 이미지 서버 업로드 (users/me/profile-image와 동일 multipart 패턴)
+ * 성공 시 HTTPS thumbnail URL, 실패 시 null
+ */
+export async function uploadMyCourseThumbnail(
+  courseId: string,
+  asset: { uri: string; name?: string; type?: string },
+): Promise<string | null> {
+  const id = normalizeServerCourseId(courseId);
+  if (!id) return null;
+  const uri = String(asset.uri ?? "").trim();
+  if (!uri) return null;
+
+  if (isRemoteThumbnailUri(uri)) {
+    return patchThumbnailUrlOnCourse(id, uri);
+  }
+
+  if (!isLocalThumbnailUri(uri)) return null;
+
+  for (const attempt of thumbnailUploadAttempts(id)) {
+    const uploaded = await uploadMultipartThumbnail(id, attempt, asset);
+    if (uploaded) return uploaded;
+  }
+
+  const detail = await fetchMyCourseDetail(id);
+  const fromDetail = String(detail?.thumbnail ?? "").trim();
+  if (isRemoteThumbnailUri(fromDetail)) return fromDetail;
+
+  return null;
+}
+
+/** 저장 직후 대표 이미지 동기화 — 이미 원격 URL이면 스킵 */
+export async function syncMyCourseThumbnailToServer(
+  courseId: string,
+  coverUri: string | null | undefined,
+): Promise<string | null> {
+  const id = normalizeServerCourseId(courseId);
+  const uri = String(coverUri ?? "").trim();
+  if (!id || !uri) return null;
+  if (isRemoteThumbnailUri(uri)) return uri;
+  if (!isLocalThumbnailUri(uri)) return null;
+  return uploadMyCourseThumbnail(id, { uri });
 }
