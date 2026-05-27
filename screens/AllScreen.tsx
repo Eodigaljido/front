@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import type { RootTabParamList } from '../App';
 import { getMyProfile } from '../api/users';
-import { addFriendByCode, getMyFriendCode } from '../api/friend/friends';
+import { addFriendByCode, getFriends, getFriendRequests, getMyFriendCode } from '../api/friend/friends';
 import { shareFriendInvite } from '../utils/shareFriend';
 import { useAuthStore } from '../store/authStore';
 import { useTabStore } from '../store/tabStore';
@@ -15,23 +15,16 @@ import MenuSection, { type MenuItem } from '../components/all/MenuSection';
 import ProfileCard from '../components/all/ProfileCard';
 import FriendCodeModal from '../components/all/FriendCodeModal';
 
-const CARD_STYLE = {
-  borderWidth: 0.5,
-  borderColor: 'rgba(37,99,235,0.12)',
-  borderRadius: 16,
-  backgroundColor: '#fff',
-};
-
 type AllRouteParams = { friendCode?: string };
 
 export default function AllScreen(): React.JSX.Element {
   const navigation = useNavigation<any>();
   const route = useRoute();
-  const logout = useAuthStore(s => s.logout);
   const authUser = useAuthStore(s => s.user);
   const setUser = useAuthStore(s => s.setUser);
   const setForcedActiveTab = useTabStore(s => s.setForcedActiveTab);
-  const [sharedRouteCount, setSharedRouteCount] = useState<number>(27);
+  const [friendCount, setFriendCount] = useState<number>(0);
+  const [pendingRequestCount, setPendingRequestCount] = useState<number>(0);
   const [friendCode, setFriendCode] = useState<string | null>(null);
   const [friendCodeVisible, setFriendCodeVisible] = useState(false);
   const [friendCodeLoading, setFriendCodeLoading] = useState(false);
@@ -40,7 +33,11 @@ export default function AllScreen(): React.JSX.Element {
 
   const refreshMe = useCallback(async () => {
     try {
-      const me = await getMyProfile();
+      const [me, friends, reqs] = await Promise.all([
+        getMyProfile(),
+        getFriends().catch(() => []),
+        getFriendRequests().catch(() => []),
+      ]);
       setUser({
         id: (me as any).id ?? 0,
         uuid: me.uuid,
@@ -50,9 +47,8 @@ export default function AllScreen(): React.JSX.Element {
         role: me.role ?? 'USER',
         profileImageUrl: me.profileImageUrl ?? null,
       });
-      if (typeof (me as any).sharedRouteCount === 'number') {
-        setSharedRouteCount((me as any).sharedRouteCount);
-      }
+      setFriendCount(friends.length);
+      setPendingRequestCount(reqs.filter(r => r.direction === 'RECEIVED').length);
     } catch {
       // 프로필 요청 실패 시 기존 상태 유지
     }
@@ -100,6 +96,18 @@ export default function AllScreen(): React.JSX.Element {
     },
   ];
 
+  const friendMenus: MenuItem[] = [
+    {
+      id: 'friend-requests',
+      title: '친구 요청',
+      icon: 'person-add-outline',
+      iconColor: '#2563eb',
+      iconBg: '#dbeafe',
+      badge: pendingRequestCount,
+      onPress: () => navigation.navigate('AllFriendRequests'),
+    },
+  ];
+
   const settingMenus: MenuItem[] = [
     {
       id: 'app-setting',
@@ -107,7 +115,7 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'settings-outline',
       iconColor: '#60a5fa',
       iconBg: '#dbeafe',
-      onPress: () => {},
+      onPress: () => navigation.navigate('AllAppSettings'),
     },
     {
       id: 'help',
@@ -199,10 +207,21 @@ export default function AllScreen(): React.JSX.Element {
 
   return (
     <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={['top']}>
+      <View className="flex-row items-center justify-between px-5 pt-4 pb-2">
+        <Text className="text-xl font-bold text-gray-900">전체</Text>
+        <Pressable
+          onPress={() => navigation.getParent()?.getParent()?.navigate('NotificationCenter')}
+          className="h-10 w-10 items-center justify-center rounded-full active:opacity-70"
+          hitSlop={8}
+        >
+          <Ionicons name="notifications-outline" size={24} color="#374151" />
+        </Pressable>
+      </View>
+
       <ScrollView
         contentContainerStyle={{
           paddingHorizontal: 16,
-          paddingTop: 40,
+          paddingTop: 8,
           paddingBottom: 120,
         }}
       >
@@ -213,33 +232,14 @@ export default function AllScreen(): React.JSX.Element {
           nickname={authUser?.nickname}
           email={authUser?.email}
           avatarUri={avatarUri}
-          sharedRouteCount={sharedRouteCount}
+          friendCount={friendCount}
           onAddFriend={handleAddFriend}
           onProfileSettings={() => navigation.getParent()?.navigate('ProfileSettings')}
         />
 
         <MenuSection label="루트" items={routeMenus} />
+        <MenuSection label="친구" items={friendMenus} />
         <MenuSection label="설정" items={settingMenus} />
-
-        <Pressable
-          onPress={() =>
-            Alert.alert('로그아웃', '정말 로그아웃 하시겠습니까?', [
-              { text: '취소', style: 'cancel' },
-              {
-                text: '로그아웃',
-                style: 'destructive',
-                onPress: async () => {
-                  await logout();
-                  navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Login' }] });
-                },
-              },
-            ])
-          }
-          className="items-center py-4 mt-5 active:opacity-80"
-          style={CARD_STYLE}
-        >
-          <Text className="text-[15px] font-semibold text-red-500">로그아웃</Text>
-        </Pressable>
       </ScrollView>
 
       <FriendCodeModal
