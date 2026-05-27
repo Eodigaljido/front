@@ -917,9 +917,9 @@ const s = StyleSheet.create({
     color: "#111827",
   },
   ownerBadge: {
-    marginRight: 10,
+    marginRight: 0,
     paddingHorizontal: 9,
-    paddingVertical: 3,
+    paddingVertical: 5,
     borderRadius: 12,
     backgroundColor: "#FEF3C7",
   },
