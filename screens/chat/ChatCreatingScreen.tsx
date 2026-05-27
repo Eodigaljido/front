@@ -23,9 +23,10 @@ import {
   UserPlus,
 } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
+import { Asset } from "expo-asset";
 import { useAuthStore } from "@/store/authStore";
 import { getFriends, getFriendsRecent } from "@/api/friend/friends";
-import { createChatRoom } from "@/api/chat/chat";
+import { createChatRoom, updateChatRoomImage } from "@/api/chat/chat";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -42,29 +43,29 @@ const AVATAR_COLORS = [
   "#F7DC6F",
 ];
 
-type PresetImage = { id: string; color: string; emoji: string };
+type PresetImage = { id: string; source: ReturnType<typeof require> };
 
 // 19개 프리셋 + 1개 로컬 피커 = 4×5 그리드
 const PRESET_IMAGES: PresetImage[] = [
-  { id: "p1", color: "#4FC3F7", emoji: "🐧" },
-  { id: "p2", color: "#F48FB1", emoji: "🤖" },
-  { id: "p3", color: "#FF8A65", emoji: "🔥" },
-  { id: "p4", color: "#81C784", emoji: "🗺️" },
-  { id: "p5", color: "#CE93D8", emoji: "⭐" },
-  { id: "p6", color: "#80DEEA", emoji: "🌊" },
-  { id: "p7", color: "#A5D6A7", emoji: "🌿" },
-  { id: "p8", color: "#FFCC02", emoji: "🌟" },
-  { id: "p9", color: "#FF7043", emoji: "🎮" },
-  { id: "p10", color: "#42A5F5", emoji: "🎯" },
-  { id: "p11", color: "#AB47BC", emoji: "🎨" },
-  { id: "p12", color: "#26C6DA", emoji: "🎵" },
-  { id: "p13", color: "#9CCC65", emoji: "🏔️" },
-  { id: "p14", color: "#FFA726", emoji: "🌈" },
-  { id: "p15", color: "#EC407A", emoji: "💎" },
-  { id: "p16", color: "#7E57C2", emoji: "🚀" },
-  { id: "p17", color: "#29B6F6", emoji: "⚡" },
-  { id: "p18", color: "#66BB6A", emoji: "🎪" },
-  { id: "p19", color: "#FFCA28", emoji: "🏆" },
+  { id: "p1",  source: require("@/assets/chat/pfp/apple.png") },
+  { id: "p2",  source: require("@/assets/chat/pfp/banana.png") },
+  { id: "p3",  source: require("@/assets/chat/pfp/coconut.png") },
+  { id: "p4",  source: require("@/assets/chat/pfp/earth.png") },
+  { id: "p5",  source: require("@/assets/chat/pfp/eodigaljido.png") },
+  { id: "p6",  source: require("@/assets/chat/pfp/foot.png") },
+  { id: "p7",  source: require("@/assets/chat/pfp/lemon.png") },
+  { id: "p8",  source: require("@/assets/chat/pfp/map.png") },
+  { id: "p9",  source: require("@/assets/chat/pfp/money.png") },
+  { id: "p10", source: require("@/assets/chat/pfp/octopus.png") },
+  { id: "p11", source: require("@/assets/chat/pfp/rusn.png") },
+  { id: "p12", source: require("@/assets/chat/pfp/rusun_map.png") },
+  { id: "p13", source: require("@/assets/chat/pfp/ruty.png") },
+  { id: "p14", source: require("@/assets/chat/pfp/ruty_child.png") },
+  { id: "p15", source: require("@/assets/chat/pfp/ruty_map.png") },
+  { id: "p16", source: require("@/assets/chat/pfp/ruty_run.png") },
+  { id: "p17", source: require("@/assets/chat/pfp/sunset.png") },
+  { id: "p18", source: require("@/assets/chat/pfp/tree.png") },
+  { id: "p19", source: require("@/assets/chat/pfp/unicorn.png") },
 ];
 
 // ─── Grid 계산 ────────────────────────────────────────────────────────────────
@@ -176,7 +177,26 @@ export default function ChatCreatingScreen(): React.JSX.Element {
       : selectedUuids;
     setIsCreating(true);
     try {
-      await createChatRoom(accessToken, memberUuids, trimedName, localImageUri);
+      const room = await createChatRoom(accessToken, memberUuids, trimedName, null);
+
+      // 이미지 선택된 경우 별도 업로드
+      let uploadUri: string | null = localImageUri;
+      if (!uploadUri && selectedPresetId) {
+        const preset = PRESET_IMAGES.find((p) => p.id === selectedPresetId);
+        if (preset) {
+          const asset = Asset.fromModule(preset.source);
+          await asset.downloadAsync();
+          uploadUri = asset.localUri ?? null;
+        }
+      }
+      if (uploadUri) {
+        try {
+          await updateChatRoomImage(accessToken, room.uuid, uploadUri);
+        } catch {
+          // 방은 생성됐으므로 이미지 실패는 무시
+        }
+      }
+
       navigation.goBack();
     } catch {
       Alert.alert("오류", "채팅방 생성에 실패했습니다.");
@@ -492,7 +512,7 @@ export default function ChatCreatingScreen(): React.JSX.Element {
                 width: 96,
                 height: 96,
                 borderRadius: 48,
-                backgroundColor: currentPreset?.color ?? "#E5E7EB",
+                backgroundColor: "#E5E7EB",
                 alignItems: "center",
                 justifyContent: "center",
                 overflow: "hidden",
@@ -504,7 +524,10 @@ export default function ChatCreatingScreen(): React.JSX.Element {
                   style={{ width: 96, height: 96 }}
                 />
               ) : currentPreset ? (
-                <Text style={{ fontSize: 44 }}>{currentPreset.emoji}</Text>
+                <Image
+                  source={currentPreset.source}
+                  style={{ width: 96, height: 96 }}
+                />
               ) : (
                 <ImageIcon color="#9CA3AF" size={36} />
               )}
@@ -598,16 +621,18 @@ export default function ChatCreatingScreen(): React.JSX.Element {
                     width: CELL_SIZE,
                     height: CELL_SIZE,
                     borderRadius: CELL_SIZE / 2,
-                    backgroundColor: preset.color,
+                    backgroundColor: "#E5E7EB",
                     alignItems: "center",
                     justifyContent: "center",
+                    overflow: "hidden",
                     borderWidth: isSelected ? 3 : 0,
                     borderColor: "#3B82F6",
                   }}
                 >
-                  <Text style={{ fontSize: Math.round(CELL_SIZE * 0.42) }}>
-                    {preset.emoji}
-                  </Text>
+                  <Image
+                    source={preset.source}
+                    style={{ width: CELL_SIZE, height: CELL_SIZE }}
+                  />
                 </TouchableOpacity>
               );
             })}
