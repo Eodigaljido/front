@@ -10,15 +10,30 @@ interface AuthState {
   refreshToken: string | null;
   user: AuthUser | null;
   isAuthenticated: boolean;
+  /** 프로필 이미지 URL이 같아도 갤러리 변경 후 UI 갱신용 */
+  profileImageCacheBust: number;
 
   login: (data: LoginRequest) => Promise<void>;
   register: (data: RegisterRequest) => Promise<string>;
   setTokens: (accessToken: string, refreshToken: string) => Promise<void>;
   setPhoneVerified: () => void;
   setUser: (user: AuthUser | null) => void;
+  bumpProfileImageCache: () => void;
   refreshProfile: () => Promise<void>;
   logout: () => Promise<void>;
   restoreSession: () => Promise<void>;
+}
+
+function userFromProfile(me: Awaited<ReturnType<typeof getMyProfile>>): AuthUser {
+  return {
+    id: (me as any).id ?? 0,
+    uuid: me.uuid,
+    userId: me.userId ?? '',
+    email: me.email ?? '',
+    nickname: me.nickname ?? '',
+    role: me.role ?? 'USER',
+    profileImageUrl: me.profileImageUrl ?? null,
+  };
 }
 
 export const useAuthStore = create<AuthState>(set => ({
@@ -26,6 +41,7 @@ export const useAuthStore = create<AuthState>(set => ({
   refreshToken: null,
   user: null,
   isAuthenticated: false,
+  profileImageCacheBust: 0,
 
   login: async data => {
     const res = await apiLogin(data);
@@ -47,7 +63,7 @@ export const useAuthStore = create<AuthState>(set => ({
       accessToken: res.accessToken,
       refreshToken: res.refreshToken,
       user: res.user,
-      isAuthenticated: false, // 전화번호 인증 완료 후 true로 변경
+      isAuthenticated: false,
     });
     return res.accessToken;
   },
@@ -65,20 +81,14 @@ export const useAuthStore = create<AuthState>(set => ({
     set({ user });
   },
 
+  bumpProfileImageCache: () => {
+    set({ profileImageCacheBust: Date.now() });
+  },
+
   refreshProfile: async () => {
     try {
       const me = await getMyProfile();
-      set({
-        user: {
-          id: (me as any).id ?? 0,
-          uuid: me.uuid,
-          userId: me.userId ?? '',
-          email: me.email ?? '',
-          nickname: me.nickname ?? '',
-          role: me.role ?? 'USER',
-          profileImageUrl: me.profileImageUrl ?? null,
-        },
-      });
+      set({ user: userFromProfile(me) });
     } catch {
       // 인증 만료/네트워크 오류는 화면 단에서 안내
     }
@@ -103,24 +113,14 @@ export const useAuthStore = create<AuthState>(set => ({
     if (!accessToken || !refreshToken) return;
 
     try {
-      // Swagger/서버는 `GET /auth/me`가 아닐 수 있음 — 프로필은 `users/me` 사용
       const me = await getMyProfile();
       set({
         accessToken,
         refreshToken,
-        user: {
-          id: (me as any).id ?? 0,
-          uuid: me.uuid,
-          userId: me.userId ?? '',
-          email: me.email ?? '',
-          nickname: me.nickname ?? '',
-          role: me.role ?? 'USER',
-          profileImageUrl: me.profileImageUrl ?? null,
-        },
+        user: userFromProfile(me),
         isAuthenticated: true,
       });
     } catch {
-      // 토큰은 있지만 프로필 조회 실패(401 → 인터셉터 갱신 후 재시도됨, 그 외 네트워크 오류 등)
       const stillValid = await tokenStorage.getAccessToken();
       if (stillValid) {
         set({ accessToken: stillValid, refreshToken, isAuthenticated: true });

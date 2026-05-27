@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { safeGoBack } from '../navigation/rootNavigation';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../store/authStore';
 import { useToast } from '../context/ToastContext';
@@ -28,13 +29,17 @@ import {
   patchMyProfileImage,
 } from '../api/users';
 import { sendPhoneCode, verifyPhoneCode } from '../api/auth/phone';
+import { bustProfileImageUri } from '../utils/profileImageUri';
+import ProfileAvatar from '../components/ProfileAvatar';
 
 const DEFAULT_AVATAR_URI = '';
 
 export default function ProfileSettingsScreen(): React.JSX.Element {
   const navigation = useNavigation<any>();
   const { showToast } = useToast();
-  const setUser = useAuthStore(s => s.setUser);
+  const refreshProfile = useAuthStore(s => s.refreshProfile);
+  const bumpProfileImageCache = useAuthStore(s => s.bumpProfileImageCache);
+  const profileImageCacheBust = useAuthStore(s => s.profileImageCacheBust);
   const logout = useAuthStore(s => s.logout);
 
   const [avatarUri, setAvatarUri] = useState<string>(DEFAULT_AVATAR_URI);
@@ -58,37 +63,35 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
   const [codeTimer, setCodeTimer] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const syncAuthUser = useCallback(
-    (profile: any) => {
-      setUser({
-        id: profile.id ?? 0,
-        uuid: profile.uuid,
-        userId: profile.userId ?? '',
-        email: profile.email ?? '',
-        nickname: profile.nickname ?? '',
-        role: profile.role ?? 'USER',
-      });
+  const applyProfileToForm = useCallback(
+    (me: Awaited<ReturnType<typeof getMyProfile>>, cacheKey?: number) => {
+      setNickname(me.nickname ?? '');
+      setEmail(me.email ?? '');
+      setBio((me.bio ?? me.introduction ?? '').trim());
+      setPhone(me.phone ?? '');
+      setOriginalPhone(me.phone ?? '');
+      const bust = cacheKey ?? profileImageCacheBust;
+      setAvatarUri(
+        me.profileImageUrl
+          ? bustProfileImageUri(me.profileImageUrl, bust)
+          : DEFAULT_AVATAR_URI,
+      );
     },
-    [setUser],
+    [profileImageCacheBust],
   );
 
   const loadProfile = useCallback(async () => {
     setLoadingProfile(true);
     try {
       const me = await getMyProfile();
-      setNickname(me.nickname ?? '');
-      setEmail(me.email ?? '');
-      setBio((me.bio ?? me.introduction ?? '').trim());
-      setPhone(me.phone ?? '');
-      setOriginalPhone(me.phone ?? '');
-      setAvatarUri(me.profileImageUrl || DEFAULT_AVATAR_URI);
-      syncAuthUser(me);
+      applyProfileToForm(me);
+      await refreshProfile();
     } catch (e: any) {
       Alert.alert('오류', e?.response?.data?.message ?? e?.message ?? '프로필을 불러오지 못했습니다.');
     } finally {
       setLoadingProfile(false);
     }
-  }, [syncAuthUser]);
+  }, [applyProfileToForm, refreshProfile]);
 
   useEffect(() => {
     loadProfile();
@@ -121,15 +124,21 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
           name: asset.fileName ?? 'profile.jpg',
           type: asset.mimeType ?? 'image/jpeg',
         });
-        setAvatarUri(updated.profileImageUrl || DEFAULT_AVATAR_URI);
-        syncAuthUser(updated);
+        const cacheKey = Date.now();
+        bumpProfileImageCache();
+        const remote = updated.profileImageUrl
+          ? bustProfileImageUri(updated.profileImageUrl, cacheKey)
+          : '';
+        setAvatarUri(remote || asset.uri);
+        await refreshProfile();
+        showToast('프로필 사진을 변경했어요');
       }
     } catch (e: any) {
       Alert.alert('오류', e?.response?.data?.message ?? e?.message ?? '이미지를 변경하지 못했습니다.');
     } finally {
       setPickingImage(false);
     }
-  }, [pickingImage, syncAuthUser]);
+  }, [pickingImage, bumpProfileImageCache, refreshProfile, showToast]);
 
   const startTimer = useCallback((seconds: number) => {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -213,7 +222,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
       } else if (phoneTrimmed && phoneTrimmed === originalPhone) {
         // 번호 변경 없음 — 그대로 유지
       }
-      syncAuthUser(updated);
+      await refreshProfile();
       showToast('저장 완료');
     } catch (e: any) {
       const msg = e?.response?.data?.message ?? e?.message ?? '저장하지 못했어요';
@@ -221,17 +230,23 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
     } finally {
       setSaving(false);
     }
-  }, [saving, nickname, bio, phone, syncAuthUser, showToast]);
+  }, [saving, nickname, bio, phone, originalPhone, phoneVerified, refreshProfile, showToast]);
 
   const handleDeleteProfileImage = useCallback(async () => {
     try {
       const updated = await deleteMyProfileImage();
-      setAvatarUri(updated.profileImageUrl || DEFAULT_AVATAR_URI);
-      syncAuthUser(updated);
+      bumpProfileImageCache();
+      setAvatarUri(
+        updated.profileImageUrl
+          ? bustProfileImageUri(updated.profileImageUrl, Date.now())
+          : DEFAULT_AVATAR_URI,
+      );
+      await refreshProfile();
+      showToast('기본 프로필 이미지로 변경했어요');
     } catch (e: any) {
       Alert.alert('오류', e?.response?.data?.message ?? e?.message ?? '프로필 이미지를 삭제하지 못했습니다.');
     }
-  }, [syncAuthUser]);
+  }, [bumpProfileImageCache, refreshProfile, showToast]);
 
   const handleDeleteAccount = useCallback(() => {
     Alert.alert(
@@ -264,7 +279,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
       >
         <View className="flex-row items-center gap-2 border-b border-gray-200 bg-[#F0F5FF] px-4 py-3">
           <Pressable
-            onPress={() => navigation.goBack()}
+            onPress={() => safeGoBack(navigation)}
             className="h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white active:opacity-80"
             hitSlop={8}
           >
@@ -278,19 +293,22 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
           keyboardShouldPersistTaps="handled"
         >
           <View className="items-center rounded-2xl border border-gray-200 bg-white px-4 py-6">
-            <View className="relative">
-              {avatarUri ? (
-                <Image
-                  source={{ uri: avatarUri }}
-                  className="h-24 w-24 rounded-full bg-gray-100"
-                />
-              ) : (
-                <View className="h-24 w-24 items-center justify-center rounded-full bg-gray-100">
-                  <Ionicons name="person" size={42} color="#9ca3af" />
-                </View>
-              )}
+            <View className="relative" style={{ width: 96, height: 96 }}>
+              <ProfileAvatar uri={avatarUri} size={96} />
               {loadingProfile ? (
-                <View className="absolute inset-0 items-center justify-center rounded-full bg-white/65">
+                <View
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    top: 0,
+                    width: 96,
+                    height: 96,
+                    borderRadius: 48,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: 'rgba(255,255,255,0.65)',
+                  }}
+                >
                   <ActivityIndicator size="small" color="#111827" />
                 </View>
               ) : null}
