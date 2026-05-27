@@ -30,7 +30,8 @@ import {
   guideMapHeadingFromDevice,
   normalizeDeviceHeading,
 } from "../utils/mapBearing";
-import { fetchMyCourseDetail } from "../api/courses";
+import { resolveCourseDetailForRoute } from "../api/courses";
+import { safeGoBack } from "../navigation/rootNavigation";
 import { useMockData } from "../context/MockDataContext";
 import {
   fetchGoogleDirectionsLeg,
@@ -119,8 +120,8 @@ export default function CourseGuideScreen(): React.JSX.Element {
       setCourse(local);
       setLoadingCourse(false);
     }
-    fetchMyCourseDetail(courseId)
-      .then((apiCourse) => {
+    resolveCourseDetailForRoute(courseId)
+      .then(({ course: apiCourse }) => {
         if (!mounted) return;
         if (apiCourse) setCourse(apiCourse);
         else if (!local) setCourse(null);
@@ -476,7 +477,7 @@ export default function CourseGuideScreen(): React.JSX.Element {
           ]}
         >
           <Pressable
-            onPress={() => navigation.goBack()}
+            onPress={() => safeGoBack(navigation)}
             style={styles.iconBtn}
             accessibilityLabel="닫기"
           >
