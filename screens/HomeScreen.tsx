@@ -17,7 +17,6 @@ import {
   Keyboard,
   Platform,
 } from "react-native";
-import Svg, { Polyline, Circle } from "react-native-svg";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
@@ -43,6 +42,7 @@ import {
 } from "../data/integratedWeatherApi";
 import { sharePublicCourse } from "../utils/shareCourse";
 import { sanitizeCourseCategory } from "../utils/inferCourseRegionLabel";
+import { mergeLocalThumbnailsIntoCourses } from "../utils/mergeCourseThumbnails";
 
 type HomeNavProp = BottomTabNavigationProp<RootTabParamList, "Home">;
 
@@ -231,11 +231,15 @@ export default function HomeScreen(): React.JSX.Element {
 
   const applyHomeFeed = useCallback(
     (payload: Awaited<ReturnType<typeof fetchHomeFeedData>>) => {
-      setHomeCourses(payload.recent);
-      setPopularCourses(payload.popular);
+      setHomeCourses(
+        mergeLocalThumbnailsIntoCourses(payload.recent, userSavedRoutes),
+      );
+      setPopularCourses(
+        mergeLocalThumbnailsIntoCourses(payload.popular, userSavedRoutes),
+      );
       setFollowingNewsApi(payload.news);
     },
-    [],
+    [userSavedRoutes],
   );
 
   const loadHomeFeed = useCallback(async () => {
@@ -307,6 +311,7 @@ export default function HomeScreen(): React.JSX.Element {
         id: `recent-${course.id}`,
         courseId: String(course.id),
         title: course.title,
+        thumbnail: course.thumbnail ? String(course.thumbnail) : null,
         waypoints: steps.slice(0, 3).map((step) => step?.name ?? ""),
         pinCount: steps.length,
         distanceKm: Number((course.overallDurationMinutes / 55).toFixed(1)),
@@ -344,6 +349,7 @@ export default function HomeScreen(): React.JSX.Element {
         id: `trend-${course.id}`,
         courseId: course.id,
         title: course.title,
+        thumbnail: course.thumbnail ? String(course.thumbnail) : null,
         author,
         saveCount,
         pinCount: steps.length,
@@ -1124,20 +1130,17 @@ export default function HomeScreen(): React.JSX.Element {
                     overflow: "hidden",
                   }}
                 >
-                  <Svg width="100%" height="100%" viewBox="0 0 300 120">
-                    <Polyline
-                      points="60,88 150,34 240,56"
-                      fill="none"
-                      stroke="#2563EB"
-                      strokeWidth="5"
-                      strokeLinejoin="round"
-                      strokeLinecap="round"
-                      opacity="0.35"
+                  {course.thumbnail ? (
+                    <Image
+                      source={{ uri: course.thumbnail }}
+                      style={{ width: "100%", height: "100%" }}
+                      resizeMode="cover"
                     />
-                    <Circle cx="60" cy="88" r="10" fill="#fff" stroke="#2563EB" strokeWidth="5" />
-                    <Circle cx="150" cy="34" r="10" fill="#fff" stroke="#2563EB" strokeWidth="5" />
-                    <Circle cx="240" cy="56" r="10" fill="#fff" stroke="#2563EB" strokeWidth="5" />
-                  </Svg>
+                  ) : (
+                    <View className="h-full w-full items-center justify-center bg-blue-50">
+                      <Ionicons name="map-outline" size={28} color="#60a5fa" />
+                    </View>
+                  )}
 
                   <View style={{ position: "absolute", left: 10, bottom: 8, flexDirection: "row" }}>
                     {course.tags.length > 0 ? (
@@ -1263,10 +1266,20 @@ export default function HomeScreen(): React.JSX.Element {
                     }
                   >
                     <View
-                      className="mr-3 h-12 w-12 items-center justify-center rounded-xl"
+                      className="mr-3 h-12 w-12 overflow-hidden rounded-xl"
                       style={{ backgroundColor: getCategoryTint(course.category) }}
                     >
-                      <Ionicons name="map-outline" size={22} color="#2563EB" />
+                      {course.thumbnail ? (
+                        <Image
+                          source={{ uri: course.thumbnail }}
+                          className="h-full w-full"
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View className="h-full w-full items-center justify-center">
+                          <Ionicons name="map-outline" size={22} color="#2563EB" />
+                        </View>
+                      )}
                     </View>
                     <View className="min-w-0 flex-1">
                       <Text style={{ fontSize: 14, fontWeight: "600", color: "#1A1A2E" }} numberOfLines={1}>

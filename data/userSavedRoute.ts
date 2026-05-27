@@ -1,5 +1,6 @@
 import type { CourseItem } from './mockData';
 import { resolveCourseRegionLabel } from '../utils/inferCourseRegionLabel';
+import { sameCourseId } from '../utils/sameCourseId';
 
 /** 루트 제작 화면에서 저장되는 정류장 (목·로컬) */
 export type UserSavedRouteStop = {
@@ -40,7 +41,24 @@ export type UserSavedRoute = {
   coverImageUri?: string | null;
   /** 사용자가 공개(공유)로 둔 경우 true — 서버 PATCH 후 공개가 풀리면 저장 시 다시 맞춤 */
   publishedToPublic?: boolean;
+  /** 공유 루트를 복사·수정해 만든 개인 루트일 때 원본 공유 코스 id */
+  forkedFromSharedId?: string | null;
 };
+
+/** 공유 코스에서 이미 만든 개인 루트 서버 id (있으면 copy 재호출 방지) */
+export function findPersonalRouteIdForForkSource(
+  sharedCourseId: string,
+  userSavedRoutes: UserSavedRoute[],
+): string | null {
+  const source = String(sharedCourseId ?? '').trim();
+  if (!source) return null;
+  const hit = userSavedRoutes.find(
+    (r) => String(r.forkedFromSharedId ?? '').trim() === source,
+  );
+  const id = String(hit?.id ?? '').trim();
+  if (id && !id.startsWith('ur-')) return id;
+  return null;
+}
 
 export function userRouteToCourseItem(r: UserSavedRoute): CourseItem {
   const start = r.stops[0];

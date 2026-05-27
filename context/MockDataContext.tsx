@@ -73,7 +73,7 @@ export function MockDataProvider({ children }: { children: React.ReactNode }) {
 
   const upsertUserRoute = useCallback((route: UserSavedRoute) => {
     setUserSavedRoutes((prev) => {
-      const i = prev.findIndex((x) => x.id === route.id);
+      const i = prev.findIndex((x) => String(x.id) === String(route.id));
       if (i >= 0) {
         const next = [...prev];
         next[i] = route;
