@@ -14,7 +14,7 @@ type Props = {
   nickname?: string;
   email?: string;
   avatarUri?: string;
-  sharedRouteCount: number;
+  friendCount: number;
   onAddFriend: () => void;
   onProfileSettings: () => void;
 };
@@ -23,7 +23,7 @@ export default function ProfileCard({
   nickname,
   email,
   avatarUri,
-  sharedRouteCount,
+  friendCount,
   onAddFriend,
   onProfileSettings,
 }: Props) {
@@ -48,9 +48,9 @@ export default function ProfileCard({
           style={{ borderTopWidth: 0.5, borderTopColor: 'rgba(37,99,235,0.08)' }}
         >
           <View className="flex-row items-center">
-            <Ionicons name="paper-plane-outline" size={15} color="#2563EB" />
-            <Text className="ml-2 text-[15px] font-bold text-gray-900">공유한 루트</Text>
-            <Text className="ml-2 text-[15px] font-bold text-blue-600">{sharedRouteCount}개</Text>
+            <Ionicons name="people-outline" size={15} color="#2563EB" />
+            <Text className="ml-2 text-[15px] font-bold text-gray-900">함께하는 친구</Text>
+            <Text className="ml-2 text-[15px] font-bold text-blue-600">{friendCount}명</Text>
           </View>
           <Pressable onPress={onAddFriend} className="active:opacity-80">
             <Text className="text-sm font-semibold text-blue-600">+ 친구 추가하기</Text>
