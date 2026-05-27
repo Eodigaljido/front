@@ -22,6 +22,7 @@ import {
   markAsRead,
   deleteMessage,
   editMessage,
+  sendImageMessage,
 } from "@/api/chat/chat";
 import { useAuthStore } from "@/store/authStore";
 import { useChatSocket, ChatSocketEvent } from "@/hooks/useChatSocket";
@@ -29,12 +30,13 @@ import { useTypingIndicator } from "@/hooks/useTypingIndicator";
 import { RootStackParamList } from "@/App";
 import { StatusBar } from "expo-status-bar";
 import { MessageInput } from "@/stories/chat/MessageInput";
+import React from "react";
 
 type ChatRoomRouteProp = RouteProp<RootStackParamList, "ChatRoomScreen">;
 
 export const ChatRoomScreen = () => {
   const route = useRoute<ChatRoomRouteProp>();
-  const { roomUuid, roomName } = route.params;
+  const { roomUuid, roomName, memberCount = 2 } = route.params;
 
   const accessToken = useAuthStore((s) => s.accessToken);
   const userUuid = useAuthStore((s) => s.user?.uuid);
@@ -44,6 +46,7 @@ export const ChatRoomScreen = () => {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const scrollViewRef = useRef<ScrollView>(null);
+  const scrollOnImageLoadRef = useRef<string | null>(null);
 
   const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(
     null,
@@ -65,6 +68,9 @@ export const ChatRoomScreen = () => {
               m.uuid.startsWith("pending-"),
             );
             if (pendingIdx === -1) return prev;
+            if (scrollOnImageLoadRef.current?.startsWith("pending-")) {
+              scrollOnImageLoadRef.current = event.payload.uuid;
+            }
             return prev.map((m, i) => (i === pendingIdx ? event.payload : m));
           });
           return;
@@ -116,10 +122,12 @@ export const ChatRoomScreen = () => {
   useEffect(() => {
     if (!accessToken) return;
 
-    // 읽음 처리 실패해도 치명적이지 않으므로 에러는 로그만 남김
-    markAsRead(accessToken, roomUuid).catch((err) => {
-      console.error("채팅방 읽음 처리 실패:", err);
-    });
+    try {
+      markAsRead(accessToken, roomUuid);
+      console.log("채팅방 읽음 처리 완료");
+    } catch (err) {
+      console.error("읽음 처리 실패:", err);
+    }
   }, [accessToken, roomUuid]);
 
   useEffect(() => {
@@ -153,11 +161,12 @@ export const ChatRoomScreen = () => {
       senderProfileImageUrl: "",
       messageType: "TEXT",
       content: text,
-      routeUuid: "",
-      routeTitle: "",
-      routeThumbnailUrl: "",
+      attachmentUrl: null,
+      routeUuid: null,
+      routeTitle: null,
+      routeThumbnailUrl: null,
       createdAt: new Date().toISOString(),
-      editedAt: "",
+      editedAt: null,
       isDeleted: false,
     };
     setMessages((prev) => [...prev, optimistic]);
@@ -189,6 +198,39 @@ export const ChatRoomScreen = () => {
         );
         return inserted;
       });
+    }
+  };
+
+  const handleImageSend = async (imageUri: string) => {
+    if (!accessToken) return;
+
+    const pendingUuid = `pending-${Date.now()}`;
+    const optimistic: ChatMessage = {
+      uuid: pendingUuid,
+      senderUuid: userUuid ?? "",
+      senderNickname: "",
+      senderProfileImageUrl: "",
+      messageType: "IMAGE",
+      content: null,
+      attachmentUrl: imageUri,
+      routeUuid: null,
+      routeTitle: null,
+      routeThumbnailUrl: null,
+      createdAt: new Date().toISOString(),
+      editedAt: null,
+      isDeleted: false,
+    };
+    setMessages((prev) => [...prev, optimistic]);
+    scrollOnImageLoadRef.current = pendingUuid;
+    setTimeout(
+      () => scrollViewRef.current?.scrollToEnd({ animated: true }),
+      50,
+    );
+    try {
+      await sendImageMessage(accessToken, roomUuid, imageUri);
+    } catch (err) {
+      console.error("[Chat] 이미지 전송 실패:", err);
+      setMessages((prev) => prev.filter((m) => m.uuid !== pendingUuid));
     }
   };
 
@@ -241,20 +283,48 @@ export const ChatRoomScreen = () => {
             return (
               <BubbleChat
                 key={msg.uuid}
-                text={msg.content}
+                text={
+                  msg.messageType === "IMAGE"
+                    ? undefined
+                    : (msg.content ?? undefined)
+                }
+                imageUrl={
+                  msg.messageType === "IMAGE" ? msg.attachmentUrl : undefined
+                }
                 isMine={isMine}
                 sentAt={new Date(msg.createdAt)}
                 userName={msg.senderNickname}
+                profileImageUrl={
+                  !isMine ? msg.senderProfileImageUrl : undefined
+                }
+                showSender={!isMine && memberCount >= 3}
                 isEdited={!!msg.editedAt}
-                onLongPress={isMine ? () => setSelectedMessage(msg) : undefined}
+                onLongPress={
+                  isMine && !msg.uuid.startsWith("pending-")
+                    ? () => setSelectedMessage(msg)
+                    : undefined
+                }
+                onImageLoad={
+                  msg.uuid === scrollOnImageLoadRef.current
+                    ? () => {
+                        scrollOnImageLoadRef.current = null;
+                        scrollViewRef.current?.scrollToEnd({ animated: true });
+                      }
+                    : undefined
+                }
               />
             );
           })}
         </KeyboardAwareScrollView>
         <KeyboardStickyView offset={{ closed: 0, opened: 15 }}>
-          {typingText !== "" && <TypingText text={typingText} />}
+          {typingText !== "" && (
+            <View style={typingStyles.container}>
+              <Text style={typingStyles.text}>{typingText}</Text>
+            </View>
+          )}
           <MessageInput
             onSend={handleSend}
+            onImageSend={handleImageSend}
             editingText={editingMessage ? editingMessage.content : null}
             onCancelEdit={() => setEditingMessage(null)}
             onTypingChange={sendTyping}
@@ -355,30 +425,6 @@ const modalStyles = StyleSheet.create({
     color: "#888",
   },
 });
-
-const DOTS = [".", "..", "..."];
-
-function TypingText({ text }: { text: string }) {
-  const [dotIndex, setDotIndex] = useState(0);
-
-  useEffect(() => {
-    const id = setInterval(() => {
-      setDotIndex((i) => (i + 1) % DOTS.length);
-    }, 400);
-    return () => clearInterval(id);
-  }, []);
-
-  const base = text.endsWith("...") ? text.slice(0, -3) : text;
-
-  return (
-    <View style={typingStyles.container}>
-      <Text style={typingStyles.text}>
-        {base}
-        {DOTS[dotIndex]}
-      </Text>
-    </View>
-  );
-}
 
 const typingStyles = StyleSheet.create({
   container: {

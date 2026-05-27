@@ -7,7 +7,12 @@ import { Ionicons } from '@expo/vector-icons';
 
 import type { RootTabParamList } from '../App';
 import { getMyProfile } from '../api/users';
-import { addFriendByCode, getFriends, getFriendRequests, getMyFriendCode } from '../api/friend/friends';
+import {
+  addFriendByCode,
+  getFriends,
+  getFriendRequests,
+  getMyFriendCode,
+} from '../api/friend/friends';
 import { shareFriendInvite } from '../utils/shareFriend';
 import { useAuthStore } from '../store/authStore';
 import { useTabStore } from '../store/tabStore';
@@ -52,7 +57,7 @@ export default function AllScreen(): React.JSX.Element {
     } catch {
       // 프로필 요청 실패 시 기존 상태 유지
     }
-  }, [setUser]);
+  }, [refreshProfile]);
 
   useFocusEffect(
     useCallback(() => {
@@ -76,7 +81,10 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'paper-plane-outline',
       iconColor: '#ea580c',
       iconBg: '#ffedd5',
-      onPress: () => { setForcedActiveTab('SharedRoute'); navigation.navigate('AllSharedRoute'); },
+      onPress: () => {
+        setForcedActiveTab('SharedRoute');
+        navigation.navigate('AllSharedRoute');
+      },
     },
     {
       id: 'saved-route',
@@ -84,7 +92,10 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'bookmark-outline',
       iconColor: '#16a34a',
       iconBg: '#dcfce7',
-      onPress: () => { setForcedActiveTab('MyRoute'); navigation.navigate('AllMyRoute'); },
+      onPress: () => {
+        setForcedActiveTab('MyRoute');
+        navigation.navigate('AllMyRoute');
+      },
     },
     {
       id: 'near-popular',
@@ -92,7 +103,10 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'location-outline',
       iconColor: '#9333ea',
       iconBg: '#f3e8ff',
-      onPress: () => { setForcedActiveTab('SharedRoute'); navigation.navigate('AllSharedRoute', { openAsPopular: true }); },
+      onPress: () => {
+        setForcedActiveTab('SharedRoute');
+        navigation.navigate('AllSharedRoute', { openAsPopular: true });
+      },
     },
   ];
 
@@ -203,7 +217,9 @@ export default function AllScreen(): React.JSX.Element {
     confirmAddFriendFromLink(code);
   }, [route.params, navigation, confirmAddFriendFromLink]);
 
-  const avatarUri = authUser?.profileImageUrl ?? 'https://i.pravatar.cc/100?img=5';
+  const avatarUri = authUser?.profileImageUrl
+    ? bustProfileImageUri(authUser.profileImageUrl, profileImageCacheBust)
+    : 'https://i.pravatar.cc/100?img=5';
 
   return (
     <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={['top']}>
@@ -211,7 +227,7 @@ export default function AllScreen(): React.JSX.Element {
         <Text className="text-xl font-bold text-gray-900">전체</Text>
         <Pressable
           onPress={() => navigation.getParent()?.getParent()?.navigate('NotificationCenter')}
-          className="h-10 w-10 items-center justify-center rounded-full active:opacity-70"
+          className="items-center justify-center w-10 h-10 rounded-full active:opacity-70"
           hitSlop={8}
         >
           <Ionicons name="notifications-outline" size={24} color="#374151" />

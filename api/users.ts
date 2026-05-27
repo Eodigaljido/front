@@ -1,4 +1,5 @@
 import { instance } from "./axios";
+import { unwrapUserProfile } from "../utils/profileImageUri";
 
 export type UserProfile = {
   uuid: string;
@@ -19,8 +20,8 @@ type UserSearchItem = {
 };
 
 export async function getMyProfile(): Promise<UserProfile> {
-  const res = await instance.get<UserProfile>("users/me");
-  return res.data;
+  const res = await instance.get("users/me");
+  return unwrapUserProfile<UserProfile>(res.data);
 }
 
 export async function patchMyProfile(input: {
@@ -28,13 +29,13 @@ export async function patchMyProfile(input: {
   bio?: string;
   introduction?: string;
 }): Promise<UserProfile> {
-  const res = await instance.patch<UserProfile>("users/me", input);
-  return res.data;
+  const res = await instance.patch("users/me", input);
+  return unwrapUserProfile<UserProfile>(res.data);
 }
 
 export async function patchMyPhone(phone: string): Promise<UserProfile> {
-  const res = await instance.patch<UserProfile>("users/me/phone", { phone });
-  return res.data;
+  const res = await instance.patch("users/me/phone", { phone });
+  return unwrapUserProfile<UserProfile>(res.data);
 }
 
 export async function patchMyProfileImage(asset: {
@@ -43,23 +44,37 @@ export async function patchMyProfileImage(asset: {
   type?: string;
 }): Promise<UserProfile> {
   const form = new FormData();
+  const rawType = String(asset.type ?? "image/jpeg");
+  const mime =
+    rawType === "image/heic" || rawType === "image/heif"
+      ? "image/jpeg"
+      : rawType.startsWith("image/")
+        ? rawType
+        : "image/jpeg";
+  let fileName = asset.name ?? "profile.jpg";
+  if (!/\.(jpe?g|png|webp)$/i.test(fileName)) {
+    fileName = "profile.jpg";
+  }
   form.append("image", {
     uri: asset.uri,
-    name: asset.name ?? "profile.jpg",
-    type: asset.type ?? "image/jpeg",
+    name: fileName,
+    type: mime,
   } as any);
-  const res = await instance.patch<UserProfile>("users/me/profile-image", form, {
-    headers: { "Content-Type": "multipart/form-data" },
-    // axios의 기본 JSON 직렬화를 건너뛰어 FormData를 그대로 전달
-    // React Native XHR 레이어가 boundary 포함 Content-Type을 자동으로 설정
-    transformRequest: (data) => data,
+  const res = await instance.patch("users/me/profile-image", form, {
+    transformRequest: (data, headers) => {
+      if (headers) {
+        delete headers["Content-Type"];
+        delete headers["content-type"];
+      }
+      return data;
+    },
   });
-  return res.data;
+  return unwrapUserProfile<UserProfile>(res.data);
 }
 
 export async function deleteMyProfileImage(): Promise<UserProfile> {
-  const res = await instance.delete<UserProfile>("users/me/profile-image");
-  return res.data;
+  const res = await instance.delete("users/me/profile-image");
+  return unwrapUserProfile<UserProfile>(res.data);
 }
 
 export async function deleteMyAccount(): Promise<void> {

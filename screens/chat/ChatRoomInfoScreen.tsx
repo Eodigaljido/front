@@ -20,6 +20,7 @@ import {
   useRoute,
 } from "@react-navigation/native";
 import { RootStackParamList } from "@/App";
+import { safeGoBack } from "@/navigation/rootNavigation";
 import {
   ChevronLeft,
   Edit2,
@@ -32,6 +33,7 @@ import {
   Users,
 } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
+import { Asset } from "expo-asset";
 
 import {
   deleteChatRoom,
@@ -39,7 +41,8 @@ import {
   inviteChatMember,
   leaveChatRoom,
   renameChatRoom,
-} from "@/api/chat/index";
+  updateChatRoomImage,
+} from "@/api/chat/chat";
 import { getFriends } from "@/api/friend/friends";
 import { getUserProfileByUuid } from "@/api/users";
 import { useAuthStore } from "@/store/authStore";
@@ -56,21 +59,35 @@ type Member = {
   isOwner?: boolean;
 };
 
-type InvitableFriend = { id: string; uuid: string; name: string; userId?: string };
+type InvitableFriend = {
+  id: string;
+  uuid: string;
+  name: string;
+  userId?: string;
+};
 
-const PRESET_IMAGES = [
-  { id: "p1", color: "#4FC3F7", emoji: "🐧" },
-  { id: "p2", color: "#F48FB1", emoji: "🤖" },
-  { id: "p3", color: "#FF8A65", emoji: "🔥" },
-  { id: "p4", color: "#81C784", emoji: "🗺️" },
-  { id: "p5", color: "#CE93D8", emoji: "⭐" },
-  { id: "p6", color: "#80DEEA", emoji: "🌊" },
-  { id: "p7", color: "#A5D6A7", emoji: "🌿" },
-  { id: "p8", color: "#FFCC02", emoji: "🌟" },
-  { id: "p9", color: "#FF7043", emoji: "🎮" },
-  { id: "p10", color: "#42A5F5", emoji: "🎯" },
-  { id: "p11", color: "#AB47BC", emoji: "🎨" },
-  { id: "p12", color: "#26C6DA", emoji: "🎵" },
+type PresetImage = { id: string; source: ReturnType<typeof require> };
+
+const PRESET_IMAGES: PresetImage[] = [
+  { id: "p1", source: require("@/assets/chat/pfp/apple.png") },
+  { id: "p2", source: require("@/assets/chat/pfp/banana.png") },
+  { id: "p3", source: require("@/assets/chat/pfp/coconut.png") },
+  { id: "p4", source: require("@/assets/chat/pfp/earth.png") },
+  { id: "p5", source: require("@/assets/chat/pfp/eodigaljido.png") },
+  { id: "p6", source: require("@/assets/chat/pfp/foot.png") },
+  { id: "p7", source: require("@/assets/chat/pfp/lemon.png") },
+  { id: "p8", source: require("@/assets/chat/pfp/map.png") },
+  { id: "p9", source: require("@/assets/chat/pfp/money.png") },
+  { id: "p10", source: require("@/assets/chat/pfp/octopus.png") },
+  { id: "p11", source: require("@/assets/chat/pfp/rusn.png") },
+  { id: "p12", source: require("@/assets/chat/pfp/rusun_map.png") },
+  { id: "p13", source: require("@/assets/chat/pfp/ruty.png") },
+  { id: "p14", source: require("@/assets/chat/pfp/ruty_child.png") },
+  { id: "p15", source: require("@/assets/chat/pfp/ruty_map.png") },
+  { id: "p16", source: require("@/assets/chat/pfp/ruty_run.png") },
+  { id: "p17", source: require("@/assets/chat/pfp/sunset.png") },
+  { id: "p18", source: require("@/assets/chat/pfp/tree.png") },
+  { id: "p19", source: require("@/assets/chat/pfp/unicorn.png") },
 ];
 
 const FRIEND_COLORS = [
@@ -97,15 +114,15 @@ export default function ChatRoomInfoScreen() {
   const [roomName, setRoomName] = useState(initialRoomName);
   const [members, setMembers] = useState<Member[]>([]);
   const [friends, setFriends] = useState<InvitableFriend[]>([]);
-  const [selectedPresetId, setSelectedPresetId] = useState("p1");
-  const [localImageUri, setLocalImageUri] = useState<string | null>(null);
+  const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
 
   const [nameModalVisible, setNameModalVisible] = useState(false);
   const [imageModalVisible, setImageModalVisible] = useState(false);
   const [inviteModalVisible, setInviteModalVisible] = useState(false);
+  const [isSavingImage, setIsSavingImage] = useState(false);
 
   const [editingName, setEditingName] = useState("");
-  const [tempPresetId, setTempPresetId] = useState("p1");
+  const [tempPresetId, setTempPresetId] = useState("");
   const [tempLocalImageUri, setTempLocalImageUri] = useState<string | null>(
     null,
   );
@@ -113,7 +130,6 @@ export default function ChatRoomInfoScreen() {
     new Set(),
   );
 
-  const currentPreset = PRESET_IMAGES.find((p) => p.id === selectedPresetId);
   const tempPreset = PRESET_IMAGES.find((p) => p.id === tempPresetId);
 
   const loadRoom = useCallback(async () => {
@@ -121,6 +137,7 @@ export default function ChatRoomInfoScreen() {
     const room = await getChatRoom(accessToken, roomUuid);
     if (!room) return;
     setIsOwner(String(room.ownerUuid) === String(myUuid ?? ""));
+    setProfileImageUrl(room.profileImageUrl || null);
     const mapped: Member[] = (room.members ?? []).map((m, i) => ({
       uuid: m.uuid,
       nickname: m.userId ?? m.uuid.slice(0, 8),
@@ -186,10 +203,30 @@ export default function ChatRoomInfoScreen() {
     }
   };
 
-  const handleSaveImage = () => {
-    setSelectedPresetId(tempPresetId);
-    setLocalImageUri(tempLocalImageUri);
-    setImageModalVisible(false);
+  const handleSaveImage = async () => {
+    if (!accessToken) return;
+    setIsSavingImage(true);
+    try {
+      let uploadUri: string | null = tempLocalImageUri;
+      if (!uploadUri && tempPresetId) {
+        const preset = PRESET_IMAGES.find((p) => p.id === tempPresetId);
+        if (preset) {
+          const asset = Asset.fromModule(preset.source);
+          await asset.downloadAsync();
+          uploadUri = asset.localUri ?? null;
+        }
+      }
+      if (uploadUri) {
+        await updateChatRoomImage(accessToken, roomUuid, uploadUri);
+        setProfileImageUrl(uploadUri);
+      }
+      setImageModalVisible(false);
+    } catch (err) {
+      Alert.alert("오류", "프로필 이미지 변경에 실패했습니다.");
+      console.error("프로필 이미지 변경 실패", err);
+    } finally {
+      setIsSavingImage(false);
+    }
   };
 
   const handleKickMember = (member: Member) => {
@@ -290,7 +327,7 @@ export default function ChatRoomInfoScreen() {
       {/* 헤더 */}
       <View style={s.header}>
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={() => safeGoBack(navigation)}
           style={s.headerBackBtn}
         >
           <ChevronLeft color="#111827" size={22} />
@@ -308,26 +345,19 @@ export default function ChatRoomInfoScreen() {
         <View style={s.profileCard}>
           <TouchableOpacity
             onPress={() => {
-              setTempPresetId(selectedPresetId);
-              setTempLocalImageUri(localImageUri);
+              setTempPresetId("");
+              setTempLocalImageUri(null);
               setImageModalVisible(true);
             }}
             activeOpacity={0.85}
           >
             <View style={s.avatarShadow}>
-              <View
-                style={[
-                  s.profileCircle,
-                  { backgroundColor: currentPreset?.color ?? "#E5E7EB" },
-                ]}
-              >
-                {localImageUri ? (
+              <View style={[s.profileCircle, { backgroundColor: "#E5E7EB" }]}>
+                {profileImageUrl ? (
                   <Image
-                    source={{ uri: localImageUri }}
+                    source={{ uri: profileImageUrl }}
                     style={{ width: 112, height: 112 }}
                   />
-                ) : currentPreset ? (
-                  <Text style={{ fontSize: 52 }}>{currentPreset.emoji}</Text>
                 ) : (
                   <ImageIcon color="#9CA3AF" size={44} />
                 )}
@@ -352,11 +382,6 @@ export default function ChatRoomInfoScreen() {
               <Text style={s.nameEditPillText}>수정</Text>
             </View>
           </TouchableOpacity>
-
-          <View style={s.memberCountPill}>
-            <Users color="#6B7280" size={13} />
-            <Text style={s.memberCountText}>{members.length}명</Text>
-          </View>
         </View>
 
         {/* 멤버 카드 */}
@@ -509,19 +534,22 @@ export default function ChatRoomInfoScreen() {
             <Text style={s.sheetTitle}>프로필 이미지 변경</Text>
 
             <View style={{ alignItems: "center", marginBottom: 20 }}>
-              <View
-                style={[
-                  s.previewCircle,
-                  { backgroundColor: tempPreset?.color ?? "#E5E7EB" },
-                ]}
-              >
+              <View style={[s.previewCircle, { backgroundColor: "#E5E7EB" }]}>
                 {tempLocalImageUri ? (
                   <Image
                     source={{ uri: tempLocalImageUri }}
                     style={{ width: 72, height: 72, borderRadius: 36 }}
                   />
                 ) : tempPreset ? (
-                  <Text style={{ fontSize: 36 }}>{tempPreset.emoji}</Text>
+                  <Image
+                    source={tempPreset.source}
+                    style={{ width: 72, height: 72, borderRadius: 36 }}
+                  />
+                ) : profileImageUrl ? (
+                  <Image
+                    source={{ uri: profileImageUrl }}
+                    style={{ width: 72, height: 72, borderRadius: 36 }}
+                  />
                 ) : (
                   <ImageIcon color="#9CA3AF" size={30} />
                 )}
@@ -562,15 +590,19 @@ export default function ChatRoomInfoScreen() {
                   }}
                   style={[
                     s.presetCell,
-                    { backgroundColor: preset.color },
                     tempPresetId === preset.id && !tempLocalImageUri
                       ? s.presetSelected
                       : undefined,
                   ]}
                 >
-                  <Text style={{ fontSize: Math.round(CELL_SIZE * 0.4) }}>
-                    {preset.emoji}
-                  </Text>
+                  <Image
+                    source={preset.source}
+                    style={{
+                      width: CELL_SIZE,
+                      height: CELL_SIZE,
+                      borderRadius: CELL_SIZE / 2,
+                    }}
+                  />
                 </TouchableOpacity>
               ))}
             </View>
@@ -584,10 +616,19 @@ export default function ChatRoomInfoScreen() {
                   <Text style={s.modalBtnCancelText}>취소</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[s.modalBtn, s.modalBtnConfirm]}
-                  onPress={handleSaveImage}
+                  style={[
+                    s.modalBtn,
+                    s.modalBtnConfirm,
+                    { opacity: isSavingImage ? 0.6 : 1 },
+                  ]}
+                  onPress={() => {
+                    void handleSaveImage();
+                  }}
+                  disabled={isSavingImage}
                 >
-                  <Text style={s.modalBtnConfirmText}>저장</Text>
+                  <Text style={s.modalBtnConfirmText}>
+                    {isSavingImage ? "저장 중..." : "저장"}
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -695,7 +736,7 @@ const shadow = Platform.select({
 const s = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F4F6FA",
+    backgroundColor: "#F0F5FF",
   },
   header: {
     flexDirection: "row",
@@ -703,7 +744,7 @@ const s = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 8,
     paddingVertical: 10,
-    backgroundColor: "#F4F6FA",
+    backgroundColor: "#F0F5FF",
   },
   headerBackBtn: {
     width: 40,
@@ -877,9 +918,9 @@ const s = StyleSheet.create({
     color: "#111827",
   },
   ownerBadge: {
-    marginRight: 10,
+    marginRight: 0,
     paddingHorizontal: 9,
-    paddingVertical: 3,
+    paddingVertical: 5,
     borderRadius: 12,
     backgroundColor: "#FEF3C7",
   },

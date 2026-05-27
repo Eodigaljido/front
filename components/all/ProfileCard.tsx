@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, Pressable, Image } from 'react-native';
+import { View, Text, TouchableOpacity, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import ProfileAvatar from '../ProfileAvatar';
 
 const CARD_STYLE = {
   borderWidth: 0.5,
@@ -34,19 +35,7 @@ export default function ProfileCard({
           onPress={onProfileSettings}
           activeOpacity={0.5}
         >
-          {avatarUri ? (
-            <Image
-              source={{ uri: avatarUri }}
-              style={{ width: 56, height: 56, borderRadius: 28 }}
-            />
-          ) : (
-            <View
-              className="items-center justify-center rounded-full h-14 w-14"
-              style={{ backgroundColor: '#DBEAFE' }}
-            >
-              <Ionicons name="person" size={28} color="#2563EB" />
-            </View>
-          )}
+          <ProfileAvatar uri={avatarUri} size={56} />
           <View className="flex-1 ml-3">
             <Text className="text-[17px] font-bold text-gray-900">{nickname || '닉네임'}</Text>
             <Text className="mt-0.5 text-sm text-gray-500">{email || ''}</Text>

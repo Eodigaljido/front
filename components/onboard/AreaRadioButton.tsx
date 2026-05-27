@@ -13,7 +13,7 @@ export default function AreaRadioButton({
   return (
     <TouchableOpacity
       className={`flex-1 items-center justify-center rounded-full py-3 px-6 border-2 ${
-        value ? "border-white bg-blue-500" : "border-gray-300 bg-gray-200"
+        value ? "border-white bg-blue-500" : "border-gray-200 bg-gray-200"
       }`}
       onPress={onPress}
       activeOpacity={1}

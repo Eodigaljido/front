@@ -2,6 +2,7 @@ import { NavigationProp, useNavigation } from "@react-navigation/native";
 import { Info } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
 import { RootStackParamList } from "@/App";
+import React from "react";
 
 interface InfoButtonProps {
   roomUuid: string;
@@ -13,7 +14,9 @@ export const InfoButton = ({ roomUuid, roomName }: InfoButtonProps) => {
 
   return (
     <TouchableOpacity
-      onPress={() => navigation.navigate("ChatRoomInfoScreen", { roomUuid, roomName })}
+      onPress={() =>
+        navigation.navigate("ChatRoomInfoScreen", { roomUuid, roomName })
+      }
       accessibilityRole="button"
       accessibilityLabel="정보 보기"
     >
