@@ -118,6 +118,18 @@ export type RootStackParamList = {
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
+const AllStack = createNativeStackNavigator();
+
+function AllStackNavigator() {
+  return (
+    <AllStack.Navigator screenOptions={{ headerShown: false }}>
+      <AllStack.Screen name="AllMain" component={AllScreen} />
+      <AllStack.Screen name="AllSharedRoute" component={SharedRouteScreen} />
+      <AllStack.Screen name="AllMyRoute" component={MyRouteScreen} />
+      <AllStack.Screen name="AllRouteCreate" component={RouteCreateScreen} />
+    </AllStack.Navigator>
+  );
+}
 
 const TAB_ACCENT = '#2563eb';
 const TAB_INACTIVE = '#9ca3af';
@@ -263,7 +275,7 @@ function TabNavigator() {
       />
       <Tab.Screen
         name="All"
-        component={AllScreen}
+        component={AllStackNavigator}
         options={{ headerShown: false, title: '전체', tabBarLabel: '전체' }}
       />
     </Tab.Navigator>
