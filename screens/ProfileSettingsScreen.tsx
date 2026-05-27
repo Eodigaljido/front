@@ -42,6 +42,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
   const [nickname, setNickname] = useState('');
   const [email, setEmail] = useState('');
   const [bio, setBio] = useState('');
+  const [bioHeight, setBioHeight] = useState(40);
   const [phone, setPhone] = useState('');
   const [originalPhone, setOriginalPhone] = useState('');
   const [saving, setSaving] = useState(false);
@@ -67,6 +68,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
         email: profile.email ?? '',
         nickname: profile.nickname ?? '',
         role: profile.role ?? 'USER',
+        profileImageUrl: profile.profileImageUrl ?? null,
       });
     },
     [setUser],
@@ -84,7 +86,10 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
       setAvatarUri(me.profileImageUrl || DEFAULT_AVATAR_URI);
       syncAuthUser(me);
     } catch (e: any) {
-      Alert.alert('오류', e?.response?.data?.message ?? e?.message ?? '프로필을 불러오지 못했습니다.');
+      Alert.alert(
+        '오류',
+        e?.response?.data?.message ?? e?.message ?? '프로필을 불러오지 못했습니다.',
+      );
     } finally {
       setLoadingProfile(false);
     }
@@ -102,7 +107,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
       if (status !== 'granted') {
         Alert.alert(
           '권한 필요',
-          '갤러리에서 사진을 선택하려면 사진 라이브러리 접근을 허용해 주세요.'
+          '갤러리에서 사진을 선택하려면 사진 라이브러리 접근을 허용해 주세요.',
         );
         return;
       }
@@ -125,7 +130,10 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
         syncAuthUser(updated);
       }
     } catch (e: any) {
-      Alert.alert('오류', e?.response?.data?.message ?? e?.message ?? '이미지를 변경하지 못했습니다.');
+      Alert.alert(
+        '오류',
+        e?.response?.data?.message ?? e?.message ?? '이미지를 변경하지 못했습니다.',
+      );
     } finally {
       setPickingImage(false);
     }
@@ -145,7 +153,12 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
     }, 1000);
   }, []);
 
-  useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    },
+    [],
+  );
 
   const handleSendPhoneCode = useCallback(async () => {
     if (phoneSending) return;
@@ -162,7 +175,10 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
       setPhoneCode('');
       startTimer(res.expiresInSeconds ?? 180);
     } catch (e: any) {
-      Alert.alert('오류', e?.response?.data?.message ?? e?.message ?? '인증번호 발송에 실패했습니다.');
+      Alert.alert(
+        '오류',
+        e?.response?.data?.message ?? e?.message ?? '인증번호 발송에 실패했습니다.',
+      );
     } finally {
       setPhoneSending(false);
     }
@@ -176,13 +192,20 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
     }
     setPhoneVerifying(true);
     try {
-      await verifyPhoneCode({ phone: phone.trim(), code: phoneCode.trim(), purpose: 'CHANGE_PHONE' });
+      await verifyPhoneCode({
+        phone: phone.trim(),
+        code: phoneCode.trim(),
+        purpose: 'CHANGE_PHONE',
+      });
       setPhoneVerified(true);
       setPhoneCodeSent(false);
       if (timerRef.current) clearInterval(timerRef.current);
       setCodeTimer(0);
     } catch (e: any) {
-      Alert.alert('오류', e?.response?.data?.message ?? e?.message ?? '인증번호 확인에 실패했습니다.');
+      Alert.alert(
+        '오류',
+        e?.response?.data?.message ?? e?.message ?? '인증번호 확인에 실패했습니다.',
+      );
     } finally {
       setPhoneVerifying(false);
     }
@@ -229,31 +252,33 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
       setAvatarUri(updated.profileImageUrl || DEFAULT_AVATAR_URI);
       syncAuthUser(updated);
     } catch (e: any) {
-      Alert.alert('오류', e?.response?.data?.message ?? e?.message ?? '프로필 이미지를 삭제하지 못했습니다.');
+      Alert.alert(
+        '오류',
+        e?.response?.data?.message ?? e?.message ?? '프로필 이미지를 삭제하지 못했습니다.',
+      );
     }
   }, [syncAuthUser]);
 
   const handleDeleteAccount = useCallback(() => {
-    Alert.alert(
-      '회원 탈퇴',
-      '정말 탈퇴하시겠어요? 이 작업은 되돌릴 수 없습니다.',
-      [
-        { text: '취소', style: 'cancel' },
-        {
-          text: '탈퇴',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteMyAccount();
-              await logout();
-              navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
-            } catch (e: any) {
-              Alert.alert('오류', e?.response?.data?.message ?? e?.message ?? '회원 탈퇴에 실패했습니다.');
-            }
-          },
+    Alert.alert('회원 탈퇴', '정말 탈퇴하시겠어요? 이 작업은 되돌릴 수 없습니다.', [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '탈퇴',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteMyAccount();
+            await logout();
+            navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+          } catch (e: any) {
+            Alert.alert(
+              '오류',
+              e?.response?.data?.message ?? e?.message ?? '회원 탈퇴에 실패했습니다.',
+            );
+          }
         },
-      ],
-    );
+      },
+    ]);
   }, [logout, navigation]);
 
   return (
@@ -265,7 +290,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
         <View className="flex-row items-center gap-2 border-b border-gray-200 bg-[#f5f5f9] px-4 py-3">
           <Pressable
             onPress={() => navigation.goBack()}
-            className="h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white active:opacity-80"
+            className="items-center justify-center w-10 h-10 bg-white border border-gray-200 rounded-full active:opacity-80"
             hitSlop={8}
           >
             <Ionicons name="chevron-back" size={22} color="#f97316" />
@@ -277,15 +302,12 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
           contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 40 }}
           keyboardShouldPersistTaps="handled"
         >
-          <View className="items-center rounded-2xl border border-gray-200 bg-white px-4 py-6">
+          <View className="items-center px-4 py-6 bg-white border border-gray-200 rounded-2xl">
             <View className="relative">
               {avatarUri ? (
-                <Image
-                  source={{ uri: avatarUri }}
-                  className="h-24 w-24 rounded-full bg-gray-100"
-                />
+                <Image source={{ uri: avatarUri }} className="w-24 h-24 bg-gray-100 rounded-full" />
               ) : (
-                <View className="h-24 w-24 items-center justify-center rounded-full bg-gray-100">
+                <View className="items-center justify-center w-24 h-24 bg-gray-100 rounded-full">
                   <Ionicons name="person" size={42} color="#9ca3af" />
                 </View>
               )}
@@ -297,7 +319,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
               <Pressable
                 onPress={pickFromGallery}
                 disabled={pickingImage}
-                className="absolute -bottom-1 -right-1 h-9 w-9 items-center justify-center rounded-full border-2 border-white bg-gray-800 active:opacity-90 disabled:opacity-50"
+                className="absolute items-center justify-center bg-gray-800 border-2 border-white rounded-full -bottom-1 -right-1 h-9 w-9 active:opacity-90 disabled:opacity-50"
               >
                 {pickingImage ? (
                   <ActivityIndicator color="#fff" size="small" />
@@ -316,17 +338,17 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
             <Pressable onPress={handleDeleteProfileImage} className="mt-2 active:opacity-70">
               <Text className="text-xs font-semibold text-gray-500">기본 이미지로 변경</Text>
             </Pressable>
-            <Text className="mt-2 text-center text-xs text-gray-500">
+            <Text className="mt-2 text-xs text-center text-gray-500">
               사진은 다른 유저에게 프로필에 표시됩니다.
             </Text>
           </View>
 
-          <View className="mt-4 rounded-2xl border border-gray-200 bg-white px-4 py-2">
-            <Text className="py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+          <View className="px-4 py-2 mt-4 bg-white border border-gray-200 rounded-2xl">
+            <Text className="py-3 text-xs font-semibold tracking-wide text-gray-400 uppercase">
               기본 정보
             </Text>
 
-            <View className="border-b border-gray-100 py-3">
+            <View className="py-3 border-b border-gray-100">
               <Text className="mb-1.5 text-xs text-gray-500">닉네임</Text>
               <TextInput
                 value={nickname}
@@ -337,10 +359,12 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
               />
             </View>
 
-            <View className="border-b border-gray-100 py-3">
+            <View className="py-3 border-b border-gray-100">
               <Text className="mb-1.5 text-xs text-gray-500">이메일</Text>
               <Text className="text-base text-gray-600">{email}</Text>
-              <Text className="mt-1 text-[11px] text-gray-400">로그인 계정 이메일은 변경할 수 없습니다.</Text>
+              <Text className="mt-1 text-[11px] text-gray-400">
+                로그인 계정 이메일은 변경할 수 없습니다.
+              </Text>
             </View>
 
             <View className="py-3">
@@ -351,13 +375,15 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
                 placeholder="다른 사람에게 보여줄 짧은 소개를 입력해 보세요."
                 placeholderTextColor="#9ca3af"
                 multiline
-                numberOfLines={3}
-                className="min-h-[72px] text-base text-gray-900"
-                textAlignVertical="top"
+                onContentSizeChange={e =>
+                  setBioHeight(Math.max(40, e.nativeEvent.contentSize.height))
+                }
+                style={{ height: bioHeight, textAlignVertical: 'top' }}
+                className="text-base text-gray-900"
               />
             </View>
 
-            <View className="border-t border-gray-100 py-3">
+            <View className="py-3 border-t border-gray-100">
               <Text className="mb-1.5 text-xs text-gray-500">전화번호</Text>
               <View className="flex-row items-center gap-2">
                 <TextInput
@@ -376,7 +402,10 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
                   className="flex-1 text-base font-semibold text-gray-900"
                 />
                 {phoneVerified || (!!originalPhone && phone.trim() === originalPhone) ? (
-                  <View className="flex-row items-center gap-1 px-3 py-1.5 rounded-lg" style={{ backgroundColor: '#dcfce7' }}>
+                  <View
+                    className="flex-row items-center gap-1 px-3 py-1.5 rounded-lg"
+                    style={{ backgroundColor: '#dcfce7' }}
+                  >
                     <Ionicons name="checkmark-circle" size={14} color="#16a34a" />
                     <Text className="text-xs font-semibold text-green-700">인증완료</Text>
                   </View>
@@ -399,7 +428,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
               </View>
 
               {phoneCodeSent && !phoneVerified && (
-                <View className="mt-2 flex-row items-center gap-2">
+                <View className="flex-row items-center gap-2 mt-2">
                   <TextInput
                     value={phoneCode}
                     onChangeText={setPhoneCode}
@@ -407,7 +436,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
                     placeholderTextColor="#9ca3af"
                     keyboardType="number-pad"
                     maxLength={6}
-                    className="flex-1 text-base text-gray-900 border-b border-gray-200 py-1"
+                    className="flex-1 py-1 text-base text-gray-900 border-b border-gray-200"
                   />
                   {codeTimer > 0 && (
                     <Text className="text-xs text-gray-400 min-w-[36px] text-right">
@@ -428,21 +457,28 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
                   </Pressable>
                 </View>
               )}
-              {phone.trim() && phone.trim() !== originalPhone && !phoneVerified && !phoneCodeSent && (
-                <Text className="mt-1 text-[11px] text-orange-500">전화번호를 변경하려면 인증이 필요합니다.</Text>
-              )}
+              {phone.trim() &&
+                phone.trim() !== originalPhone &&
+                !phoneVerified &&
+                !phoneCodeSent && (
+                  <Text className="mt-1 text-[11px] text-orange-500">
+                    전화번호를 변경하려면 인증이 필요합니다.
+                  </Text>
+                )}
             </View>
           </View>
 
-          <View className="mt-4 rounded-2xl border border-gray-200 bg-white px-4 py-2">
-            <Text className="py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+          <View className="px-4 py-2 mt-4 bg-white border border-gray-200 rounded-2xl">
+            <Text className="py-3 text-xs font-semibold tracking-wide text-gray-400 uppercase">
               공개 · 알림
             </Text>
 
             <View className="flex-row items-center justify-between border-b border-gray-100 py-3.5">
               <View className="flex-1 pr-3">
                 <Text className="text-base font-semibold text-gray-900">공개 프로필</Text>
-                <Text className="mt-0.5 text-xs text-gray-500">꺼두면 다른 유저에게 프로필이 노출되지 않습니다.</Text>
+                <Text className="mt-0.5 text-xs text-gray-500">
+                  꺼두면 다른 유저에게 프로필이 노출되지 않습니다.
+                </Text>
               </View>
               <Switch
                 value={publicProfile}
@@ -469,7 +505,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
           <Pressable
             onPress={handleSave}
             disabled={saving || loadingProfile}
-            className="mt-6 items-center rounded-2xl bg-gray-900 py-4 active:opacity-90 disabled:opacity-50"
+            className="items-center py-4 mt-6 bg-gray-900 rounded-2xl active:opacity-90 disabled:opacity-50"
           >
             {saving ? (
               <ActivityIndicator color="#fff" />
@@ -480,7 +516,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
 
           <Pressable
             onPress={handleDeleteAccount}
-            className="mt-3 items-center rounded-2xl border border-rose-200 bg-white py-4 active:opacity-90"
+            className="items-center py-4 mt-3 bg-white border rounded-2xl border-rose-200 active:opacity-90"
           >
             <Text className="text-base font-semibold text-rose-600">회원 탈퇴</Text>
           </Pressable>
