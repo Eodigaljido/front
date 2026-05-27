@@ -69,7 +69,7 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'create-outline',
       iconColor: '#2563eb',
       iconBg: '#dbeafe',
-      onPress: () => navigation.getParent()?.navigate('RouteCreate'),
+      onPress: () => navigation.navigate('AllRouteCreate'),
     },
     {
       id: 'share-route',
@@ -77,7 +77,7 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'paper-plane-outline',
       iconColor: '#ea580c',
       iconBg: '#ffedd5',
-      onPress: () => navigation.getParent()?.navigate('SharedRouteStack'),
+      onPress: () => navigation.navigate('AllSharedRoute'),
     },
     {
       id: 'saved-route',
@@ -85,7 +85,7 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'bookmark-outline',
       iconColor: '#16a34a',
       iconBg: '#dcfce7',
-      onPress: () => navigation.getParent()?.navigate('MyRouteStack'),
+      onPress: () => navigation.navigate('AllMyRoute'),
     },
     {
       id: 'near-popular',
@@ -93,7 +93,7 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'location-outline',
       iconColor: '#9333ea',
       iconBg: '#f3e8ff',
-      onPress: () => navigation.getParent()?.navigate('SharedRouteStack', { openAsPopular: true }),
+      onPress: () => navigation.navigate('AllSharedRoute', { openAsPopular: true }),
     },
   ];
 
@@ -132,7 +132,10 @@ export default function AllScreen(): React.JSX.Element {
       setFriendCode(code);
       return code;
     } catch (e: any) {
-      Alert.alert('오류', e?.response?.data?.message ?? e?.message ?? '친구 코드를 불러오지 못했습니다.');
+      Alert.alert(
+        '오류',
+        e?.response?.data?.message ?? e?.message ?? '친구 코드를 불러오지 못했습니다.',
+      );
       return null;
     } finally {
       setFriendCodeLoading(false);
