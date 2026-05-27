@@ -15,6 +15,7 @@ export type MenuItem = {
   icon: React.ComponentProps<typeof Ionicons>['name'];
   iconColor: string;
   iconBg: string;
+  badge?: number;
   onPress: () => void;
 };
 
@@ -48,6 +49,11 @@ export default function MenuSection({ label, items }: Props) {
               <Ionicons name={item.icon} size={16} color={item.iconColor} />
             </View>
             <Text className="flex-1 text-[15px] font-semibold text-gray-900">{item.title}</Text>
+            {item.badge != null && item.badge > 0 && (
+              <View className="mr-2 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5">
+                <Text className="text-xs font-bold text-white">{item.badge > 99 ? '99+' : item.badge}</Text>
+              </View>
+            )}
             <Ionicons name="chevron-forward" size={16} color="#d1d5db" />
           </Pressable>
         ))}
