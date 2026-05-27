@@ -1,4 +1,5 @@
 import { useNavigation } from "@react-navigation/native";
+import { safeGoBack } from "../../navigation/rootNavigation";
 import { ChevronLeft } from "lucide-react-native";
 import { TouchableOpacity, View, Text } from "react-native";
 
@@ -7,7 +8,7 @@ export const BackButton = () => {
 
   return (
     <TouchableOpacity
-      onPress={() => navigation.goBack()}
+      onPress={() => safeGoBack(navigation)}
       accessibilityRole="button"
       accessibilityLabel="뒤로 가기"
     >

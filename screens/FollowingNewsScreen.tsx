@@ -4,6 +4,7 @@ import { View, Text, Pressable, FlatList } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { fetchFollowingNews, type FollowingNewsItem } from "../api/courses";
+import { safeGoBack } from "../navigation/rootNavigation";
 
 export default function FollowingNewsScreen(): React.JSX.Element {
   const navigation = useNavigation<any>();
@@ -24,7 +25,7 @@ export default function FollowingNewsScreen(): React.JSX.Element {
   return (
     <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={["top"]}>
       <View className="px-4 py-3 flex-row items-center">
-        <Pressable onPress={() => navigation.goBack()} className="mr-2 p-1">
+        <Pressable onPress={() => safeGoBack(navigation)} className="mr-2 p-1">
           <Ionicons name="chevron-back" size={24} color="#111827" />
         </Pressable>
         <Text className="text-lg font-semibold text-gray-900">친구 소식</Text>

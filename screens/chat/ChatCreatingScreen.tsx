@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NavigationProp, useNavigation } from "@react-navigation/native";
 import { RootStackParamList } from "@/App";
+import { safeGoBack } from "@/navigation/rootNavigation";
 import {
   X,
   ChevronLeft,
@@ -177,7 +178,7 @@ export default function ChatCreatingScreen(): React.JSX.Element {
     setIsCreating(true);
     try {
       await createChatRoom(accessToken, memberUuids, trimedName, localImageUri);
-      navigation.goBack();
+      safeGoBack(navigation);
     } catch {
       Alert.alert("오류", "채팅방 생성에 실패했습니다.");
     } finally {
@@ -268,7 +269,7 @@ export default function ChatCreatingScreen(): React.JSX.Element {
           }}
         >
           <TouchableOpacity
-            onPress={() => navigation.goBack()}
+            onPress={() => safeGoBack(navigation)}
             style={{ padding: 8 }}
           >
             <X color="#111827" size={22} />
