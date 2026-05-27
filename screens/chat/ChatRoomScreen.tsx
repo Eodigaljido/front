@@ -30,6 +30,7 @@ import { useTypingIndicator } from "@/hooks/useTypingIndicator";
 import { RootStackParamList } from "@/App";
 import { StatusBar } from "expo-status-bar";
 import { MessageInput } from "@/stories/chat/MessageInput";
+import React from "react";
 
 type ChatRoomRouteProp = RouteProp<RootStackParamList, "ChatRoomScreen">;
 
@@ -116,7 +117,6 @@ export const ChatRoomScreen = () => {
     },
     [accessToken, roomUuid],
   );
-
 
   // 채팅방 입장 시 읽음 처리
   useEffect(() => {
@@ -283,15 +283,27 @@ export const ChatRoomScreen = () => {
             return (
               <BubbleChat
                 key={msg.uuid}
-                text={msg.messageType === "IMAGE" ? undefined : (msg.content ?? undefined)}
-                imageUrl={msg.messageType === "IMAGE" ? msg.attachmentUrl : undefined}
+                text={
+                  msg.messageType === "IMAGE"
+                    ? undefined
+                    : (msg.content ?? undefined)
+                }
+                imageUrl={
+                  msg.messageType === "IMAGE" ? msg.attachmentUrl : undefined
+                }
                 isMine={isMine}
                 sentAt={new Date(msg.createdAt)}
                 userName={msg.senderNickname}
-                profileImageUrl={!isMine ? msg.senderProfileImageUrl : undefined}
+                profileImageUrl={
+                  !isMine ? msg.senderProfileImageUrl : undefined
+                }
                 showSender={!isMine && memberCount >= 3}
                 isEdited={!!msg.editedAt}
-                onLongPress={isMine && !msg.uuid.startsWith("pending-") ? () => setSelectedMessage(msg) : undefined}
+                onLongPress={
+                  isMine && !msg.uuid.startsWith("pending-")
+                    ? () => setSelectedMessage(msg)
+                    : undefined
+                }
                 onImageLoad={
                   msg.uuid === scrollOnImageLoadRef.current
                     ? () => {
