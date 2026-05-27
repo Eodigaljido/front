@@ -5,6 +5,11 @@ import {
   resolveCourseRegionLabel,
   sanitizeCourseCategory,
 } from "../utils/inferCourseRegionLabel";
+import { pickAuthorProfilePublicFromRaw } from "../utils/authorProfileVisibility";
+import { findPersonalRouteIdForForkSource } from "../data/userSavedRoute";
+import { isLocalThumbnailUri, isRemoteThumbnailUri } from "../utils/courseThumbnailUri";
+import { sameCourseId } from "../utils/sameCourseId";
+import { useAuthStore } from "../store/authStore";
 
 type ApiCourseLike = {
   id?: string | number;
@@ -130,14 +135,14 @@ function asArray<T>(value: T[] | null | undefined): T[] {
   return Array.isArray(value) ? value : [];
 }
 
-function pickTagsFromApiRaw(raw: ApiCourseLike | Record<string, unknown>): string[] {
+function pickTagsFromApiRaw(
+  raw: ApiCourseLike | Record<string, unknown>,
+): string[] {
   if (!raw || typeof raw !== "object") return [];
   const anyRaw = raw as Record<string, unknown>;
   const collect = (arr: unknown): string[] =>
     Array.isArray(arr)
-      ? arr
-          .map((t) => String(t ?? "").trim())
-          .filter((s) => s.length > 0)
+      ? arr.map((t) => String(t ?? "").trim()).filter((s) => s.length > 0)
       : [];
   const direct = anyRaw.tags;
   if (Array.isArray(direct)) {
@@ -157,8 +162,24 @@ function pickTagsFromApiRaw(raw: ApiCourseLike | Record<string, unknown>): strin
   return [];
 }
 
+/** API·스냅샷 — 로그인 사용자가 이 코스를 저장했는지 */
+export function pickCourseSavedByMe(
+  raw: ApiCourseLike | CourseItem | Record<string, unknown> | null | undefined,
+): boolean {
+  if (!raw || typeof raw !== "object") return false;
+  const anyRaw = raw as Record<string, unknown>;
+  if (anyRaw.savedByMe === true) return true;
+  if (anyRaw.isSaved === true) return true;
+  if (anyRaw.saved === true) return true;
+  if (anyRaw.bookmarked === true) return true;
+  if (anyRaw.savedByCurrentUser === true) return true;
+  return false;
+}
+
 /** API·스냅샷 혼합 — 공유 코스 저장 횟수 */
-export function pickCourseSaveCount(raw: ApiCourseLike | CourseItem | null | undefined): number {
+export function pickCourseSaveCount(
+  raw: ApiCourseLike | CourseItem | null | undefined,
+): number {
   if (!raw || typeof raw !== "object") return 0;
   const n = Number(
     (raw as ApiCourseLike).saveCount ??
@@ -192,16 +213,16 @@ export function normalizeCourseList(
         ? c.routeSteps
         : [{ id: `fb-${idx}`, name: "경유지", stayMinutes: 30 }];
     const tags = Array.isArray(c.tags)
-      ? c.tags.map((t) => String(t).trim()).filter(Boolean).slice(0, 2)
+      ? c.tags
+          .map((t) => String(t).trim())
+          .filter(Boolean)
+          .slice(0, 2)
       : [];
-    const metaBad = !c.meta || String(c.meta).trim() === "" || c.meta === "API 연동 코스";
+    const metaBad =
+      !c.meta || String(c.meta).trim() === "" || c.meta === "API 연동 코스";
     const catSan = sanitizeCourseCategory(c.category);
     const meta =
-      tags.length > 0
-        ? tags.join(" · ")
-        : metaBad
-          ? catSan || "코스"
-          : c.meta;
+      tags.length > 0 ? tags.join(" · ") : metaBad ? catSan || "코스" : c.meta;
     const stepNames = steps
       .map((s) => String(s?.name ?? "").trim())
       .filter(Boolean);
@@ -257,7 +278,9 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
     `api-${idx}`;
 
   const routeStepSource =
-    asArray(raw.routeSteps).length > 0 ? asArray(raw.routeSteps) : asArray(raw.steps);
+    asArray(raw.routeSteps).length > 0
+      ? asArray(raw.routeSteps)
+      : asArray(raw.steps);
   const fromRouteSteps = routeStepSource.filter(Boolean).map((s, sIdx) => {
     const sAny = s as {
       lat?: number;
@@ -272,9 +295,13 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
       name: String(s.name ?? s.title ?? `경유지 ${sIdx + 1}`),
       stayMinutes: Number(s.stayMinutes ?? 30),
       lat:
-        latRaw != null && !Number.isNaN(Number(latRaw)) ? Number(latRaw) : undefined,
+        latRaw != null && !Number.isNaN(Number(latRaw))
+          ? Number(latRaw)
+          : undefined,
       lng:
-        lngRaw != null && !Number.isNaN(Number(lngRaw)) ? Number(lngRaw) : undefined,
+        lngRaw != null && !Number.isNaN(Number(lngRaw))
+          ? Number(lngRaw)
+          : undefined,
     };
   });
 
@@ -287,17 +314,28 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
       id: String(s.id ?? `${rootId}-s-${s.sequence ?? sIdx}`),
       name: String(s.title ?? s.name ?? `경유지 ${sIdx + 1}`),
       stayMinutes: Number(s.stayMinutes ?? 0),
-      lat: s.lat != null && !Number.isNaN(Number(s.lat)) ? Number(s.lat) : undefined,
-      lng: s.lng != null && !Number.isNaN(Number(s.lng)) ? Number(s.lng) : undefined,
+      lat:
+        s.lat != null && !Number.isNaN(Number(s.lat))
+          ? Number(s.lat)
+          : undefined,
+      lng:
+        s.lng != null && !Number.isNaN(Number(s.lng))
+          ? Number(s.lng)
+          : undefined,
     }));
   }
 
   const legs = (
-    asArray(raw.routeLegs).length > 0 ? asArray(raw.routeLegs) : asArray(raw.legs)
+    asArray(raw.routeLegs).length > 0
+      ? asArray(raw.routeLegs)
+      : asArray(raw.legs)
   ).map((l, lIdx) => ({
     id: String(l.id ?? `${rootId}-l-${lIdx}`),
     mode:
-      l.mode === "walk" || l.mode === "car" || l.mode === "bike" || l.mode === "transit"
+      l.mode === "walk" ||
+      l.mode === "car" ||
+      l.mode === "bike" ||
+      l.mode === "transit"
         ? l.mode
         : "walk",
     minutes: Math.max(1, Number(l.minutes ?? 10)),
@@ -305,13 +343,24 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
   }));
 
   const sortedStops = Array.isArray(raw.stops)
-    ? [...raw.stops].sort((a, b) => Number(a?.sequence ?? 0) - Number(b?.sequence ?? 0))
+    ? [...raw.stops].sort(
+        (a, b) => Number(a?.sequence ?? 0) - Number(b?.sequence ?? 0),
+      )
     : [];
-  const startByKind = sortedStops.find((s) => String(s?.kind ?? "").toLowerCase() === "start");
-  const endByKind = sortedStops.find((s) => String(s?.kind ?? "").toLowerCase() === "end");
+  const startByKind = sortedStops.find(
+    (s) => String(s?.kind ?? "").toLowerCase() === "start",
+  );
+  const endByKind = sortedStops.find(
+    (s) => String(s?.kind ?? "").toLowerCase() === "end",
+  );
 
-  const legMinutesSum = legs.reduce((acc, l) => acc + (Number.isFinite(l.minutes) ? l.minutes : 0), 0);
-  const overallFromFields = Number(raw.overallDurationMinutes ?? raw.durationMinutes ?? NaN);
+  const legMinutesSum = legs.reduce(
+    (acc, l) => acc + (Number.isFinite(l.minutes) ? l.minutes : 0),
+    0,
+  );
+  const overallFromFields = Number(
+    raw.overallDurationMinutes ?? raw.durationMinutes ?? NaN,
+  );
 
   const depFromKind = startByKind
     ? String(startByKind.title ?? startByKind.name ?? "").trim()
@@ -367,7 +416,10 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
     ),
     rating: Number(raw.rating ?? 4.5),
     reviewCount: Number(raw.reviewCount ?? 0),
-    routeSteps: steps.length > 0 ? steps : [{ id: `s-${idx}-0`, name: "경유지", stayMinutes: 30 }],
+    routeSteps:
+      steps.length > 0
+        ? steps
+        : [{ id: `s-${idx}-0`, name: "경유지", stayMinutes: 30 }],
     routeLegs: legs,
     reviews: asArray(raw.reviews).map((r, rIdx) => ({
       id: String(r.id ?? `${rootId}-r-${rIdx}`),
@@ -377,8 +429,49 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
       date: r.date ?? new Date().toISOString().slice(0, 10),
     })),
     authorUuid: raw.authorUuid != null ? String(raw.authorUuid) : undefined,
-    authorUserId: raw.authorUserId != null ? String(raw.authorUserId) : undefined,
+    authorUserId:
+      raw.authorUserId != null ? String(raw.authorUserId) : undefined,
+    authorProfilePublic: pickAuthorProfilePublicFromRaw(
+      raw as Record<string, unknown>,
+    ),
+    savedByMe: pickCourseSavedByMe(raw),
   };
+}
+
+/** 내가 저장한 공유 코스 id 목록 — 홈·공유 탭 북마크 동기화 */
+export async function fetchMySavedCourseIds(): Promise<string[]> {
+  const myUuid = String(useAuthStore.getState().user?.uuid ?? "").trim();
+  const paramVariants: Record<string, string | number>[] = [
+    { sort: "latest", page: 0, size: 200 },
+  ];
+  if (myUuid) {
+    paramVariants.push({
+      userUuid: myUuid,
+      sort: "latest",
+      page: 0,
+      size: 200,
+    });
+  }
+
+  for (const params of paramVariants) {
+    try {
+      const res = await instance.get("/api/courses/saved", { params });
+      const arr = pickArrayPayload(res.data);
+      const ids = arr
+        .map((c) =>
+          normalizeServerCourseId(
+            (c as ApiCourseLike).id ??
+              (c as ApiCourseLike).uuid ??
+              (c as ApiCourseLike).courseId,
+          ),
+        )
+        .filter((id): id is string => Boolean(id));
+      if (ids.length > 0 || arr.length === 0) return [...new Set(ids)];
+    } catch {
+      // 다음 파라미터 조합 시도
+    }
+  }
+  return [];
 }
 
 async function fetchCourseDetailFromCandidates(
@@ -441,13 +534,18 @@ export async function fetchHomeCourses(limit = 6): Promise<CourseItem[]> {
 }
 
 /** 홈·인기 섹션 — 저장 수 기준 상위 코스 */
-export async function fetchPopularCoursesBySaves(limit = 6): Promise<CourseItem[]> {
+export async function fetchPopularCoursesBySaves(
+  limit = 6,
+): Promise<CourseItem[]> {
   const size = Math.max(limit, 20);
-  const fromPublic = await fetchCoursesFromCandidates(CANDIDATE_ENDPOINTS.shared, {
-    tab: "popular",
-    sort: "popular",
-    size,
-  });
+  const fromPublic = await fetchCoursesFromCandidates(
+    CANDIDATE_ENDPOINTS.shared,
+    {
+      tab: "popular",
+      sort: "popular",
+      size,
+    },
+  );
   const list =
     fromPublic.length > 0
       ? fromPublic
@@ -481,7 +579,9 @@ export async function fetchSharedCourseDetail(
 export async function fetchMyCourseDetail(
   courseId: string,
 ): Promise<CourseItem | null> {
-  return fetchCourseDetailFromCandidates(DETAIL_CANDIDATE_ENDPOINTS.my(courseId));
+  return fetchCourseDetailFromCandidates(
+    DETAIL_CANDIDATE_ENDPOINTS.my(courseId),
+  );
 }
 
 /** 내 코스 편집 API 원본 — 공동 루트 여부 등 */
@@ -520,18 +620,119 @@ export async function unsaveSharedCourse(courseId: string): Promise<boolean> {
 }
 
 /** Swagger: POST /api/courses/{courseId}/copy — 공유 코스를 내 루트로 복사 */
-export async function copySharedCourseToMy(courseId: string): Promise<string | null> {
+export async function copySharedCourseToMy(
+  courseId: string,
+): Promise<string | null> {
   const id = String(courseId ?? "").trim();
   if (!id) return null;
   try {
-    const res = await instance.post(`/api/courses/${encodeURIComponent(id)}/copy`);
+    const res = await instance.post(
+      `/api/courses/${encodeURIComponent(id)}/copy`,
+    );
     return extractMyCourseUuidFromResponse(res.data);
   } catch {
     return null;
   }
 }
 
-export async function saveSharedCourse(courseId: string): Promise<SaveSharedCourseResult> {
+/** 목록 fallback(「경유지」 1개)만 있는 경우 편집·안내에 쓸 실제 경유 데이터가 없음 */
+export function hasMeaningfulRouteSteps(
+  course: CourseItem | null | undefined,
+): boolean {
+  const steps = course?.routeSteps;
+  if (!Array.isArray(steps) || steps.length === 0) return false;
+  if (steps.length >= 2) return true;
+  const s = steps[0];
+  if (s?.lat != null && s?.lng != null) return true;
+  const name = String(s?.name ?? "").trim();
+  return name.length > 0 && name !== "경유지";
+}
+
+/** 내 코스 상세 → 없으면 공유 코스 상세 (저장한 타인 루트 편집·안내용) */
+export async function resolveCourseDetailForRoute(
+  courseId: string,
+): Promise<{ course: CourseItem | null; source: "my" | "shared" | "none" }> {
+  const id = String(courseId ?? "").trim();
+  if (!id) return { course: null, source: "none" };
+
+  const my = await fetchMyCourseDetail(id);
+  if (hasMeaningfulRouteSteps(my)) {
+    return { course: my, source: "my" };
+  }
+
+  const shared = await fetchSharedCourseDetail(id);
+  if (hasMeaningfulRouteSteps(shared)) {
+    return { course: shared, source: "shared" };
+  }
+
+  const fallback = my ?? shared;
+  if (!fallback) return { course: null, source: "none" };
+  return {
+    course: fallback,
+    source: shared && fallback === shared ? "shared" : "my",
+  };
+}
+
+/**
+ * fork·수정 저장 시 쓸 개인 루트 id
+ * (이미 내 코스이면 copy 없이 해당 id로 PATCH)
+ */
+export async function resolvePersonalRouteIdForForkSave(
+  forkSourceId: string,
+  userSavedRoutes: Array<{ id: string; forkedFromSharedId?: string | null }>,
+  serverBackedId?: string | null,
+): Promise<string | null> {
+  const forkId = String(forkSourceId ?? "").trim();
+  if (!forkId) return null;
+
+  const fromMeta = findPersonalRouteIdForForkSource(forkId, userSavedRoutes);
+  if (fromMeta) return fromMeta;
+
+  const serverId = normalizeServerCourseId(serverBackedId);
+  if (serverId && !sameCourseId(serverId, forkId)) return serverId;
+
+  const my = await fetchMyCourseDetail(forkId);
+  if (hasMeaningfulRouteSteps(my)) return forkId;
+
+  return null;
+}
+
+/** 공유(저장) 코스를 복사한 뒤 편집 내용을 반영해 개인 루트 id 반환 */
+export async function forkSharedCourseToPersonalRoute(
+  sharedCourseId: string,
+  payload: UpsertMyRoutePayload,
+  existingPersonalId?: string | null,
+): Promise<string | null> {
+  const sourceId = String(sharedCourseId ?? "").trim();
+  if (!sourceId) return createMyRoute(payload);
+
+  const existing = normalizeServerCourseId(existingPersonalId);
+  if (existing && !sameCourseId(existing, sourceId)) {
+    const ok = await updateMyRoute(existing, payload);
+    return ok ? existing : null;
+  }
+
+  const owned = await fetchMyCourseDetail(sourceId);
+  if (hasMeaningfulRouteSteps(owned)) {
+    const ok = await updateMyRoute(sourceId, payload);
+    return ok ? sourceId : null;
+  }
+
+  const copiedId = await copySharedCourseToMy(sourceId);
+  if (copiedId && !sameCourseId(copiedId, sourceId)) {
+    const ok = await updateMyRoute(copiedId, payload);
+    return ok ? copiedId : null;
+  }
+
+  const updated = await updateMyRoute(sourceId, payload);
+  if (updated) return sourceId;
+
+  return createMyRoute(payload);
+}
+
+export async function saveSharedCourse(
+  courseId: string,
+): Promise<SaveSharedCourseResult> {
   const id = String(courseId ?? "").trim();
   if (!id) return { ok: false, reason: "OTHER" };
   const encoded = encodeURIComponent(id);
@@ -551,7 +752,12 @@ export async function saveSharedCourse(courseId: string): Promise<SaveSharedCour
       if (status === 404) {
         saw404 = true;
         if (__DEV__) {
-          console.warn("[saveSharedCourse]", endpoint, status, e?.response?.data);
+          console.warn(
+            "[saveSharedCourse]",
+            endpoint,
+            status,
+            e?.response?.data,
+          );
         }
         continue;
       }
@@ -633,7 +839,9 @@ export async function updateMyCourseStatus(
 }
 
 /** Swagger: POST /api/courses/my/{courseId}/share — 내 루트 공유 활성화 (204) */
-export async function enableMyCourseSharing(courseId: string): Promise<boolean> {
+export async function enableMyCourseSharing(
+  courseId: string,
+): Promise<boolean> {
   const id = normalizeServerCourseId(courseId);
   if (!id) return false;
   try {
@@ -656,7 +864,9 @@ export async function enableMyCourseSharing(courseId: string): Promise<boolean> 
 }
 
 /** Swagger: DELETE /api/courses/my/{courseId}/share — 내 루트 공유 비활성화 (204) */
-export async function disableMyCourseSharing(courseId: string): Promise<boolean> {
+export async function disableMyCourseSharing(
+  courseId: string,
+): Promise<boolean> {
   const id = normalizeServerCourseId(courseId);
   if (!id) return false;
   try {
@@ -681,7 +891,9 @@ export async function disableMyCourseSharing(courseId: string): Promise<boolean>
  * Swagger 공개 플로우: status → PUBLISHED 후 share 활성화
  * (공유 코스 탭 노출 + 친구 소식)
  */
-export async function publishMyCourseToPublic(courseId: string): Promise<boolean> {
+export async function publishMyCourseToPublic(
+  courseId: string,
+): Promise<boolean> {
   const id = normalizeServerCourseId(courseId);
   if (!id) return false;
   await updateMyCourseStatus(id, "PUBLISHED");
@@ -689,7 +901,9 @@ export async function publishMyCourseToPublic(courseId: string): Promise<boolean
 }
 
 /** 비공개: share 해제 후 DRAFT */
-export async function unpublishMyCourseFromPublic(courseId: string): Promise<boolean> {
+export async function unpublishMyCourseFromPublic(
+  courseId: string,
+): Promise<boolean> {
   const id = normalizeServerCourseId(courseId);
   if (!id) return false;
   const ok = await disableMyCourseSharing(id);
@@ -722,7 +936,12 @@ export type UpsertMyRoutePayload = {
 };
 
 function extractMyCourseUuidFromResponse(data: any): string | null {
-  const d = data?.data ?? data?.result ?? data;
+  if (data == null) return null;
+  if (typeof data === "string" || typeof data === "number") {
+    const s = String(data).trim();
+    return s.length ? s : null;
+  }
+  const d = data?.data ?? data?.result ?? data?.course ?? data;
   if (!d || typeof d !== "object") return null;
   const v = d.id ?? d.uuid ?? d.courseId;
   if (v == null) return null;
@@ -730,12 +949,93 @@ function extractMyCourseUuidFromResponse(data: any): string | null {
   return s.length ? s : null;
 }
 
+/** API 전송용 — 과도하게 긴 길안내 문자열 제거(요청 실패 방지) */
+function trimLegTextForApi(value: string | undefined, max = 4000): string | undefined {
+  const s = String(value ?? "").trim();
+  if (!s) return undefined;
+  return s.length > max ? `${s.slice(0, max)}…` : s;
+}
+
+/** 좌표 없는 초안 저장 시 legs 제거 — 서버 500 방지 */
+export function sanitizeUpsertMyRoutePayload(
+  payload: UpsertMyRoutePayload,
+): UpsertMyRoutePayload {
+  const stops = payload.stops.map((s) => ({
+    id: s.id,
+    kind: s.kind,
+    title: String(s.title ?? "").trim() || "경유지",
+    timeLine: String(s.timeLine ?? "").trim() || "",
+    ...(s.lat != null &&
+    s.lng != null &&
+    !Number.isNaN(Number(s.lat)) &&
+    !Number.isNaN(Number(s.lng))
+      ? { lat: Number(s.lat), lng: Number(s.lng) }
+      : {}),
+  }));
+  const hasCoords = stops.some(
+    (s) => s.lat != null && s.lng != null,
+  );
+  const legs = hasCoords
+    ? payload.legs.map((l) => ({
+        id: l.id,
+        mode:
+          l.mode === "walk" ||
+          l.mode === "car" ||
+          l.mode === "bike" ||
+          l.mode === "transit"
+            ? l.mode
+            : "walk",
+        minutes: Math.max(1, Number(l.minutes ?? 10)),
+        ...(l.transitType ? { transitType: l.transitType } : {}),
+        ...(trimLegTextForApi(l.directionsSummary)
+          ? { directionsSummary: trimLegTextForApi(l.directionsSummary) }
+          : {}),
+        ...(trimLegTextForApi(l.directionsDetail)
+          ? { directionsDetail: trimLegTextForApi(l.directionsDetail) }
+          : {}),
+        ...(l.distanceMeters != null
+          ? { distanceMeters: l.distanceMeters }
+          : {}),
+      }))
+    : [];
+  const tags = (payload.tags ?? [])
+    .map((t) => String(t).trim())
+    .filter(Boolean)
+    .slice(0, 2);
+  return {
+    title: String(payload.title ?? "").trim() || "새 루트",
+    collaborative: payload.collaborative === true,
+    ...(tags.length > 0 ? { tags } : {}),
+    stops,
+    legs,
+  };
+}
+
 /** Swagger: POST /api/courses/my → 201 + `MyCourseDetailResponse`(uuid). 실패 시 null */
-export async function createMyRoute(payload: UpsertMyRoutePayload): Promise<string | null> {
+export async function createMyRoute(
+  payload: UpsertMyRoutePayload,
+): Promise<string | null> {
+  const body = sanitizeUpsertMyRoutePayload(payload);
   try {
-    const res = await instance.post("/api/courses/my", payload);
-    return extractMyCourseUuidFromResponse(res.data);
-  } catch {
+    const res = await instance.post("/api/courses/my", body);
+    const id = extractMyCourseUuidFromResponse(res.data);
+    if (id) return id;
+    if (res.status >= 200 && res.status < 300) {
+      const list = await fetchMyCourses();
+      const title = String(body.title ?? "").trim();
+      const hit = list.find((c) => String(c.title ?? "").trim() === title);
+      return hit?.id ?? null;
+    }
+    return null;
+  } catch (e: any) {
+    if (__DEV__) {
+      console.warn(
+        "[createMyRoute]",
+        e?.response?.status,
+        e?.response?.data,
+        e?.message,
+      );
+    }
     return null;
   }
 }
@@ -744,10 +1044,22 @@ export async function updateMyRoute(
   courseId: string,
   payload: UpsertMyRoutePayload,
 ): Promise<boolean> {
+  const id = normalizeServerCourseId(courseId);
+  if (!id) return false;
   try {
-    await instance.patch(`/api/courses/my/${courseId}`, payload);
+    const body = sanitizeUpsertMyRoutePayload(payload);
+    await instance.patch(`/api/courses/my/${encodeURIComponent(id)}`, body);
     return true;
-  } catch {
+  } catch (e: any) {
+    if (__DEV__) {
+      console.warn(
+        "[updateMyRoute]",
+        id,
+        e?.response?.status,
+        e?.response?.data,
+        e?.message,
+      );
+    }
     return false;
   }
 }
@@ -779,7 +1091,10 @@ export function buildUpsertPayloadFromUserRoute(route: {
     legs: route.legs.map((l) => ({
       id: l.id,
       mode:
-        l.mode === "walk" || l.mode === "car" || l.mode === "bike" || l.mode === "transit"
+        l.mode === "walk" ||
+        l.mode === "car" ||
+        l.mode === "bike" ||
+        l.mode === "transit"
           ? l.mode
           : "walk",
       minutes: Math.max(1, Number(l.minutes ?? 10)),
@@ -828,7 +1143,9 @@ export async function convertPersonalCourseToPublic(route: {
   const shared = await publishMyCourseToPublic(serverId);
   if (!shared) return { ok: false, reason: "SHARE_FAILED", serverId };
   const migratedFromLocalId =
-    String(route.id).startsWith("ur-") && serverId !== route.id ? route.id : undefined;
+    String(route.id).startsWith("ur-") && serverId !== route.id
+      ? route.id
+      : undefined;
   return { ok: true, serverId, migratedFromLocalId };
 }
 
@@ -850,9 +1167,13 @@ export type FollowingNewsItem = {
   ago: string;
 };
 
-export async function fetchFollowingNews(limit = 3): Promise<FollowingNewsItem[]> {
+export async function fetchFollowingNews(
+  limit = 3,
+): Promise<FollowingNewsItem[]> {
   try {
-    const res = await instance.get("/api/following/news", { params: { limit } });
+    const res = await instance.get("/api/following/news", {
+      params: { limit },
+    });
     const arr = pickArrayPayload(res.data);
     if (arr.length === 0) return [];
     return arr.slice(0, limit).map((n: any, idx: number) => ({
@@ -865,4 +1186,181 @@ export async function fetchFollowingNews(limit = 3): Promise<FollowingNewsItem[]
   } catch {
     return [];
   }
+}
+
+/** Swagger: GET /api/courses/my/sharing — 현재 공유(공개) 중인 내 코스 전체 목록 */
+export async function fetchMySharedCourses(): Promise<CourseItem[]> {
+  return fetchCoursesFromCandidates(["/api/courses/my/sharing"]);
+}
+
+function pickThumbnailUrlFromUploadResponse(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const d = data as Record<string, unknown>;
+  const inner =
+    d.data && typeof d.data === "object"
+      ? (d.data as Record<string, unknown>)
+      : d;
+  const raw =
+    inner.thumbnail ??
+    inner.imageUrl ??
+    inner.url ??
+    inner.profileImageUrl;
+  const s = String(raw ?? "").trim();
+  return isRemoteThumbnailUri(s) ? s : null;
+}
+
+function buildCourseImageFormData(
+  asset: { uri: string; name?: string; type?: string },
+  fieldName: "image" | "file",
+): FormData {
+  const form = new FormData();
+  const rawType = String(asset.type ?? "image/jpeg");
+  const mime =
+    rawType === "image/heic" || rawType === "image/heif"
+      ? "image/jpeg"
+      : rawType.startsWith("image/")
+        ? rawType
+        : "image/jpeg";
+  let fileName = asset.name ?? "cover.jpg";
+  if (!/\.(jpe?g|png|webp)$/i.test(fileName)) {
+    fileName = "cover.jpg";
+  }
+  form.append(fieldName, {
+    uri: asset.uri,
+    name: fileName,
+    type: mime,
+  } as any);
+  return form;
+}
+
+const multipartHeaders = {
+  transformRequest: (data: unknown, headers?: Record<string, unknown>) => {
+    if (headers) {
+      delete headers["Content-Type"];
+      delete headers["content-type"];
+    }
+    return data;
+  },
+};
+
+type ThumbnailUploadAttempt = {
+  method: "patch" | "post";
+  path: string;
+};
+
+function thumbnailUploadAttempts(courseId: string): ThumbnailUploadAttempt[] {
+  const enc = encodeURIComponent(courseId);
+  return [
+    { method: "patch", path: `/api/courses/my/${enc}/thumbnail` },
+    { method: "post", path: `/api/courses/my/${enc}/thumbnail` },
+    { method: "patch", path: `/api/courses/my/${enc}/profile-image` },
+    { method: "patch", path: `/api/courses/my/${enc}/cover-image` },
+  ];
+}
+
+async function uploadMultipartThumbnail(
+  courseId: string,
+  attempt: ThumbnailUploadAttempt,
+  asset: { uri: string; name?: string; type?: string },
+): Promise<string | null> {
+  for (const field of ["image", "file"] as const) {
+    const form = buildCourseImageFormData(asset, field);
+    try {
+      const res =
+        attempt.method === "post"
+          ? await instance.post(attempt.path, form, multipartHeaders)
+          : await instance.patch(attempt.path, form, multipartHeaders);
+      const url = pickThumbnailUrlFromUploadResponse(res.data);
+      if (url) return url;
+      if (res.status >= 200 && res.status < 300) {
+        const detail = await fetchMyCourseDetail(courseId);
+        const fromDetail = String(detail?.thumbnail ?? "").trim();
+        if (isRemoteThumbnailUri(fromDetail)) return fromDetail;
+      }
+    } catch (e: any) {
+      const status = e?.response?.status;
+      if (status === 404 || status === 405) return null;
+      if (status === 400 && field === "image") continue;
+      if (__DEV__) {
+        console.warn(
+          "[uploadMyCourseThumbnail]",
+          attempt.method,
+          attempt.path,
+          field,
+          status,
+          e?.response?.data,
+        );
+      }
+    }
+  }
+  return null;
+}
+
+async function patchThumbnailUrlOnCourse(
+  courseId: string,
+  thumbnailUrl: string,
+): Promise<string | null> {
+  const url = String(thumbnailUrl ?? "").trim();
+  if (!isRemoteThumbnailUri(url)) return null;
+  try {
+    const res = await instance.patch(
+      `/api/courses/my/${encodeURIComponent(courseId)}`,
+      { thumbnail: url },
+    );
+    return pickThumbnailUrlFromUploadResponse(res.data) ?? url;
+  } catch (e: any) {
+    if (__DEV__) {
+      console.warn(
+        "[patchThumbnailUrlOnCourse]",
+        courseId,
+        e?.response?.status,
+        e?.response?.data,
+      );
+    }
+    return null;
+  }
+}
+
+/**
+ * 코스 대표 이미지 서버 업로드 (users/me/profile-image와 동일 multipart 패턴)
+ * 성공 시 HTTPS thumbnail URL, 실패 시 null
+ */
+export async function uploadMyCourseThumbnail(
+  courseId: string,
+  asset: { uri: string; name?: string; type?: string },
+): Promise<string | null> {
+  const id = normalizeServerCourseId(courseId);
+  if (!id) return null;
+  const uri = String(asset.uri ?? "").trim();
+  if (!uri) return null;
+
+  if (isRemoteThumbnailUri(uri)) {
+    return patchThumbnailUrlOnCourse(id, uri);
+  }
+
+  if (!isLocalThumbnailUri(uri)) return null;
+
+  for (const attempt of thumbnailUploadAttempts(id)) {
+    const uploaded = await uploadMultipartThumbnail(id, attempt, asset);
+    if (uploaded) return uploaded;
+  }
+
+  const detail = await fetchMyCourseDetail(id);
+  const fromDetail = String(detail?.thumbnail ?? "").trim();
+  if (isRemoteThumbnailUri(fromDetail)) return fromDetail;
+
+  return null;
+}
+
+/** 저장 직후 대표 이미지 동기화 — 이미 원격 URL이면 스킵 */
+export async function syncMyCourseThumbnailToServer(
+  courseId: string,
+  coverUri: string | null | undefined,
+): Promise<string | null> {
+  const id = normalizeServerCourseId(courseId);
+  const uri = String(coverUri ?? "").trim();
+  if (!id || !uri) return null;
+  if (isRemoteThumbnailUri(uri)) return uri;
+  if (!isLocalThumbnailUri(uri)) return null;
+  return uploadMyCourseThumbnail(id, { uri });
 }

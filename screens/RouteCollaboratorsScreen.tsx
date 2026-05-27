@@ -6,6 +6,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { getRouteMembers } from '../data/collaborativeRoute';
 import { useAuthStore } from '../store/authStore';
+import { safeGoBack } from '../navigation/rootNavigation';
 
 const CARD = {
   borderWidth: 0.5,
@@ -36,7 +37,7 @@ export default function RouteCollaboratorsScreen(): React.JSX.Element {
     <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={['top']}>
       <View className="flex-row items-center px-4 py-3 border-b border-blue-100/80 bg-white">
         <Pressable
-          onPress={() => navigation.goBack()}
+          onPress={() => safeGoBack(navigation)}
           className="h-10 w-10 items-center justify-center rounded-full bg-slate-100 active:opacity-90"
         >
           <Ionicons name="chevron-back" size={22} color="#2563eb" />

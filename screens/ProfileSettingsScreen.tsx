@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { safeGoBack } from '../navigation/rootNavigation';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../store/authStore';
 import { useToast } from '../context/ToastContext';
@@ -28,13 +29,17 @@ import {
   patchMyProfileImage,
 } from '../api/users';
 import { sendPhoneCode, verifyPhoneCode } from '../api/auth/phone';
+import { bustProfileImageUri } from '../utils/profileImageUri';
+import ProfileAvatar from '../components/ProfileAvatar';
 
 const DEFAULT_AVATAR_URI = '';
 
 export default function ProfileSettingsScreen(): React.JSX.Element {
   const navigation = useNavigation<any>();
   const { showToast } = useToast();
-  const setUser = useAuthStore(s => s.setUser);
+  const refreshProfile = useAuthStore(s => s.refreshProfile);
+  const bumpProfileImageCache = useAuthStore(s => s.bumpProfileImageCache);
+  const profileImageCacheBust = useAuthStore(s => s.profileImageCacheBust);
   const logout = useAuthStore(s => s.logout);
 
   const [avatarUri, setAvatarUri] = useState<string>(DEFAULT_AVATAR_URI);
@@ -71,20 +76,15 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
         profileImageUrl: profile.profileImageUrl ?? null,
       });
     },
-    [setUser],
+    [profileImageCacheBust],
   );
 
   const loadProfile = useCallback(async () => {
     setLoadingProfile(true);
     try {
       const me = await getMyProfile();
-      setNickname(me.nickname ?? '');
-      setEmail(me.email ?? '');
-      setBio((me.bio ?? me.introduction ?? '').trim());
-      setPhone(me.phone ?? '');
-      setOriginalPhone(me.phone ?? '');
-      setAvatarUri(me.profileImageUrl || DEFAULT_AVATAR_URI);
-      syncAuthUser(me);
+      applyProfileToForm(me);
+      await refreshProfile();
     } catch (e: any) {
       Alert.alert(
         '오류',
@@ -93,7 +93,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
     } finally {
       setLoadingProfile(false);
     }
-  }, [syncAuthUser]);
+  }, [applyProfileToForm, refreshProfile]);
 
   useEffect(() => {
     loadProfile();
@@ -126,8 +126,14 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
           name: asset.fileName ?? 'profile.jpg',
           type: asset.mimeType ?? 'image/jpeg',
         });
-        setAvatarUri(updated.profileImageUrl || DEFAULT_AVATAR_URI);
-        syncAuthUser(updated);
+        const cacheKey = Date.now();
+        bumpProfileImageCache();
+        const remote = updated.profileImageUrl
+          ? bustProfileImageUri(updated.profileImageUrl, cacheKey)
+          : '';
+        setAvatarUri(remote || asset.uri);
+        await refreshProfile();
+        showToast('프로필 사진을 변경했어요');
       }
     } catch (e: any) {
       Alert.alert(
@@ -137,7 +143,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
     } finally {
       setPickingImage(false);
     }
-  }, [pickingImage, syncAuthUser]);
+  }, [pickingImage, bumpProfileImageCache, refreshProfile, showToast]);
 
   const startTimer = useCallback((seconds: number) => {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -236,7 +242,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
       } else if (phoneTrimmed && phoneTrimmed === originalPhone) {
         // 번호 변경 없음 — 그대로 유지
       }
-      syncAuthUser(updated);
+      await refreshProfile();
       showToast('저장 완료');
     } catch (e: any) {
       const msg = e?.response?.data?.message ?? e?.message ?? '저장하지 못했어요';
@@ -244,20 +250,26 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
     } finally {
       setSaving(false);
     }
-  }, [saving, nickname, bio, phone, syncAuthUser, showToast]);
+  }, [saving, nickname, bio, phone, originalPhone, phoneVerified, refreshProfile, showToast]);
 
   const handleDeleteProfileImage = useCallback(async () => {
     try {
       const updated = await deleteMyProfileImage();
-      setAvatarUri(updated.profileImageUrl || DEFAULT_AVATAR_URI);
-      syncAuthUser(updated);
+      bumpProfileImageCache();
+      setAvatarUri(
+        updated.profileImageUrl
+          ? bustProfileImageUri(updated.profileImageUrl, Date.now())
+          : DEFAULT_AVATAR_URI,
+      );
+      await refreshProfile();
+      showToast('기본 프로필 이미지로 변경했어요');
     } catch (e: any) {
       Alert.alert(
         '오류',
         e?.response?.data?.message ?? e?.message ?? '프로필 이미지를 삭제하지 못했습니다.',
       );
     }
-  }, [syncAuthUser]);
+  }, [bumpProfileImageCache, refreshProfile, showToast]);
 
   const handleDeleteAccount = useCallback(() => {
     Alert.alert('회원 탈퇴', '정말 탈퇴하시겠어요? 이 작업은 되돌릴 수 없습니다.', [
@@ -282,12 +294,12 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
   }, [logout, navigation]);
 
   return (
-    <SafeAreaView className="flex-1 bg-[#f5f5f9]" edges={['top', 'left', 'right']}>
+    <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={['top', 'left', 'right']}>
       <KeyboardAvoidingView
         className="flex-1"
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View className="flex-row items-center gap-2 border-b border-gray-200 bg-[#f5f5f9] px-4 py-3">
+        <View className="flex-row items-center gap-2 border-b border-gray-200 bg-[#F0F5FF] px-4 py-3">
           <Pressable
             onPress={() => navigation.goBack()}
             className="items-center justify-center w-10 h-10 bg-white border border-gray-200 rounded-full active:opacity-80"
@@ -312,7 +324,19 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
                 </View>
               )}
               {loadingProfile ? (
-                <View className="absolute inset-0 items-center justify-center rounded-full bg-white/65">
+                <View
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    top: 0,
+                    width: 96,
+                    height: 96,
+                    borderRadius: 48,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: 'rgba(255,255,255,0.65)',
+                  }}
+                >
                   <ActivityIndicator size="small" color="#111827" />
                 </View>
               ) : null}

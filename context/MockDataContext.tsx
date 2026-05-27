@@ -10,6 +10,8 @@ import React, {
 } from 'react';
 import type { UserSavedRoute } from '../data/userSavedRoute';
 import type { CourseReview } from '../data/mockData';
+import { fetchMySavedCourseIds } from '../api/courses';
+import { useAuthStore } from '../store/authStore';
 
 type MockDataContextValue = {
   savedCourseIds: string[];
@@ -19,6 +21,8 @@ type MockDataContextValue = {
   removeSavedCourse: (id: string) => void;
   /** 인기 코스 북마크 토글 → 내 루트 저장 목록·즐겨찾기 순서에 반영 */
   togglePopularFavorite: (courseId: string) => void;
+  /** 서버 저장 목록과 동기화 (홈·공유 탭 진입 시) */
+  refreshSavedCourseIds: () => Promise<void>;
   /** 서버 공개 코스 id (로컬 목록 없음) */
   publicCourseIds: string[];
   /** 루트 제작에서 저장한 로컬 루트 (기기·세션) */
@@ -39,6 +43,7 @@ const MockDataContext = createContext<MockDataContextValue | null>(null);
 const EMPTY_PUBLIC_IDS: string[] = [];
 
 export function MockDataProvider({ children }: { children: React.ReactNode }) {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const [savedCourseIds, setSavedCourseIds] = useState<string[]>([]);
   const [favoriteCourseIds, setFavoriteCourseIds] = useState<string[]>([]);
   const savedCourseIdsRef = useRef(savedCourseIds);
@@ -71,9 +76,24 @@ export function MockDataProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const refreshSavedCourseIds = useCallback(async () => {
+    if (!useAuthStore.getState().isAuthenticated) return;
+    const ids = await fetchMySavedCourseIds();
+    setSavedCourseIds((prev) => Array.from(new Set([...ids, ...prev])));
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setSavedCourseIds([]);
+      setFavoriteCourseIds([]);
+      return;
+    }
+    void refreshSavedCourseIds();
+  }, [isAuthenticated, refreshSavedCourseIds]);
+
   const upsertUserRoute = useCallback((route: UserSavedRoute) => {
     setUserSavedRoutes((prev) => {
-      const i = prev.findIndex((x) => x.id === route.id);
+      const i = prev.findIndex((x) => String(x.id) === String(route.id));
       if (i >= 0) {
         const next = [...prev];
         next[i] = route;
@@ -120,6 +140,7 @@ export function MockDataProvider({ children }: { children: React.ReactNode }) {
       addSavedCourse,
       removeSavedCourse,
       togglePopularFavorite,
+      refreshSavedCourseIds,
       publicCourseIds: EMPTY_PUBLIC_IDS,
       userSavedRoutes,
       upsertUserRoute,

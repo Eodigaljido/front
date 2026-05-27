@@ -17,7 +17,6 @@ import {
   Keyboard,
   Platform,
 } from "react-native";
-import Svg, { Polyline, Circle } from "react-native-svg";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
@@ -32,9 +31,11 @@ import {
   fetchPopularCoursesBySaves,
   normalizeCourseList,
   pickCourseSaveCount,
+  pickCourseSavedByMe,
   saveSharedCourse,
 } from "../api/courses";
 import { useMockData } from "../context/MockDataContext";
+import { useToast } from "../context/ToastContext";
 import { userRouteToCourseItem } from "../data/userSavedRoute";
 import { useAuthStore } from "../store/authStore";
 import {
@@ -43,6 +44,7 @@ import {
 } from "../data/integratedWeatherApi";
 import { sharePublicCourse } from "../utils/shareCourse";
 import { sanitizeCourseCategory } from "../utils/inferCourseRegionLabel";
+import { mergeLocalThumbnailsIntoCourses } from "../utils/mergeCourseThumbnails";
 
 type HomeNavProp = BottomTabNavigationProp<RootTabParamList, "Home">;
 
@@ -60,6 +62,11 @@ const CARD_STYLE = {
   borderWidth: 0.5,
   borderColor: "rgba(37,99,235,0.1)",
 };
+
+/** 인기 코스 — 저장(북마크) 선택 상태 */
+const POPULAR_SAVED_COLOR = "#7C3AED";
+const POPULAR_SAVED_BG = "#F3E8FF";
+const POPULAR_SAVED_BORDER = "rgba(124,58,237,0.35)";
 
 const WEATHER_AUTO_REFRESH_MS = 10 * 60 * 1000;
 const WEATHER_FETCH_TIMEOUT_MS = 12_000;
@@ -188,9 +195,18 @@ export default function HomeScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<HomeNavProp>();
   const authUser = useAuthStore((s: any) => s.user);
-  const { savedCourseIds, togglePopularFavorite, userSavedRoutes } = useMockData();
+  const { showToast } = useToast();
+  const {
+    savedCourseIds,
+    addSavedCourse,
+    refreshSavedCourseIds,
+    userSavedRoutes,
+  } = useMockData();
   const [homeCourses, setHomeCourses] = useState<any[]>([]);
   const [popularCourses, setPopularCourses] = useState<any[]>([]);
+  const [popularBookmarkBusyId, setPopularBookmarkBusyId] = useState<string | null>(
+    null,
+  );
   const [followingNewsApi, setFollowingNewsApi] = useState<any[]>([]);
 
   const [weatherLoading, setWeatherLoading] = useState(true);
@@ -231,11 +247,15 @@ export default function HomeScreen(): React.JSX.Element {
 
   const applyHomeFeed = useCallback(
     (payload: Awaited<ReturnType<typeof fetchHomeFeedData>>) => {
-      setHomeCourses(payload.recent);
-      setPopularCourses(payload.popular);
+      setHomeCourses(
+        mergeLocalThumbnailsIntoCourses(payload.recent, userSavedRoutes),
+      );
+      setPopularCourses(
+        mergeLocalThumbnailsIntoCourses(payload.popular, userSavedRoutes),
+      );
       setFollowingNewsApi(payload.news);
     },
-    [],
+    [userSavedRoutes],
   );
 
   const loadHomeFeed = useCallback(async () => {
@@ -307,6 +327,7 @@ export default function HomeScreen(): React.JSX.Element {
         id: `recent-${course.id}`,
         courseId: String(course.id),
         title: course.title,
+        thumbnail: course.thumbnail ? String(course.thumbnail) : null,
         waypoints: steps.slice(0, 3).map((step) => step?.name ?? ""),
         pinCount: steps.length,
         distanceKm: Number((course.overallDurationMinutes / 55).toFixed(1)),
@@ -344,8 +365,10 @@ export default function HomeScreen(): React.JSX.Element {
         id: `trend-${course.id}`,
         courseId: course.id,
         title: course.title,
+        thumbnail: course.thumbnail ? String(course.thumbnail) : null,
         author,
         saveCount,
+        savedByMe: pickCourseSavedByMe(course) || course.savedByMe === true,
         pinCount: steps.length,
         distanceKm: Number((course.overallDurationMinutes / 55).toFixed(1)),
         category: catDisplay,
@@ -482,11 +505,12 @@ export default function HomeScreen(): React.JSX.Element {
 
   useFocusEffect(
     useCallback(() => {
+      void refreshSavedCourseIds();
       return () => {
         Keyboard.dismiss();
         setSearchExpanded(false);
       };
-    }, []),
+    }, [refreshSavedCourseIds]),
   );
 
   const resetPullGesture = useCallback(() => {
@@ -556,6 +580,7 @@ export default function HomeScreen(): React.JSX.Element {
           await Promise.all([
             fetchWeather(undefined, undefined, { silent: true }),
             loadHomeFeed(),
+            refreshSavedCourseIds(),
           ]);
         })(),
         new Promise((_, reject) =>
@@ -582,7 +607,13 @@ export default function HomeScreen(): React.JSX.Element {
         });
       }, remain);
     }
-  }, [animatePullTo, fetchWeather, loadHomeFeed, resolveCurrentLocation]);
+  }, [
+    animatePullTo,
+    fetchWeather,
+    loadHomeFeed,
+    refreshSavedCourseIds,
+    resolveCurrentLocation,
+  ]);
 
   const displayLocation =
     integrated?.location?.trim() || heroLocationLabel || "위치 확인 중...";
@@ -649,15 +680,32 @@ export default function HomeScreen(): React.JSX.Element {
   );
 
   const handlePopularBookmark = useCallback(
-    (courseId: string) => {
-      const wasSaved = savedCourseIds.includes(courseId);
-      togglePopularFavorite(courseId);
-      if (!wasSaved) void saveSharedCourse(courseId);
+    async (courseId: string) => {
+      const id = String(courseId ?? "").trim();
+      if (!id || popularBookmarkBusyId) return;
+      if (savedCourseIds.includes(id)) {
+        showToast("이미 저장된 코스예요");
+        return;
+      }
+      setPopularBookmarkBusyId(id);
       try {
-        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      } catch {}
+        const result = await saveSharedCourse(id);
+        if (result.ok) {
+          addSavedCourse(id);
+          showToast("저장 완료");
+        } else if (result.reason === "NOT_ON_SERVER") {
+          showToast("코스를 찾을 수 없어요");
+        } else {
+          showToast("저장하지 못했어요");
+        }
+        try {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        } catch {}
+      } finally {
+        setPopularBookmarkBusyId(null);
+      }
     },
-    [savedCourseIds, togglePopularFavorite],
+    [popularBookmarkBusyId, savedCourseIds, addSavedCourse, showToast],
   );
 
   const openSharedCourseDetail = useCallback(
@@ -1124,20 +1172,17 @@ export default function HomeScreen(): React.JSX.Element {
                     overflow: "hidden",
                   }}
                 >
-                  <Svg width="100%" height="100%" viewBox="0 0 300 120">
-                    <Polyline
-                      points="60,88 150,34 240,56"
-                      fill="none"
-                      stroke="#2563EB"
-                      strokeWidth="5"
-                      strokeLinejoin="round"
-                      strokeLinecap="round"
-                      opacity="0.35"
+                  {course.thumbnail ? (
+                    <Image
+                      source={{ uri: course.thumbnail }}
+                      style={{ width: "100%", height: "100%" }}
+                      resizeMode="cover"
                     />
-                    <Circle cx="60" cy="88" r="10" fill="#fff" stroke="#2563EB" strokeWidth="5" />
-                    <Circle cx="150" cy="34" r="10" fill="#fff" stroke="#2563EB" strokeWidth="5" />
-                    <Circle cx="240" cy="56" r="10" fill="#fff" stroke="#2563EB" strokeWidth="5" />
-                  </Svg>
+                  ) : (
+                    <View className="h-full w-full items-center justify-center bg-blue-50">
+                      <Ionicons name="map-outline" size={28} color="#60a5fa" />
+                    </View>
+                  )}
 
                   <View style={{ position: "absolute", left: 10, bottom: 8, flexDirection: "row" }}>
                     {course.tags.length > 0 ? (
@@ -1247,12 +1292,22 @@ export default function HomeScreen(): React.JSX.Element {
           <View className="mt-3">
             {trendingCourses.map((course) => {
               const fid = String(course.courseId);
-              const bookmarked = savedCourseIds.includes(fid);
+              const bookmarked =
+                savedCourseIds.includes(fid) || course.savedByMe === true;
+              const bookmarkBusy = popularBookmarkBusyId === fid;
               return (
                 <View
                   key={course.id}
                   className="mb-3 flex-row items-center rounded-[16px] p-3"
-                  style={CARD_STYLE}
+                  style={
+                    bookmarked
+                      ? {
+                          ...CARD_STYLE,
+                          borderColor: POPULAR_SAVED_BORDER,
+                          backgroundColor: POPULAR_SAVED_BG,
+                        }
+                      : CARD_STYLE
+                  }
                 >
                   <Pressable
                     className="min-w-0 flex-1 flex-row items-center active:opacity-95"
@@ -1263,10 +1318,20 @@ export default function HomeScreen(): React.JSX.Element {
                     }
                   >
                     <View
-                      className="mr-3 h-12 w-12 items-center justify-center rounded-xl"
+                      className="mr-3 h-12 w-12 overflow-hidden rounded-xl"
                       style={{ backgroundColor: getCategoryTint(course.category) }}
                     >
-                      <Ionicons name="map-outline" size={22} color="#2563EB" />
+                      {course.thumbnail ? (
+                        <Image
+                          source={{ uri: course.thumbnail }}
+                          className="h-full w-full"
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View className="h-full w-full items-center justify-center">
+                          <Ionicons name="map-outline" size={22} color="#2563EB" />
+                        </View>
+                      )}
                     </View>
                     <View className="min-w-0 flex-1">
                       <Text style={{ fontSize: 14, fontWeight: "600", color: "#1A1A2E" }} numberOfLines={1}>
@@ -1306,31 +1371,64 @@ export default function HomeScreen(): React.JSX.Element {
                     <Pressable
                       className="rounded-full p-1.5"
                       hitSlop={10}
-                      onPress={() => handlePopularBookmark(fid)}
+                      disabled={bookmarked || bookmarkBusy}
+                      onPress={() => void handlePopularBookmark(fid)}
                       accessibilityRole="button"
-                      accessibilityLabel={bookmarked ? "즐겨찾기 해제" : "즐겨찾기 · 내 루트에 저장"}
+                      accessibilityLabel={
+                        bookmarked ? "내 루트에 있음" : "내 루트에 저장"
+                      }
+                      style={
+                        bookmarked
+                          ? {
+                              backgroundColor: "rgba(124,58,237,0.15)",
+                            }
+                          : undefined
+                      }
                     >
-                      <Ionicons
-                        name={bookmarked ? "bookmark" : "bookmark-outline"}
-                        size={18}
-                        color={bookmarked ? "#2563EB" : "#6B7280"}
-                      />
+                      {bookmarkBusy ? (
+                        <ActivityIndicator size="small" color={POPULAR_SAVED_COLOR} />
+                      ) : (
+                        <Ionicons
+                          name={bookmarked ? "bookmark" : "bookmark-outline"}
+                          size={18}
+                          color={bookmarked ? POPULAR_SAVED_COLOR : "#6B7280"}
+                        />
+                      )}
                     </Pressable>
                     <View
                       style={{
                         marginTop: 4,
-                        backgroundColor: "#EFF6FF",
+                        backgroundColor: bookmarked ? "rgba(124,58,237,0.12)" : "#EFF6FF",
                         borderRadius: 6,
                         paddingVertical: 2,
                         paddingHorizontal: 8,
                       }}
                     >
-                      <Text style={{ color: "#2563EB", fontSize: 11, fontWeight: "500" }}>인기</Text>
+                      <Text
+                        style={{
+                          color: bookmarked ? POPULAR_SAVED_COLOR : "#2563EB",
+                          fontSize: 11,
+                          fontWeight: "500",
+                        }}
+                      >
+                        {bookmarked ? "저장됨" : "인기"}
+                      </Text>
                     </View>
                     <View className="mt-1 flex-row items-center">
-                      <Ionicons name="bookmark-outline" size={12} color="#6B7280" />
-                      <Text style={{ marginLeft: 3, fontSize: 12, fontWeight: "400", color: "#6B7280" }}>
-                        저장 {course.saveCount}
+                      <Ionicons
+                        name={bookmarked ? "bookmark" : "bookmark-outline"}
+                        size={12}
+                        color={bookmarked ? POPULAR_SAVED_COLOR : "#6B7280"}
+                      />
+                      <Text
+                        style={{
+                          marginLeft: 3,
+                          fontSize: 12,
+                          fontWeight: bookmarked ? "600" : "400",
+                          color: bookmarked ? POPULAR_SAVED_COLOR : "#6B7280",
+                        }}
+                      >
+                        {bookmarked ? "내 루트에 있음" : `저장 ${course.saveCount}`}
                       </Text>
                     </View>
                   </View>

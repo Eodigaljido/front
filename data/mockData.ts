@@ -54,6 +54,10 @@ export type CourseItem = {
   /** 작성자 UUID — 공유 목록에서 내 코스 판별 */
   authorUuid?: string;
   authorUserId?: string;
+  /** false면 공유 목록·상세에서 제작자 프로필 비노출 */
+  authorProfilePublic?: boolean;
+  /** 로그인 사용자가 이 공유 코스를 저장(북마크)했는지 — API `savedByMe` 등 */
+  savedByMe?: boolean;
 };
 
 /** 코스별 지도 중심 (API 좌표 없을 때 보간용 기본값) */

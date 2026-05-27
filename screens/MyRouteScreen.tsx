@@ -36,10 +36,11 @@ import { useRoute, useFocusEffect } from "@react-navigation/native";
 import { useMockData } from "../context/MockDataContext";
 import {
   deleteMyCourse,
-  fetchMyCourseDetail,
   fetchMyCourses,
+  unsaveSharedCourse,
   fetchMyRouteCollaborativeFlag,
   normalizeCourseList,
+  resolveCourseDetailForRoute,
 } from "../api/courses";
 import {
   UserSavedRoute,
@@ -55,9 +56,14 @@ import { formatOverallDurationLabel } from "../utils/formatOverallDurationLabel"
 import { resolveCourseRegionLabel } from "../utils/inferCourseRegionLabel";
 import { shareCollaborativeRoute } from "../utils/shareCollaborativeRoute";
 import { sameCourseId } from "../utils/sameCourseId";
-import { getCourseAuthorLabel } from "../utils/formatCourseAuthor";
+import { getCourseAuthorLabel, isOwnServerCourse } from "../utils/formatCourseAuthor";
 import { CourseCardAuthorRow } from "../components/CourseCardAuthorRow";
 import { useAuthStore } from "../store/authStore";
+import {
+  applyMineAuthorToPersonalRoutes,
+  dedupeMyCourseList,
+  mergeApiAndLocalCourseLists,
+} from "../utils/mergeCourseThumbnails";
 import { rootNavigate } from "../navigation/rootNavigation";
 
 type RouteKindFilter = "all" | "personal" | "collaborative";
@@ -514,8 +520,8 @@ export default function MyRouteScreen(): React.JSX.Element {
     }
     let mounted = true;
     setMyCourseDetailLoading(true);
-    fetchMyCourseDetail(viewingCourseId)
-      .then((course) => {
+    resolveCourseDetailForRoute(viewingCourseId)
+      .then(({ course }) => {
         if (!mounted) return;
         setMyDetailCourseApi(course ?? null);
         setMyCourseDetailLoading(false);
@@ -606,15 +612,25 @@ export default function MyRouteScreen(): React.JSX.Element {
 
   const mergedCourses = useMemo(() => {
     const fromUser = userSavedRoutes.map(userRouteToCourseItem);
-    const combined = [...fromUser, ...apiMyCourses];
-    const seen = new Set<string>();
-    return combined.filter((c) => {
+    const apiTitles = new Set(
+      apiMyCourses
+        .map((c) => String(c.title ?? "").trim())
+        .filter(Boolean),
+    );
+    const merged = mergeApiAndLocalCourseLists(apiMyCourses, fromUser);
+    const filtered = merged.filter((c) => {
       const k = String(c.id ?? "");
-      if (!k || seen.has(k)) return false;
-      seen.add(k);
-      return true;
+      if (
+        k.startsWith("ur-") &&
+        apiTitles.has(String(c.title ?? "").trim())
+      ) {
+        return false;
+      }
+      return Boolean(k);
     });
-  }, [userSavedRoutes, apiMyCourses]);
+    const deduped = dedupeMyCourseList(filtered, userSavedRoutes);
+    return applyMineAuthorToPersonalRoutes(deduped, userSavedRoutes, authorCtx);
+  }, [userSavedRoutes, apiMyCourses, authorCtx]);
 
   const filteredCourses = useMemo(() => {
     let list = mergedCourses;
@@ -671,6 +687,18 @@ export default function MyRouteScreen(): React.JSX.Element {
   const isServerBackedMyCourse = (id: string) =>
     apiMyCourses.some((c) => sameCourseId(c.id, id));
 
+  const canEditAsOwnMyCourse = useCallback(
+    (course: CourseItem) => {
+      if (userSavedRoutes.some((r) => sameCourseId(r.id, course.id))) {
+        return true;
+      }
+      const fromApi = apiMyCourses.find((c) => sameCourseId(c.id, course.id));
+      if (!fromApi) return false;
+      return isOwnServerCourse(course, authorCtx);
+    },
+    [apiMyCourses, authorCtx, userSavedRoutes],
+  );
+
   const handleRemove = (item: CourseItem) => {
     Alert.alert(
       "저장 삭제",
@@ -684,12 +712,13 @@ export default function MyRouteScreen(): React.JSX.Element {
             if (isUserSavedRouteId(item.id)) {
               // 기기에만 저장된 루트 — 서버 DELETE 호출 시 404
               deleteUserRoute(item.id);
-            } else if (apiMyCourses.some((c) => sameCourseId(c.id, item.id))) {
+            } else if (isOwnServerCourse(item, authorCtx)) {
               await deleteMyCourse(item.id);
-              removeSavedCourse(item.id);
             } else {
-              removeSavedCourse(item.id);
+              // 공유 코스 북마크(내 루트 추가) — save 해제
+              await unsaveSharedCourse(item.id);
             }
+            removeSavedCourse(item.id);
             if (sameCourseId(viewingCourseId, item.id)) {
               dismissCourseDetailImmediate();
             }
@@ -862,7 +891,10 @@ export default function MyRouteScreen(): React.JSX.Element {
                       item.id,
                       ur?.collaborative === true,
                     );
-                  } else if (isServerBackedMyCourse(item.id)) {
+                  } else if (
+                    isServerBackedMyCourse(item.id) &&
+                    canEditAsOwnMyCourse(item)
+                  ) {
                     void fetchMyRouteCollaborativeFlag(item.id).then((collab) =>
                       openRouteCreateEdit(item.id, collab),
                     );
@@ -1235,10 +1267,13 @@ export default function MyRouteScreen(): React.JSX.Element {
                                       ur.id,
                                       ur.collaborative === true,
                                     );
-                                  } else if (isServerBackedMyCourse(course.id)) {
+                                  } else if (
+                                    isServerBackedMyCourse(course.id) &&
+                                    canEditAsOwnMyCourse(course)
+                                  ) {
                                     openRouteCreateEdit(course.id, false);
                                   } else {
-                                    openRouteCreateFromMockCourse(course.id);
+                                    openRouteCreateFromSharedCourse(course.id);
                                   }
                                 });
                               }}
