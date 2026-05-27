@@ -39,6 +39,7 @@ import FollowingNewsScreen from './screens/FollowingNewsScreen';
 import NotificationCenterScreen from './screens/NotificationCenterScreen';
 import CourseGuideScreen from './screens/CourseGuideScreen';
 import { appLinking } from './constants/shareLinking';
+import { useTabStore } from './store/tabStore';
 
 export type RootTabParamList = {
   Home: undefined;
@@ -120,13 +121,21 @@ const Tab = createBottomTabNavigator<RootTabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const AllStack = createNativeStackNavigator();
 
+const TAB_ORDER = ['Home', 'SharedRoute', 'MyRoute', 'Chat', 'All'] as const;
+
+function CustomTabBar(props: any) {
+  const forcedActiveTab = useTabStore(s => s.forcedActiveTab);
+  const overrideIndex = forcedActiveTab !== null ? TAB_ORDER.indexOf(forcedActiveTab as any) : -1;
+  const modifiedState = overrideIndex >= 0 ? { ...props.state, index: overrideIndex } : props.state;
+  return <BottomTabBar {...props} state={modifiedState} />;
+}
+
 function AllStackNavigator() {
   return (
     <AllStack.Navigator screenOptions={{ headerShown: false }}>
       <AllStack.Screen name="AllMain" component={AllScreen} />
       <AllStack.Screen name="AllSharedRoute" component={SharedRouteScreen} />
       <AllStack.Screen name="AllMyRoute" component={MyRouteScreen} />
-      <AllStack.Screen name="AllRouteCreate" component={RouteCreateScreen} />
     </AllStack.Navigator>
   );
 }
@@ -184,7 +193,7 @@ function TabNavigator() {
         }}
       >
         <View style={{ width: '88%' }}>
-          <BottomTabBar {...props} />
+          <CustomTabBar {...props} />
         </View>
       </View>
     ),
@@ -252,7 +261,7 @@ function TabNavigator() {
   );
 
   return (
-    <Tab.Navigator initialRouteName="Home" tabBar={renderTabBar} screenOptions={screenOptions}>
+    <Tab.Navigator initialRouteName="Home" tabBar={renderTabBar} screenOptions={screenOptions} backBehavior="history">
       <Tab.Screen
         name="Home"
         component={HomeScreen}
