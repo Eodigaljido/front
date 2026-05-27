@@ -10,6 +10,7 @@ import { getMyProfile } from '../api/users';
 import { addFriendByCode, getMyFriendCode } from '../api/friend/friends';
 import { shareFriendInvite } from '../utils/shareFriend';
 import { useAuthStore } from '../store/authStore';
+import { useTabStore } from '../store/tabStore';
 import MenuSection, { type MenuItem } from '../components/all/MenuSection';
 import ProfileCard from '../components/all/ProfileCard';
 import FriendCodeModal from '../components/all/FriendCodeModal';
@@ -29,6 +30,7 @@ export default function AllScreen(): React.JSX.Element {
   const logout = useAuthStore(s => s.logout);
   const authUser = useAuthStore(s => s.user);
   const setUser = useAuthStore(s => s.setUser);
+  const setForcedActiveTab = useTabStore(s => s.setForcedActiveTab);
   const [sharedRouteCount, setSharedRouteCount] = useState<number>(27);
   const [friendCode, setFriendCode] = useState<string | null>(null);
   const [friendCodeVisible, setFriendCodeVisible] = useState(false);
@@ -59,7 +61,8 @@ export default function AllScreen(): React.JSX.Element {
   useFocusEffect(
     useCallback(() => {
       refreshMe();
-    }, [refreshMe]),
+      setForcedActiveTab(null);
+    }, [refreshMe, setForcedActiveTab]),
   );
 
   const routeMenus: MenuItem[] = [
@@ -69,7 +72,7 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'create-outline',
       iconColor: '#2563eb',
       iconBg: '#dbeafe',
-      onPress: () => navigation.navigate('AllRouteCreate'),
+      onPress: () => navigation.getParent()?.getParent()?.navigate('RouteCreate'),
     },
     {
       id: 'share-route',
@@ -77,7 +80,7 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'paper-plane-outline',
       iconColor: '#ea580c',
       iconBg: '#ffedd5',
-      onPress: () => navigation.navigate('AllSharedRoute'),
+      onPress: () => { setForcedActiveTab('SharedRoute'); navigation.navigate('AllSharedRoute'); },
     },
     {
       id: 'saved-route',
@@ -85,7 +88,7 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'bookmark-outline',
       iconColor: '#16a34a',
       iconBg: '#dcfce7',
-      onPress: () => navigation.navigate('AllMyRoute'),
+      onPress: () => { setForcedActiveTab('MyRoute'); navigation.navigate('AllMyRoute'); },
     },
     {
       id: 'near-popular',
@@ -93,7 +96,7 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'location-outline',
       iconColor: '#9333ea',
       iconBg: '#f3e8ff',
-      onPress: () => navigation.navigate('AllSharedRoute', { openAsPopular: true }),
+      onPress: () => { setForcedActiveTab('SharedRoute'); navigation.navigate('AllSharedRoute', { openAsPopular: true }); },
     },
   ];
 
