@@ -38,6 +38,8 @@ import FindAccountScreen from './screens/FindAccountScreen';
 import FollowingNewsScreen from './screens/FollowingNewsScreen';
 import NotificationCenterScreen from './screens/NotificationCenterScreen';
 import CourseGuideScreen from './screens/CourseGuideScreen';
+import AppSettingsScreen from './screens/AccountSettingsScreen';
+import FriendRequestsScreen from './screens/FriendRequestsScreen';
 import { appLinking } from './constants/shareLinking';
 import { useTabStore } from './store/tabStore';
 
@@ -136,6 +138,8 @@ function AllStackNavigator() {
       <AllStack.Screen name="AllMain" component={AllScreen} />
       <AllStack.Screen name="AllSharedRoute" component={SharedRouteScreen} />
       <AllStack.Screen name="AllMyRoute" component={MyRouteScreen} />
+      <AllStack.Screen name="AllAppSettings" component={AppSettingsScreen} />
+      <AllStack.Screen name="AllFriendRequests" component={FriendRequestsScreen} />
     </AllStack.Navigator>
   );
 }
