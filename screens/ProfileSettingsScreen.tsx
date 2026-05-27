@@ -40,6 +40,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
   const refreshProfile = useAuthStore(s => s.refreshProfile);
   const bumpProfileImageCache = useAuthStore(s => s.bumpProfileImageCache);
   const profileImageCacheBust = useAuthStore(s => s.profileImageCacheBust);
+  const setUser = useAuthStore(s => s.setUser);
   const logout = useAuthStore(s => s.logout);
 
   const [avatarUri, setAvatarUri] = useState<string>(DEFAULT_AVATAR_URI);
@@ -76,7 +77,26 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
         profileImageUrl: profile.profileImageUrl ?? null,
       });
     },
-    [profileImageCacheBust],
+    [setUser],
+  );
+
+  const applyProfileToForm = useCallback(
+    (me: any) => {
+      setNickname(me.nickname ?? '');
+      setEmail(me.email ?? '');
+      setBio(me.bio ?? '');
+      setPhone(me.phone ?? '');
+      setOriginalPhone(me.phone ?? '');
+      setAvatarUri(
+        me.profileImageUrl
+          ? bustProfileImageUri(me.profileImageUrl, profileImageCacheBust)
+          : DEFAULT_AVATAR_URI,
+      );
+      setPublicProfile(me.publicProfile ?? true);
+      setEmailNotif(me.emailNotif ?? false);
+      syncAuthUser(me);
+    },
+    [profileImageCacheBust, syncAuthUser],
   );
 
   const loadProfile = useCallback(async () => {

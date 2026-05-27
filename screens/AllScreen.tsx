@@ -16,6 +16,7 @@ import {
 import { shareFriendInvite } from '../utils/shareFriend';
 import { useAuthStore } from '../store/authStore';
 import { useTabStore } from '../store/tabStore';
+import { bustProfileImageUri } from '../utils/profileImageUri';
 import MenuSection, { type MenuItem } from '../components/all/MenuSection';
 import ProfileCard from '../components/all/ProfileCard';
 import FriendCodeModal from '../components/all/FriendCodeModal';
@@ -27,6 +28,7 @@ export default function AllScreen(): React.JSX.Element {
   const route = useRoute();
   const authUser = useAuthStore(s => s.user);
   const setUser = useAuthStore(s => s.setUser);
+  const profileImageCacheBust = useAuthStore(s => s.profileImageCacheBust);
   const setForcedActiveTab = useTabStore(s => s.setForcedActiveTab);
   const [friendCount, setFriendCount] = useState<number>(0);
   const [pendingRequestCount, setPendingRequestCount] = useState<number>(0);
@@ -57,7 +59,7 @@ export default function AllScreen(): React.JSX.Element {
     } catch {
       // 프로필 요청 실패 시 기존 상태 유지
     }
-  }, [refreshProfile]);
+  }, [setUser]);
 
   useFocusEffect(
     useCallback(() => {
