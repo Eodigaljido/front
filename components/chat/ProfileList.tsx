@@ -2,6 +2,7 @@ import { View, Text, Image, ScrollView } from "react-native";
 import { getFriends } from "@/api/friend/index";
 import { useAuthStore } from "@/store/authStore";
 import { useEffect, useState } from "react";
+import React from "react";
 
 export interface FriendListItem {
   friendId: number;
@@ -45,7 +46,7 @@ export const ProfileList = ({ size = 60 }: { size?: number }) => {
               source={{
                 uri: friend.profileImageUrl,
               }}
-              className="rounded-full mt-5"
+              className="rounded-full mt-5 bg-gray-200"
               style={{ width: size, height: size }}
             />
             <Text className="text-sm font-semibold mt-3 text-gray-700">

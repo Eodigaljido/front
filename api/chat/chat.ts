@@ -215,6 +215,30 @@ export async function sendImageMessage(
   return res.data;
 }
 
+/** PATCH /chats/{roomUuid}/image — 채팅방 프로필 이미지 업로드 */
+export async function updateChatRoomImage(
+  accessToken: string,
+  roomUuid: string,
+  imageUri: string,
+): Promise<void> {
+  const form = new FormData();
+  const filename = imageUri.split("/").pop() ?? "image.png";
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "png";
+  const mime =
+    ext === "png" ? "image/png"
+    : ext === "gif" ? "image/gif"
+    : ext === "webp" ? "image/webp"
+    : "image/jpeg";
+  form.append("image", { uri: imageUri, name: filename, type: mime } as unknown as Blob);
+  await instance.patch(`/chats/${roomUuid}/profile-image`, form, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "multipart/form-data",
+    },
+    transformRequest: (data) => data,
+  });
+}
+
 /** Swagger: POST /chats/{roomUuid}/route — 루트 공유 메시지(ROUTE 타입) */
 export async function shareRouteToChat(
   accessToken: string,
