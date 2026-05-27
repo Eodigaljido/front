@@ -36,10 +36,10 @@ import { useRoute, useFocusEffect } from "@react-navigation/native";
 import { useMockData } from "../context/MockDataContext";
 import {
   deleteMyCourse,
-  fetchMyCourseDetail,
   fetchMyCourses,
   fetchMyRouteCollaborativeFlag,
   normalizeCourseList,
+  resolveCourseDetailForRoute,
 } from "../api/courses";
 import {
   UserSavedRoute,
@@ -55,7 +55,7 @@ import { formatOverallDurationLabel } from "../utils/formatOverallDurationLabel"
 import { resolveCourseRegionLabel } from "../utils/inferCourseRegionLabel";
 import { shareCollaborativeRoute } from "../utils/shareCollaborativeRoute";
 import { sameCourseId } from "../utils/sameCourseId";
-import { getCourseAuthorLabel } from "../utils/formatCourseAuthor";
+import { getCourseAuthorLabel, isOwnServerCourse } from "../utils/formatCourseAuthor";
 import { CourseCardAuthorRow } from "../components/CourseCardAuthorRow";
 import { useAuthStore } from "../store/authStore";
 import { rootNavigate } from "../navigation/rootNavigation";
@@ -514,8 +514,8 @@ export default function MyRouteScreen(): React.JSX.Element {
     }
     let mounted = true;
     setMyCourseDetailLoading(true);
-    fetchMyCourseDetail(viewingCourseId)
-      .then((course) => {
+    resolveCourseDetailForRoute(viewingCourseId)
+      .then(({ course }) => {
         if (!mounted) return;
         setMyDetailCourseApi(course ?? null);
         setMyCourseDetailLoading(false);
@@ -670,6 +670,15 @@ export default function MyRouteScreen(): React.JSX.Element {
 
   const isServerBackedMyCourse = (id: string) =>
     apiMyCourses.some((c) => sameCourseId(c.id, id));
+
+  const canEditAsOwnMyCourse = useCallback(
+    (course: CourseItem) => {
+      const fromApi = apiMyCourses.find((c) => sameCourseId(c.id, course.id));
+      if (!fromApi) return false;
+      return isOwnServerCourse(course, authorCtx);
+    },
+    [apiMyCourses, authorCtx],
+  );
 
   const handleRemove = (item: CourseItem) => {
     Alert.alert(
@@ -862,7 +871,10 @@ export default function MyRouteScreen(): React.JSX.Element {
                       item.id,
                       ur?.collaborative === true,
                     );
-                  } else if (isServerBackedMyCourse(item.id)) {
+                  } else if (
+                    isServerBackedMyCourse(item.id) &&
+                    canEditAsOwnMyCourse(item)
+                  ) {
                     void fetchMyRouteCollaborativeFlag(item.id).then((collab) =>
                       openRouteCreateEdit(item.id, collab),
                     );
@@ -1235,10 +1247,13 @@ export default function MyRouteScreen(): React.JSX.Element {
                                       ur.id,
                                       ur.collaborative === true,
                                     );
-                                  } else if (isServerBackedMyCourse(course.id)) {
+                                  } else if (
+                                    isServerBackedMyCourse(course.id) &&
+                                    canEditAsOwnMyCourse(course)
+                                  ) {
                                     openRouteCreateEdit(course.id, false);
                                   } else {
-                                    openRouteCreateFromMockCourse(course.id);
+                                    openRouteCreateFromSharedCourse(course.id);
                                   }
                                 });
                               }}
