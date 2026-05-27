@@ -51,6 +51,7 @@ import NotificationCenterScreen from "./screens/NotificationCenterScreen";
 import CourseGuideScreen from "./screens/CourseGuideScreen";
 import { appLinking } from "./constants/shareLinking";
 import UserProfileScreen from "./screens/UserProfileScreen";
+import { ChatRouteHistory } from "./screens/chat/ChatRouteHistory";
 
 export type RootTabParamList = {
   Home: undefined;
@@ -72,6 +73,7 @@ export type RootTabParamList = {
   // 채팅 관련
   ChatRoomScreen: undefined;
   ChatCreatingScreen: undefined;
+  ChatRouteHistory: undefined;
 };
 
 export type RootStackParamList = {
@@ -109,6 +111,7 @@ export type RootStackParamList = {
   // 채팅 관련
   ChatRoomScreen: { roomUuid: string; roomName: string; memberCount?: number };
   ChatCreatingScreen: undefined;
+  ChatRouteHistory: undefined;
   ChatRoomInfoScreen: { roomUuid: string; roomName: string };
 
   FollowingNews: undefined;
@@ -366,6 +369,10 @@ export default function App(): React.JSX.Element {
                   <Stack.Screen
                     name="ChatCreatingScreen"
                     component={ChatCreatingScreen}
+                  />
+                  <Stack.Screen
+                    name="ChatRouteHistory"
+                    component={ChatRouteHistory}
                   />
                   <Stack.Screen
                     name="FollowingNews"
