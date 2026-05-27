@@ -9,6 +9,7 @@ import { pickAuthorProfilePublicFromRaw } from "../utils/authorProfileVisibility
 import { findPersonalRouteIdForForkSource } from "../data/userSavedRoute";
 import { isLocalThumbnailUri, isRemoteThumbnailUri } from "../utils/courseThumbnailUri";
 import { sameCourseId } from "../utils/sameCourseId";
+import { useAuthStore } from "../store/authStore";
 
 type ApiCourseLike = {
   id?: string | number;
@@ -159,6 +160,20 @@ function pickTagsFromApiRaw(
   const labels = anyRaw.labels ?? anyRaw.courseTags ?? anyRaw.hashTags;
   if (Array.isArray(labels)) return collect(labels).slice(0, 4);
   return [];
+}
+
+/** API·스냅샷 — 로그인 사용자가 이 코스를 저장했는지 */
+export function pickCourseSavedByMe(
+  raw: ApiCourseLike | CourseItem | Record<string, unknown> | null | undefined,
+): boolean {
+  if (!raw || typeof raw !== "object") return false;
+  const anyRaw = raw as Record<string, unknown>;
+  if (anyRaw.savedByMe === true) return true;
+  if (anyRaw.isSaved === true) return true;
+  if (anyRaw.saved === true) return true;
+  if (anyRaw.bookmarked === true) return true;
+  if (anyRaw.savedByCurrentUser === true) return true;
+  return false;
 }
 
 /** API·스냅샷 혼합 — 공유 코스 저장 횟수 */
@@ -419,7 +434,44 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
     authorProfilePublic: pickAuthorProfilePublicFromRaw(
       raw as Record<string, unknown>,
     ),
+    savedByMe: pickCourseSavedByMe(raw),
   };
+}
+
+/** 내가 저장한 공유 코스 id 목록 — 홈·공유 탭 북마크 동기화 */
+export async function fetchMySavedCourseIds(): Promise<string[]> {
+  const myUuid = String(useAuthStore.getState().user?.uuid ?? "").trim();
+  const paramVariants: Record<string, string | number>[] = [
+    { sort: "latest", page: 0, size: 200 },
+  ];
+  if (myUuid) {
+    paramVariants.push({
+      userUuid: myUuid,
+      sort: "latest",
+      page: 0,
+      size: 200,
+    });
+  }
+
+  for (const params of paramVariants) {
+    try {
+      const res = await instance.get("/api/courses/saved", { params });
+      const arr = pickArrayPayload(res.data);
+      const ids = arr
+        .map((c) =>
+          normalizeServerCourseId(
+            (c as ApiCourseLike).id ??
+              (c as ApiCourseLike).uuid ??
+              (c as ApiCourseLike).courseId,
+          ),
+        )
+        .filter((id): id is string => Boolean(id));
+      if (ids.length > 0 || arr.length === 0) return [...new Set(ids)];
+    } catch {
+      // 다음 파라미터 조합 시도
+    }
+  }
+  return [];
 }
 
 async function fetchCourseDetailFromCandidates(

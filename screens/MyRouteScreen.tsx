@@ -37,6 +37,7 @@ import { useMockData } from "../context/MockDataContext";
 import {
   deleteMyCourse,
   fetchMyCourses,
+  unsaveSharedCourse,
   fetchMyRouteCollaborativeFlag,
   normalizeCourseList,
   resolveCourseDetailForRoute,
@@ -711,12 +712,13 @@ export default function MyRouteScreen(): React.JSX.Element {
             if (isUserSavedRouteId(item.id)) {
               // 기기에만 저장된 루트 — 서버 DELETE 호출 시 404
               deleteUserRoute(item.id);
-            } else if (apiMyCourses.some((c) => sameCourseId(c.id, item.id))) {
+            } else if (isOwnServerCourse(item, authorCtx)) {
               await deleteMyCourse(item.id);
-              removeSavedCourse(item.id);
             } else {
-              removeSavedCourse(item.id);
+              // 공유 코스 북마크(내 루트 추가) — save 해제
+              await unsaveSharedCourse(item.id);
             }
+            removeSavedCourse(item.id);
             if (sameCourseId(viewingCourseId, item.id)) {
               dismissCourseDetailImmediate();
             }
