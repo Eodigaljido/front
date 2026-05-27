@@ -5,6 +5,7 @@ import {
   resolveCourseRegionLabel,
   sanitizeCourseCategory,
 } from "../utils/inferCourseRegionLabel";
+import { pickAuthorProfilePublicFromRaw } from "../utils/authorProfileVisibility";
 
 type ApiCourseLike = {
   id?: string | number;
@@ -412,6 +413,9 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
     authorUuid: raw.authorUuid != null ? String(raw.authorUuid) : undefined,
     authorUserId:
       raw.authorUserId != null ? String(raw.authorUserId) : undefined,
+    authorProfilePublic: pickAuthorProfilePublicFromRaw(
+      raw as Record<string, unknown>,
+    ),
   };
 }
 
@@ -574,6 +578,60 @@ export async function copySharedCourseToMy(
   } catch {
     return null;
   }
+}
+
+/** 목록 fallback(「경유지」 1개)만 있는 경우 편집·안내에 쓸 실제 경유 데이터가 없음 */
+export function hasMeaningfulRouteSteps(
+  course: CourseItem | null | undefined,
+): boolean {
+  const steps = course?.routeSteps;
+  if (!Array.isArray(steps) || steps.length === 0) return false;
+  if (steps.length >= 2) return true;
+  const s = steps[0];
+  if (s?.lat != null && s?.lng != null) return true;
+  const name = String(s?.name ?? "").trim();
+  return name.length > 0 && name !== "경유지";
+}
+
+/** 내 코스 상세 → 없으면 공유 코스 상세 (저장한 타인 루트 편집·안내용) */
+export async function resolveCourseDetailForRoute(
+  courseId: string,
+): Promise<{ course: CourseItem | null; source: "my" | "shared" | "none" }> {
+  const id = String(courseId ?? "").trim();
+  if (!id) return { course: null, source: "none" };
+
+  const my = await fetchMyCourseDetail(id);
+  if (hasMeaningfulRouteSteps(my)) {
+    return { course: my, source: "my" };
+  }
+
+  const shared = await fetchSharedCourseDetail(id);
+  if (hasMeaningfulRouteSteps(shared)) {
+    return { course: shared, source: "shared" };
+  }
+
+  const fallback = my ?? shared;
+  if (!fallback) return { course: null, source: "none" };
+  return {
+    course: fallback,
+    source: shared && fallback === shared ? "shared" : "my",
+  };
+}
+
+/** 공유(저장) 코스를 복사한 뒤 편집 내용을 반영해 개인 루트 id 반환 */
+export async function forkSharedCourseToPersonalRoute(
+  sharedCourseId: string,
+  payload: UpsertMyRoutePayload,
+): Promise<string | null> {
+  const sourceId = String(sharedCourseId ?? "").trim();
+  if (!sourceId) return createMyRoute(payload);
+
+  const copiedId = await copySharedCourseToMy(sourceId);
+  if (copiedId) {
+    const updated = await updateMyRoute(copiedId, payload);
+    if (updated) return copiedId;
+  }
+  return createMyRoute(payload);
 }
 
 export async function saveSharedCourse(
