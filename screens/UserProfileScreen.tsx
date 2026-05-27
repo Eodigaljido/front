@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
+import { safeGoBack } from "../navigation/rootNavigation";
 import { getUserProfileByUuid, type UserProfile } from "../api/users";
 import { fetchMySharedCourses } from "../api/courses";
 import { instance } from "../api/axios";
@@ -224,7 +225,7 @@ export default function UserProfileScreen(): React.JSX.Element {
           try {
             await instance.post(`/api/users/${uuid}/block`);
             Alert.alert("완료", "사용자를 차단했습니다.");
-            navigation.goBack();
+            safeGoBack(navigation);
           } catch {
             Alert.alert("오류", "차단에 실패했습니다.");
           }
@@ -348,7 +349,7 @@ export default function UserProfileScreen(): React.JSX.Element {
       {/* Header */}
       <View style={styles.header}>
         <Pressable
-          onPress={() => navigation.goBack()}
+          onPress={() => safeGoBack(navigation)}
           hitSlop={8}
           style={styles.headerBtn}
         >
