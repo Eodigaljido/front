@@ -130,14 +130,14 @@ function asArray<T>(value: T[] | null | undefined): T[] {
   return Array.isArray(value) ? value : [];
 }
 
-function pickTagsFromApiRaw(raw: ApiCourseLike | Record<string, unknown>): string[] {
+function pickTagsFromApiRaw(
+  raw: ApiCourseLike | Record<string, unknown>,
+): string[] {
   if (!raw || typeof raw !== "object") return [];
   const anyRaw = raw as Record<string, unknown>;
   const collect = (arr: unknown): string[] =>
     Array.isArray(arr)
-      ? arr
-          .map((t) => String(t ?? "").trim())
-          .filter((s) => s.length > 0)
+      ? arr.map((t) => String(t ?? "").trim()).filter((s) => s.length > 0)
       : [];
   const direct = anyRaw.tags;
   if (Array.isArray(direct)) {
@@ -158,7 +158,9 @@ function pickTagsFromApiRaw(raw: ApiCourseLike | Record<string, unknown>): strin
 }
 
 /** API·스냅샷 혼합 — 공유 코스 저장 횟수 */
-export function pickCourseSaveCount(raw: ApiCourseLike | CourseItem | null | undefined): number {
+export function pickCourseSaveCount(
+  raw: ApiCourseLike | CourseItem | null | undefined,
+): number {
   if (!raw || typeof raw !== "object") return 0;
   const n = Number(
     (raw as ApiCourseLike).saveCount ??
@@ -192,16 +194,16 @@ export function normalizeCourseList(
         ? c.routeSteps
         : [{ id: `fb-${idx}`, name: "경유지", stayMinutes: 30 }];
     const tags = Array.isArray(c.tags)
-      ? c.tags.map((t) => String(t).trim()).filter(Boolean).slice(0, 2)
+      ? c.tags
+          .map((t) => String(t).trim())
+          .filter(Boolean)
+          .slice(0, 2)
       : [];
-    const metaBad = !c.meta || String(c.meta).trim() === "" || c.meta === "API 연동 코스";
+    const metaBad =
+      !c.meta || String(c.meta).trim() === "" || c.meta === "API 연동 코스";
     const catSan = sanitizeCourseCategory(c.category);
     const meta =
-      tags.length > 0
-        ? tags.join(" · ")
-        : metaBad
-          ? catSan || "코스"
-          : c.meta;
+      tags.length > 0 ? tags.join(" · ") : metaBad ? catSan || "코스" : c.meta;
     const stepNames = steps
       .map((s) => String(s?.name ?? "").trim())
       .filter(Boolean);
@@ -257,7 +259,9 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
     `api-${idx}`;
 
   const routeStepSource =
-    asArray(raw.routeSteps).length > 0 ? asArray(raw.routeSteps) : asArray(raw.steps);
+    asArray(raw.routeSteps).length > 0
+      ? asArray(raw.routeSteps)
+      : asArray(raw.steps);
   const fromRouteSteps = routeStepSource.filter(Boolean).map((s, sIdx) => {
     const sAny = s as {
       lat?: number;
@@ -272,9 +276,13 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
       name: String(s.name ?? s.title ?? `경유지 ${sIdx + 1}`),
       stayMinutes: Number(s.stayMinutes ?? 30),
       lat:
-        latRaw != null && !Number.isNaN(Number(latRaw)) ? Number(latRaw) : undefined,
+        latRaw != null && !Number.isNaN(Number(latRaw))
+          ? Number(latRaw)
+          : undefined,
       lng:
-        lngRaw != null && !Number.isNaN(Number(lngRaw)) ? Number(lngRaw) : undefined,
+        lngRaw != null && !Number.isNaN(Number(lngRaw))
+          ? Number(lngRaw)
+          : undefined,
     };
   });
 
@@ -287,17 +295,28 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
       id: String(s.id ?? `${rootId}-s-${s.sequence ?? sIdx}`),
       name: String(s.title ?? s.name ?? `경유지 ${sIdx + 1}`),
       stayMinutes: Number(s.stayMinutes ?? 0),
-      lat: s.lat != null && !Number.isNaN(Number(s.lat)) ? Number(s.lat) : undefined,
-      lng: s.lng != null && !Number.isNaN(Number(s.lng)) ? Number(s.lng) : undefined,
+      lat:
+        s.lat != null && !Number.isNaN(Number(s.lat))
+          ? Number(s.lat)
+          : undefined,
+      lng:
+        s.lng != null && !Number.isNaN(Number(s.lng))
+          ? Number(s.lng)
+          : undefined,
     }));
   }
 
   const legs = (
-    asArray(raw.routeLegs).length > 0 ? asArray(raw.routeLegs) : asArray(raw.legs)
+    asArray(raw.routeLegs).length > 0
+      ? asArray(raw.routeLegs)
+      : asArray(raw.legs)
   ).map((l, lIdx) => ({
     id: String(l.id ?? `${rootId}-l-${lIdx}`),
     mode:
-      l.mode === "walk" || l.mode === "car" || l.mode === "bike" || l.mode === "transit"
+      l.mode === "walk" ||
+      l.mode === "car" ||
+      l.mode === "bike" ||
+      l.mode === "transit"
         ? l.mode
         : "walk",
     minutes: Math.max(1, Number(l.minutes ?? 10)),
@@ -305,13 +324,24 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
   }));
 
   const sortedStops = Array.isArray(raw.stops)
-    ? [...raw.stops].sort((a, b) => Number(a?.sequence ?? 0) - Number(b?.sequence ?? 0))
+    ? [...raw.stops].sort(
+        (a, b) => Number(a?.sequence ?? 0) - Number(b?.sequence ?? 0),
+      )
     : [];
-  const startByKind = sortedStops.find((s) => String(s?.kind ?? "").toLowerCase() === "start");
-  const endByKind = sortedStops.find((s) => String(s?.kind ?? "").toLowerCase() === "end");
+  const startByKind = sortedStops.find(
+    (s) => String(s?.kind ?? "").toLowerCase() === "start",
+  );
+  const endByKind = sortedStops.find(
+    (s) => String(s?.kind ?? "").toLowerCase() === "end",
+  );
 
-  const legMinutesSum = legs.reduce((acc, l) => acc + (Number.isFinite(l.minutes) ? l.minutes : 0), 0);
-  const overallFromFields = Number(raw.overallDurationMinutes ?? raw.durationMinutes ?? NaN);
+  const legMinutesSum = legs.reduce(
+    (acc, l) => acc + (Number.isFinite(l.minutes) ? l.minutes : 0),
+    0,
+  );
+  const overallFromFields = Number(
+    raw.overallDurationMinutes ?? raw.durationMinutes ?? NaN,
+  );
 
   const depFromKind = startByKind
     ? String(startByKind.title ?? startByKind.name ?? "").trim()
@@ -367,7 +397,10 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
     ),
     rating: Number(raw.rating ?? 4.5),
     reviewCount: Number(raw.reviewCount ?? 0),
-    routeSteps: steps.length > 0 ? steps : [{ id: `s-${idx}-0`, name: "경유지", stayMinutes: 30 }],
+    routeSteps:
+      steps.length > 0
+        ? steps
+        : [{ id: `s-${idx}-0`, name: "경유지", stayMinutes: 30 }],
     routeLegs: legs,
     reviews: asArray(raw.reviews).map((r, rIdx) => ({
       id: String(r.id ?? `${rootId}-r-${rIdx}`),
@@ -377,7 +410,8 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
       date: r.date ?? new Date().toISOString().slice(0, 10),
     })),
     authorUuid: raw.authorUuid != null ? String(raw.authorUuid) : undefined,
-    authorUserId: raw.authorUserId != null ? String(raw.authorUserId) : undefined,
+    authorUserId:
+      raw.authorUserId != null ? String(raw.authorUserId) : undefined,
   };
 }
 
@@ -441,13 +475,18 @@ export async function fetchHomeCourses(limit = 6): Promise<CourseItem[]> {
 }
 
 /** 홈·인기 섹션 — 저장 수 기준 상위 코스 */
-export async function fetchPopularCoursesBySaves(limit = 6): Promise<CourseItem[]> {
+export async function fetchPopularCoursesBySaves(
+  limit = 6,
+): Promise<CourseItem[]> {
   const size = Math.max(limit, 20);
-  const fromPublic = await fetchCoursesFromCandidates(CANDIDATE_ENDPOINTS.shared, {
-    tab: "popular",
-    sort: "popular",
-    size,
-  });
+  const fromPublic = await fetchCoursesFromCandidates(
+    CANDIDATE_ENDPOINTS.shared,
+    {
+      tab: "popular",
+      sort: "popular",
+      size,
+    },
+  );
   const list =
     fromPublic.length > 0
       ? fromPublic
@@ -481,7 +520,9 @@ export async function fetchSharedCourseDetail(
 export async function fetchMyCourseDetail(
   courseId: string,
 ): Promise<CourseItem | null> {
-  return fetchCourseDetailFromCandidates(DETAIL_CANDIDATE_ENDPOINTS.my(courseId));
+  return fetchCourseDetailFromCandidates(
+    DETAIL_CANDIDATE_ENDPOINTS.my(courseId),
+  );
 }
 
 /** 내 코스 편집 API 원본 — 공동 루트 여부 등 */
@@ -520,18 +561,24 @@ export async function unsaveSharedCourse(courseId: string): Promise<boolean> {
 }
 
 /** Swagger: POST /api/courses/{courseId}/copy — 공유 코스를 내 루트로 복사 */
-export async function copySharedCourseToMy(courseId: string): Promise<string | null> {
+export async function copySharedCourseToMy(
+  courseId: string,
+): Promise<string | null> {
   const id = String(courseId ?? "").trim();
   if (!id) return null;
   try {
-    const res = await instance.post(`/api/courses/${encodeURIComponent(id)}/copy`);
+    const res = await instance.post(
+      `/api/courses/${encodeURIComponent(id)}/copy`,
+    );
     return extractMyCourseUuidFromResponse(res.data);
   } catch {
     return null;
   }
 }
 
-export async function saveSharedCourse(courseId: string): Promise<SaveSharedCourseResult> {
+export async function saveSharedCourse(
+  courseId: string,
+): Promise<SaveSharedCourseResult> {
   const id = String(courseId ?? "").trim();
   if (!id) return { ok: false, reason: "OTHER" };
   const encoded = encodeURIComponent(id);
@@ -551,7 +598,12 @@ export async function saveSharedCourse(courseId: string): Promise<SaveSharedCour
       if (status === 404) {
         saw404 = true;
         if (__DEV__) {
-          console.warn("[saveSharedCourse]", endpoint, status, e?.response?.data);
+          console.warn(
+            "[saveSharedCourse]",
+            endpoint,
+            status,
+            e?.response?.data,
+          );
         }
         continue;
       }
@@ -633,7 +685,9 @@ export async function updateMyCourseStatus(
 }
 
 /** Swagger: POST /api/courses/my/{courseId}/share — 내 루트 공유 활성화 (204) */
-export async function enableMyCourseSharing(courseId: string): Promise<boolean> {
+export async function enableMyCourseSharing(
+  courseId: string,
+): Promise<boolean> {
   const id = normalizeServerCourseId(courseId);
   if (!id) return false;
   try {
@@ -656,7 +710,9 @@ export async function enableMyCourseSharing(courseId: string): Promise<boolean> 
 }
 
 /** Swagger: DELETE /api/courses/my/{courseId}/share — 내 루트 공유 비활성화 (204) */
-export async function disableMyCourseSharing(courseId: string): Promise<boolean> {
+export async function disableMyCourseSharing(
+  courseId: string,
+): Promise<boolean> {
   const id = normalizeServerCourseId(courseId);
   if (!id) return false;
   try {
@@ -681,7 +737,9 @@ export async function disableMyCourseSharing(courseId: string): Promise<boolean>
  * Swagger 공개 플로우: status → PUBLISHED 후 share 활성화
  * (공유 코스 탭 노출 + 친구 소식)
  */
-export async function publishMyCourseToPublic(courseId: string): Promise<boolean> {
+export async function publishMyCourseToPublic(
+  courseId: string,
+): Promise<boolean> {
   const id = normalizeServerCourseId(courseId);
   if (!id) return false;
   await updateMyCourseStatus(id, "PUBLISHED");
@@ -689,7 +747,9 @@ export async function publishMyCourseToPublic(courseId: string): Promise<boolean
 }
 
 /** 비공개: share 해제 후 DRAFT */
-export async function unpublishMyCourseFromPublic(courseId: string): Promise<boolean> {
+export async function unpublishMyCourseFromPublic(
+  courseId: string,
+): Promise<boolean> {
   const id = normalizeServerCourseId(courseId);
   if (!id) return false;
   const ok = await disableMyCourseSharing(id);
@@ -731,7 +791,9 @@ function extractMyCourseUuidFromResponse(data: any): string | null {
 }
 
 /** Swagger: POST /api/courses/my → 201 + `MyCourseDetailResponse`(uuid). 실패 시 null */
-export async function createMyRoute(payload: UpsertMyRoutePayload): Promise<string | null> {
+export async function createMyRoute(
+  payload: UpsertMyRoutePayload,
+): Promise<string | null> {
   try {
     const res = await instance.post("/api/courses/my", payload);
     return extractMyCourseUuidFromResponse(res.data);
@@ -779,7 +841,10 @@ export function buildUpsertPayloadFromUserRoute(route: {
     legs: route.legs.map((l) => ({
       id: l.id,
       mode:
-        l.mode === "walk" || l.mode === "car" || l.mode === "bike" || l.mode === "transit"
+        l.mode === "walk" ||
+        l.mode === "car" ||
+        l.mode === "bike" ||
+        l.mode === "transit"
           ? l.mode
           : "walk",
       minutes: Math.max(1, Number(l.minutes ?? 10)),
@@ -828,7 +893,9 @@ export async function convertPersonalCourseToPublic(route: {
   const shared = await publishMyCourseToPublic(serverId);
   if (!shared) return { ok: false, reason: "SHARE_FAILED", serverId };
   const migratedFromLocalId =
-    String(route.id).startsWith("ur-") && serverId !== route.id ? route.id : undefined;
+    String(route.id).startsWith("ur-") && serverId !== route.id
+      ? route.id
+      : undefined;
   return { ok: true, serverId, migratedFromLocalId };
 }
 
@@ -850,9 +917,13 @@ export type FollowingNewsItem = {
   ago: string;
 };
 
-export async function fetchFollowingNews(limit = 3): Promise<FollowingNewsItem[]> {
+export async function fetchFollowingNews(
+  limit = 3,
+): Promise<FollowingNewsItem[]> {
   try {
-    const res = await instance.get("/api/following/news", { params: { limit } });
+    const res = await instance.get("/api/following/news", {
+      params: { limit },
+    });
     const arr = pickArrayPayload(res.data);
     if (arr.length === 0) return [];
     return arr.slice(0, limit).map((n: any, idx: number) => ({
@@ -865,4 +936,9 @@ export async function fetchFollowingNews(limit = 3): Promise<FollowingNewsItem[]
   } catch {
     return [];
   }
+}
+
+/** Swagger: GET /api/courses/my/sharing — 현재 공유(공개) 중인 내 코스 전체 목록 */
+export async function fetchMySharedCourses(): Promise<CourseItem[]> {
+  return fetchCoursesFromCandidates(["/api/courses/my/sharing"]);
 }

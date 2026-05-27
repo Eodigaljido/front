@@ -4,6 +4,7 @@ import {
   Easing,
   View,
   Text,
+  Image,
   ViewStyle,
   StyleProp,
   StyleSheet,
@@ -13,13 +14,16 @@ import {
 export interface BubbleChatProps {
   isMine: boolean;
   text?: string;
+  imageUrl?: string | null;
   sentAt?: Date;
-  profileImageUrl?: string;
+  profileImageUrl?: string | null;
   userName?: string;
+  showSender?: boolean;
   style?: StyleProp<ViewStyle>;
   onLongPress?: () => void;
   isEdited?: boolean;
   isTyping?: boolean;
+  onImageLoad?: () => void;
 }
 
 function formatTime(date: Date) {
@@ -32,13 +36,17 @@ function formatTime(date: Date) {
 
 export function BubbleChat({
   text,
+  imageUrl,
   isMine,
   sentAt,
+  profileImageUrl,
   userName,
+  showSender,
   style,
   onLongPress,
   isEdited,
   isTyping,
+  onImageLoad,
 }: BubbleChatProps) {
   const dot1 = useRef(new Animated.Value(0)).current;
   const dot2 = useRef(new Animated.Value(0)).current;
@@ -64,7 +72,7 @@ export function BubbleChat({
             useNativeDriver: true,
           }),
           Animated.delay(480),
-        ])
+        ]),
       );
 
     const a1 = makeAnim(dot1, 0);
@@ -97,20 +105,80 @@ export function BubbleChat({
           ]}
         >
           <Animated.View
-            style={[typingStyles.dot, isMine ? typingStyles.dotMine : typingStyles.dotOther, { transform: [{ translateY: dot1 }] }]}
+            style={[
+              typingStyles.dot,
+              isMine ? typingStyles.dotMine : typingStyles.dotOther,
+              { transform: [{ translateY: dot1 }] },
+            ]}
           />
           <Animated.View
-            style={[typingStyles.dot, isMine ? typingStyles.dotMine : typingStyles.dotOther, { transform: [{ translateY: dot2 }] }]}
+            style={[
+              typingStyles.dot,
+              isMine ? typingStyles.dotMine : typingStyles.dotOther,
+              { transform: [{ translateY: dot2 }] },
+            ]}
           />
           <Animated.View
-            style={[typingStyles.dot, isMine ? typingStyles.dotMine : typingStyles.dotOther, { transform: [{ translateY: dot3 }] }]}
+            style={[
+              typingStyles.dot,
+              isMine ? typingStyles.dotMine : typingStyles.dotOther,
+              { transform: [{ translateY: dot3 }] },
+            ]}
           />
         </View>
         {userName && (
-          <Text style={[styles.time, isMine ? styles.timeMine : styles.timeOther]}>
+          <Text
+            style={[styles.time, isMine ? styles.timeMine : styles.timeOther]}
+          >
             {userName}
           </Text>
         )}
+      </View>
+    );
+  }
+
+  if (!isMine && showSender) {
+    return (
+      <View style={[styles.wrapper, styles.wrapperOther, style]}>
+        <View style={groupStyles.row}>
+          {profileImageUrl ? (
+            <Image source={{ uri: profileImageUrl }} style={groupStyles.avatar} />
+          ) : (
+            <View style={[groupStyles.avatar, groupStyles.avatarFallback]}>
+              <Text style={groupStyles.avatarInitial}>
+                {userName?.[0]?.toUpperCase() ?? "?"}
+              </Text>
+            </View>
+          )}
+          <View style={{ flexShrink: 1 }}>
+            <Text style={groupStyles.senderName}>{userName}</Text>
+            <TouchableOpacity
+              onLongPress={onLongPress}
+              disabled={!onLongPress}
+              activeOpacity={onLongPress ? 0.7 : 1}
+            >
+              {imageUrl ? (
+                <Image
+                  source={{ uri: imageUrl }}
+                  style={styles.image}
+                  resizeMode="cover"
+                  onLoad={onImageLoad}
+                />
+              ) : (
+                <View style={[styles.bubble, styles.bubbleOther]}>
+                  <Text style={[styles.text, styles.textOther]}>
+                    {text?.replace(/ /g, " ")}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            {sentAt && (
+              <Text style={[styles.time, styles.timeOther]}>
+                {isEdited ? `(수정됨) ${formatTime(sentAt)}` : formatTime(sentAt)}
+              </Text>
+            )}
+          </View>
+        </View>
       </View>
     );
   }
@@ -128,21 +196,32 @@ export function BubbleChat({
         disabled={!onLongPress}
         activeOpacity={onLongPress ? 0.7 : 1}
       >
-        <View
-          style={[
-            styles.bubble,
-            isMine ? styles.bubbleMine : styles.bubbleOther,
-          ]}
-        >
-          <Text
-            style={[styles.text, isMine ? styles.textMine : styles.textOther]}
+        {imageUrl ? (
+          <Image
+            source={{ uri: imageUrl }}
+            style={styles.image}
+            resizeMode="cover"
+            onLoad={onImageLoad}
+          />
+        ) : (
+          <View
+            style={[
+              styles.bubble,
+              isMine ? styles.bubbleMine : styles.bubbleOther,
+            ]}
           >
-            {text?.replace(/ /g, ' ')}
-          </Text>
-        </View>
+            <Text
+              style={[styles.text, isMine ? styles.textMine : styles.textOther]}
+            >
+              {text?.replace(/ /g, " ")}
+            </Text>
+          </View>
+        )}
       </TouchableOpacity>
       {sentAt && (
-        <Text style={[styles.time, isMine ? styles.timeMine : styles.timeOther]}>
+        <Text
+          style={[styles.time, isMine ? styles.timeMine : styles.timeOther]}
+        >
           {isEdited ? `(수정됨) ${formatTime(sentAt)}` : formatTime(sentAt)}
         </Text>
       )}
@@ -218,5 +297,39 @@ const styles = StyleSheet.create({
   },
   timeOther: {
     alignSelf: "flex-start",
+  },
+  image: {
+    width: 200,
+    height: 200,
+    borderRadius: 12,
+  },
+});
+
+const groupStyles = StyleSheet.create({
+  row: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 8,
+  },
+  avatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+  },
+  avatarFallback: {
+    backgroundColor: "#C7C7CC",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarInitial: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  senderName: {
+    fontSize: 12,
+    color: "#8E8E93",
+    marginBottom: 4,
+    marginLeft: 2,
   },
 });

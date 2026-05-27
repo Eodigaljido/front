@@ -13,6 +13,7 @@ import type { StyleProp, ViewStyle } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 
 import {
+  Keyboard,
   StyleSheet,
   Text,
   TextInput,
@@ -139,6 +140,7 @@ export const MessageInput = ({
   const isEditing = editingText != null;
 
   const pickImageAsync = async () => {
+    Keyboard.dismiss();
     const result = await ImagePicker.launchImageLibraryAsync({
       allowsEditing: false,
       quality: 1,
