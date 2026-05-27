@@ -14,6 +14,7 @@ import { getMyProfile } from "../api/users";
 import { addFriendByCode, getMyFriendCode } from "../api/friend/friends";
 import { shareFriendInvite } from "../utils/shareFriend";
 import { useAuthStore } from "../store/authStore";
+import { bustProfileImageUri } from "../utils/profileImageUri";
 import MenuSection, { type MenuItem } from "../components/all/MenuSection";
 import ProfileCard from "../components/all/ProfileCard";
 import FriendCodeModal from "../components/all/FriendCodeModal";
@@ -32,7 +33,8 @@ export default function AllScreen(): React.JSX.Element {
   const route = useRoute();
   const logout = useAuthStore((s) => s.logout);
   const authUser = useAuthStore((s) => s.user);
-  const setUser = useAuthStore((s) => s.setUser);
+  const profileImageCacheBust = useAuthStore((s) => s.profileImageCacheBust);
+  const refreshProfile = useAuthStore((s) => s.refreshProfile);
   const [sharedRouteCount, setSharedRouteCount] = useState<number>(27);
   const [friendCode, setFriendCode] = useState<string | null>(null);
   const [friendCodeVisible, setFriendCodeVisible] = useState(false);
@@ -43,22 +45,14 @@ export default function AllScreen(): React.JSX.Element {
   const refreshMe = useCallback(async () => {
     try {
       const me = await getMyProfile();
-      setUser({
-        id: (me as any).id ?? 0,
-        uuid: me.uuid,
-        userId: me.userId ?? "",
-        email: me.email ?? "",
-        nickname: me.nickname ?? "",
-        role: me.role ?? "USER",
-        profileImageUrl: me.profileImageUrl ?? null,
-      });
+      await refreshProfile();
       if (typeof (me as any).sharedRouteCount === "number") {
         setSharedRouteCount((me as any).sharedRouteCount);
       }
     } catch {
       // 프로필 요청 실패 시 기존 상태 유지
     }
-  }, [setUser]);
+  }, [refreshProfile]);
 
   useFocusEffect(
     useCallback(() => {
@@ -203,8 +197,9 @@ export default function AllScreen(): React.JSX.Element {
     confirmAddFriendFromLink(code);
   }, [route.params, navigation, confirmAddFriendFromLink]);
 
-  const avatarUri =
-    authUser?.profileImageUrl ?? "https://i.pravatar.cc/100?img=5";
+  const avatarUri = authUser?.profileImageUrl
+    ? bustProfileImageUri(authUser.profileImageUrl, profileImageCacheBust)
+    : "https://i.pravatar.cc/100?img=5";
 
   return (
     <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={["top"]}>

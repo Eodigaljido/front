@@ -49,7 +49,7 @@ import {
   getRouteMembers,
   hasCollaboratorPeers,
 } from "../data/collaborativeRoute";
-import { rootNavigate } from "../navigation/rootNavigation";
+import { rootNavigate, safeGoBack } from "../navigation/rootNavigation";
 import CollaboratorAvatarStack from "../components/CollaboratorAvatarStack";
 import { CollaborativeFriendInviteModal } from "../components/CollaborativeFriendInviteModal";
 import { RouteCollaborativeChatSheet } from "../components/RouteCollaborativeChatSheet";
@@ -73,11 +73,14 @@ import {
   type TransitRouteCandidate,
 } from "../data/googleDirectionsApi";
 import {
+  buildUpsertPayloadFromUserRoute,
   createMyRoute,
-  fetchMyCourseDetail,
   fetchMyRouteCollaborativeFlag,
   fetchMySharingCourseIds,
   fetchSharedCourseDetail,
+  forkSharedCourseToPersonalRoute,
+  hasMeaningfulRouteSteps,
+  resolveCourseDetailForRoute,
   setMyCoursePublic,
   updateMyRoute,
 } from "../api/courses";
@@ -894,6 +897,10 @@ export default function RouteCreateScreen(): React.JSX.Element {
 
   const [legs, setLegs] = useState<RouteLeg[]>([]);
   const [persistedRouteId, setPersistedRouteId] = useState<string | null>(null);
+  /** 저장한 타인 공유 코스 id — 첫 저장 시 copy/create로 개인 루트로 전환 */
+  const [forkSourceCourseId, setForkSourceCourseId] = useState<string | null>(
+    null,
+  );
 
   const itineraryScrollRef = useRef<ScrollView>(null);
   const itineraryListViewportRef = useRef<View>(null);
@@ -1094,6 +1101,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
 
       const applyEmptyRoute = () => {
         setPersistedRouteId(null);
+        setForkSourceCourseId(null);
         setRouteTitle("새 루트");
         setSelectedTags([]);
         setPublishToPublic(false);
@@ -1104,9 +1112,32 @@ export default function RouteCreateScreen(): React.JSX.Element {
         setRouteCoverImageUri(null);
       };
 
+      const applyCourseToEditor = (
+        course: CourseItem,
+        opts: { persistId: string | null; forkFromId: string | null },
+      ) => {
+        const { stops: nextStops, legs: nextLegs } =
+          courseItemToRouteStops(course);
+        setPersistedRouteId(opts.persistId);
+        setForkSourceCourseId(opts.forkFromId);
+        setRouteTitle(course.title);
+        setSelectedTags(
+          Array.isArray(course.tags)
+            ? course.tags
+                .map((t) => String(t).trim())
+                .filter(Boolean)
+                .slice(0, MAX_ROUTE_TAGS)
+            : [],
+        );
+        setStops(nextStops);
+        setLegs(nextLegs);
+        setChatMessages([]);
+      };
+
       if (editId) {
         const r = userSavedRoutes.find((x) => String(x.id) === String(editId));
         if (r) {
+          setForkSourceCourseId(null);
           setPersistedRouteId(r.id);
           setRouteTitle(r.title);
           setRouteCoverImageUri(r.coverImageUri ?? null);
@@ -1143,41 +1174,43 @@ export default function RouteCreateScreen(): React.JSX.Element {
 
         (async () => {
           try {
-            const detail = await fetchMyCourseDetail(editId);
+            const { course: detail, source } =
+              await resolveCourseDetailForRoute(editId);
             if (cancelled) return;
             const collabFromApi = await fetchMyRouteCollaborativeFlag(editId);
             if (cancelled) return;
             if (collabFromApi) setCollaborativeDraft(true);
-            if (detail?.routeSteps?.length) {
-              const { stops: nextStops, legs: nextLegs } =
-                courseItemToRouteStops(detail);
-              setPersistedRouteId(editId);
-              setRouteTitle(detail.title);
+            if (detail) {
+              const localR = userSavedRoutes.find(
+                (x) => String(x.id) === String(editId),
+              );
               const detailTagList = Array.isArray(detail.tags)
                 ? detail.tags
                     .map((t) => String(t).trim())
                     .filter(Boolean)
                     .slice(0, MAX_ROUTE_TAGS)
                 : [];
-              const localR = userSavedRoutes.find(
-                (x) => String(x.id) === String(editId),
-              );
               const localTagList = Array.isArray(localR?.tags)
                 ? localR!
                     .tags!.map((t) => String(t).trim())
                     .filter(Boolean)
                     .slice(0, MAX_ROUTE_TAGS)
                 : [];
-              setSelectedTags(
-                detailTagList.length > 0 ? detailTagList : localTagList,
+              applyCourseToEditor(
+                {
+                  ...detail,
+                  tags: detailTagList.length > 0 ? detailTagList : localTagList,
+                },
+                source === "shared"
+                  ? { persistId: null, forkFromId: editId }
+                  : { persistId: editId, forkFromId: null },
               );
-              setStops(nextStops);
-              setLegs(nextLegs);
-              setChatMessages([]);
-              void syncPublishToPublicFromRoute(
-                editId,
-                localR?.publishedToPublic,
-              );
+              if (source === "my") {
+                void syncPublishToPublicFromRoute(
+                  editId,
+                  localR?.publishedToPublic,
+                );
+              }
               return;
             }
             applyEmptyRoute();
@@ -1199,26 +1232,15 @@ export default function RouteCreateScreen(): React.JSX.Element {
           try {
             const c = await fetchSharedCourseDetail(seedId);
             if (cancelled) return;
-            if (!c) {
+            if (!c || !hasMeaningfulRouteSteps(c)) {
               applyEmptyRoute();
               setChatMessages([]);
               return;
             }
-            const { stops: nextStops, legs: nextLegs } =
-              courseItemToRouteStops(c);
-            setPersistedRouteId(null);
-            setRouteTitle(c.title);
-            setSelectedTags(
-              Array.isArray(c.tags)
-                ? c.tags
-                    .map((t) => String(t).trim())
-                    .filter(Boolean)
-                    .slice(0, MAX_ROUTE_TAGS)
-                : [],
-            );
-            setStops(nextStops);
-            setLegs(nextLegs);
-            setChatMessages([]);
+            applyCourseToEditor(c, {
+              persistId: null,
+              forkFromId: seedId,
+            });
           } catch {
             if (!cancelled) {
               applyEmptyRoute();
@@ -2453,8 +2475,38 @@ export default function RouteCreateScreen(): React.JSX.Element {
 
     let apiSaved = false;
     let effectiveId = localId;
+    let savedAsPersonalFork = false;
+    const forkId = String(forkSourceCourseId ?? "").trim();
+    const upsertPayload = buildUpsertPayloadFromUserRoute(routePayload);
 
-    if (persistedRouteId && !String(persistedRouteId).startsWith("ur-")) {
+    if (forkId) {
+      const serverId = await forkSharedCourseToPersonalRoute(
+        forkId,
+        upsertPayload,
+      );
+      apiSaved = Boolean(serverId);
+      if (serverId) {
+        savedAsPersonalFork = true;
+        effectiveId = serverId;
+        if (serverId !== localId) {
+          deleteUserRoute(localId);
+        }
+        upsertUserRoute({
+          id: serverId,
+          title,
+          createdAt: prev?.createdAt ?? now,
+          updatedAt: now,
+          collaborative: collaborativeDraft,
+          tags: tagsForSave,
+          stops: routePayload.stops,
+          legs: routePayload.legs,
+          publishedToPublic: wantPublic,
+          coverImageUri: routeCoverImageUri,
+          chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
+        });
+        setForkSourceCourseId(null);
+      }
+    } else if (persistedRouteId && !String(persistedRouteId).startsWith("ur-")) {
       apiSaved = await updateMyRoute(persistedRouteId, routePayload);
       effectiveId = persistedRouteId;
       if (apiSaved) {
@@ -2535,13 +2587,15 @@ export default function RouteCreateScreen(): React.JSX.Element {
 
     showToast(
       apiSaved
-        ? collaborativeDraft
-          ? "저장 완료 · 채팅 탭에 단체 채팅이 생겼어요"
-          : "저장 완료"
+        ? savedAsPersonalFork
+          ? "개인 루트로 저장했어요"
+          : collaborativeDraft
+            ? "저장 완료 · 채팅 탭에 단체 채팅이 생겼어요"
+            : "저장 완료"
         : "저장하지 못했어요",
     );
     if (apiSaved) {
-      navigation.goBack();
+      safeGoBack(navigation);
     }
   };
 
@@ -2686,7 +2740,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
           pointerEvents="box-none"
         >
           <Pressable
-            onPress={() => navigation.goBack()}
+            onPress={() => safeGoBack(navigation)}
             className="z-10 h-11 w-11 items-center justify-center rounded-full bg-white shadow-md active:opacity-90"
             style={{
               shadowColor: "#000",

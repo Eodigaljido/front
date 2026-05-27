@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NavigationProp, useNavigation } from "@react-navigation/native";
 import { RootStackParamList } from "@/App";
+import { safeGoBack } from "@/navigation/rootNavigation";
 import {
   X,
   ChevronLeft,
@@ -47,15 +48,15 @@ type PresetImage = { id: string; source: ReturnType<typeof require> };
 
 // 19개 프리셋 + 1개 로컬 피커 = 4×5 그리드
 const PRESET_IMAGES: PresetImage[] = [
-  { id: "p1",  source: require("@/assets/chat/pfp/apple.png") },
-  { id: "p2",  source: require("@/assets/chat/pfp/banana.png") },
-  { id: "p3",  source: require("@/assets/chat/pfp/coconut.png") },
-  { id: "p4",  source: require("@/assets/chat/pfp/earth.png") },
-  { id: "p5",  source: require("@/assets/chat/pfp/eodigaljido.png") },
-  { id: "p6",  source: require("@/assets/chat/pfp/foot.png") },
-  { id: "p7",  source: require("@/assets/chat/pfp/lemon.png") },
-  { id: "p8",  source: require("@/assets/chat/pfp/map.png") },
-  { id: "p9",  source: require("@/assets/chat/pfp/money.png") },
+  { id: "p1", source: require("@/assets/chat/pfp/apple.png") },
+  { id: "p2", source: require("@/assets/chat/pfp/banana.png") },
+  { id: "p3", source: require("@/assets/chat/pfp/coconut.png") },
+  { id: "p4", source: require("@/assets/chat/pfp/earth.png") },
+  { id: "p5", source: require("@/assets/chat/pfp/eodigaljido.png") },
+  { id: "p6", source: require("@/assets/chat/pfp/foot.png") },
+  { id: "p7", source: require("@/assets/chat/pfp/lemon.png") },
+  { id: "p8", source: require("@/assets/chat/pfp/map.png") },
+  { id: "p9", source: require("@/assets/chat/pfp/money.png") },
   { id: "p10", source: require("@/assets/chat/pfp/octopus.png") },
   { id: "p11", source: require("@/assets/chat/pfp/rusn.png") },
   { id: "p12", source: require("@/assets/chat/pfp/rusun_map.png") },
@@ -177,7 +178,12 @@ export default function ChatCreatingScreen(): React.JSX.Element {
       : selectedUuids;
     setIsCreating(true);
     try {
-      const room = await createChatRoom(accessToken, memberUuids, trimedName, null);
+      const room = await createChatRoom(
+        accessToken,
+        memberUuids,
+        trimedName,
+        null,
+      );
 
       // 이미지 선택된 경우 별도 업로드
       let uploadUri: string | null = localImageUri;
@@ -288,7 +294,7 @@ export default function ChatCreatingScreen(): React.JSX.Element {
           }}
         >
           <TouchableOpacity
-            onPress={() => navigation.goBack()}
+            onPress={() => safeGoBack(navigation)}
             style={{ padding: 8 }}
           >
             <X color="#111827" size={22} />

@@ -20,6 +20,7 @@ import {
   useRoute,
 } from "@react-navigation/native";
 import { RootStackParamList } from "@/App";
+import { safeGoBack } from "@/navigation/rootNavigation";
 import {
   ChevronLeft,
   Edit2,
@@ -326,7 +327,7 @@ export default function ChatRoomInfoScreen() {
       {/* 헤더 */}
       <View style={s.header}>
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={() => safeGoBack(navigation)}
           style={s.headerBackBtn}
         >
           <ChevronLeft color="#111827" size={22} />
