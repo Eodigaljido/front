@@ -523,6 +523,9 @@ export default function HomeScreen(): React.JSX.Element {
 
         const q = buildWeatherLocationQuery(addr?.[0]);
         await fetchWeather(cancelledRef, q);
+        if (!cancelledRef?.value && addr?.[0]?.formattedAddress) {
+          setHeroLocationLabel(addr[0].formattedAddress.replace(/^대한민국\s*/, "").trim());
+        }
       } catch {
         if (!cancelledRef?.value) {
           setHeroLocationLabel("위치 확인 실패");
@@ -653,8 +656,7 @@ export default function HomeScreen(): React.JSX.Element {
     resolveCurrentLocation,
   ]);
 
-  const displayLocation =
-    integrated?.location?.trim() || heroLocationLabel || "위치 확인 중...";
+  const displayLocation = heroLocationLabel || "위치 확인 중...";
   const contentTopPadding = 0;
   const contentBottomPadding = insets.bottom + 120;
 
