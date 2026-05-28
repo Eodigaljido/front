@@ -127,7 +127,7 @@ export default function AllScreen(): React.JSX.Element {
   const settingMenus: MenuItem[] = [
     {
       id: 'app-setting',
-      title: '앱 설정',
+      title: '계정 설정',
       icon: 'settings-outline',
       iconColor: '#60a5fa',
       iconBg: '#dbeafe',
