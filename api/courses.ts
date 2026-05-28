@@ -6,9 +6,13 @@ import {
   sanitizeCourseCategory,
 } from "../utils/inferCourseRegionLabel";
 import { pickAuthorProfilePublicFromRaw } from "../utils/authorProfileVisibility";
+import { pickCourseAuthorFromRaw } from "../utils/pickCourseAuthorFromRaw";
+import { pickForkChainFromRaw } from "../utils/pickForkChainFromRaw";
 import { findPersonalRouteIdForForkSource } from "../data/userSavedRoute";
 import { isLocalThumbnailUri, isRemoteThumbnailUri } from "../utils/courseThumbnailUri";
 import { sameCourseId } from "../utils/sameCourseId";
+import { getFriends } from "./friend/friends";
+import { bustProfileImageUri } from "../utils/profileImageUri";
 import { useAuthStore } from "../store/authStore";
 
 type ApiCourseLike = {
@@ -428,12 +432,8 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
       text: r.text ?? "",
       date: r.date ?? new Date().toISOString().slice(0, 10),
     })),
-    authorUuid: raw.authorUuid != null ? String(raw.authorUuid) : undefined,
-    authorUserId:
-      raw.authorUserId != null ? String(raw.authorUserId) : undefined,
-    authorProfilePublic: pickAuthorProfilePublicFromRaw(
-      raw as Record<string, unknown>,
-    ),
+    ...pickCourseAuthorFromRaw(raw as Record<string, unknown>),
+    ...pickForkChainFromRaw(raw as Record<string, unknown>),
     savedByMe: pickCourseSavedByMe(raw),
   };
 }
@@ -1169,24 +1169,122 @@ export type FollowingNewsItem = {
   action: string;
   courseName: string;
   ago: string;
+  profileImageUrl?: string | null;
+  userUuid?: string | null;
 };
+
+function pickFollowingNewsUserLabel(raw: Record<string, unknown>): string {
+  const nested = raw.user ?? raw.actor ?? raw.author ?? raw.fromUser;
+  if (nested && typeof nested === "object") {
+    const u = nested as Record<string, unknown>;
+    const fromNested = String(
+      u.nickname ?? u.userName ?? u.name ?? u.userId ?? "",
+    ).trim();
+    if (fromNested) return fromNested;
+  }
+  return String(
+    raw.user ??
+      raw.nickname ??
+      raw.userName ??
+      raw.actorNickname ??
+      raw.actorName ??
+      "사용자",
+  ).trim();
+}
+
+function pickFollowingNewsUserUuid(raw: Record<string, unknown>): string | null {
+  const nested = raw.user ?? raw.actor ?? raw.author ?? raw.fromUser;
+  if (nested && typeof nested === "object") {
+    const u = nested as Record<string, unknown>;
+    const fromNested = String(u.uuid ?? u.userUuid ?? "").trim();
+    if (fromNested) return fromNested;
+  }
+  const direct = String(
+    raw.userUuid ?? raw.actorUuid ?? raw.authorUuid ?? raw.uuid ?? "",
+  ).trim();
+  return direct || null;
+}
+
+function pickProfileImageFromFollowingNewsRaw(
+  raw: Record<string, unknown>,
+): string | null {
+  const nested = raw.user ?? raw.actor ?? raw.author ?? raw.fromUser;
+  const fromNested =
+    nested && typeof nested === "object"
+      ? pickProfileImageFromFollowingNewsRaw(nested as Record<string, unknown>)
+      : null;
+
+  const candidates = [
+    raw.profileImageUrl,
+    raw.userProfileImageUrl,
+    raw.actorProfileImageUrl,
+    raw.avatarUrl,
+    raw.profileImage,
+    raw.imageUrl,
+    raw.thumbnail,
+    fromNested,
+  ];
+
+  for (const c of candidates) {
+    const s = String(c ?? "").trim();
+    if (isRemoteThumbnailUri(s)) return s;
+  }
+  return null;
+}
 
 export async function fetchFollowingNews(
   limit = 3,
 ): Promise<FollowingNewsItem[]> {
   try {
-    const res = await instance.get("/api/following/news", {
-      params: { limit },
-    });
+    const [res, friends] = await Promise.all([
+      instance.get("/api/following/news", { params: { limit } }),
+      getFriends().catch(() => []),
+    ]);
     const arr = pickArrayPayload(res.data);
     if (arr.length === 0) return [];
-    return arr.slice(0, limit).map((n: any, idx: number) => ({
-      id: String(n.id ?? `news-${idx}`),
-      user: String(n.user ?? n.nickname ?? "사용자"),
-      action: String(n.action ?? "새 코스를 공개했어요"),
-      courseName: String(n.courseName ?? n.title ?? "코스"),
-      ago: String(n.ago ?? n.timeAgo ?? "방금"),
-    }));
+
+    const profileByUuid = new Map<string, string>();
+    const profileByNickname = new Map<string, string>();
+    for (const f of friends) {
+      const url = String(f.profileImageUrl ?? "").trim();
+      if (!url || f.isDefaultImage) continue;
+      if (f.uuid) profileByUuid.set(String(f.uuid), url);
+      const nick = String(f.nickname ?? "").trim().toLowerCase();
+      if (nick) profileByNickname.set(nick, url);
+    }
+
+    return arr.slice(0, limit).map((n: any, idx: number) => {
+      const raw =
+        n && typeof n === "object" ? (n as Record<string, unknown>) : {};
+      const user = pickFollowingNewsUserLabel(raw);
+      const userUuid = pickFollowingNewsUserUuid(raw);
+
+      let profileImageUrl = pickProfileImageFromFollowingNewsRaw(raw);
+      if (!profileImageUrl && userUuid && profileByUuid.has(userUuid)) {
+        profileImageUrl = profileByUuid.get(userUuid) ?? null;
+      }
+      if (!profileImageUrl) {
+        const nickKey = user.trim().toLowerCase();
+        if (nickKey && profileByNickname.has(nickKey)) {
+          profileImageUrl = profileByNickname.get(nickKey) ?? null;
+        }
+      }
+
+      const remote =
+        profileImageUrl && isRemoteThumbnailUri(profileImageUrl)
+          ? bustProfileImageUri(profileImageUrl)
+          : null;
+
+      return {
+        id: String(raw.id ?? `news-${idx}`),
+        user,
+        action: String(raw.action ?? "새 코스를 공개했어요"),
+        courseName: String(raw.courseName ?? raw.title ?? "코스"),
+        ago: String(raw.ago ?? raw.timeAgo ?? "방금"),
+        profileImageUrl: remote,
+        userUuid,
+      };
+    });
   } catch {
     return [];
   }

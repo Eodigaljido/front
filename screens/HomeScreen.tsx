@@ -47,6 +47,7 @@ import {
 import { sharePublicCourse } from "../utils/shareCourse";
 import { sanitizeCourseCategory } from "../utils/inferCourseRegionLabel";
 import { mergeLocalThumbnailsIntoCourses } from "../utils/mergeCourseThumbnails";
+import FollowingNewsAvatar from "../components/FollowingNewsAvatar";
 
 type HomeNavProp = BottomTabNavigationProp<RootTabParamList, "Home">;
 
@@ -1541,13 +1542,15 @@ export default function HomeScreen(): React.JSX.Element {
                   onPress={() =>
                     (navigation.getParent() as any)?.navigate("FollowingNews")
                   }
-                  className="mb-2.5 flex-row items-center rounded-[16px] p-3"
+                  className="mb-2.5 flex-row items-center gap-3 rounded-[16px] p-3"
                   style={CARD_STYLE}
                 >
-                  <View className="items-center justify-center w-10 h-10 mr-3 bg-blue-100 rounded-full">
-                    <Text style={{ fontSize: 13, fontWeight: "600", color: "#2563EB" }}>{news.user.slice(0, 1)}</Text>
-                  </View>
-                  <View className="flex-1 min-w-0">
+                  <FollowingNewsAvatar
+                    displayName={news.user}
+                    profileImageUrl={news.profileImageUrl}
+                    size={40}
+                  />
+                  <View className="min-w-0 flex-1">
                     <Text style={{ fontSize: 13, fontWeight: "400", color: "#1A1A2E" }} numberOfLines={1}>
                       <Text style={{ fontWeight: "600" }}>{news.user}</Text>님이 {news.action}
                     </Text>

@@ -699,8 +699,8 @@ function toWalkCandidate(
 }
 
 /**
- * 도보 구간용 보도 후보 2~3개 (Tmap 옵션 + Google 도보).
- * 사용자가 직접 고를 수 있도록 서로 다른 경로만 반환한다.
+ * 도보 구간용 경로 1개만 반환.
+ * (가장 가까운 경로 기준: 우선 도보 시간 최소)
  */
 export async function fetchWalkingRouteAlternatives(params: {
   from: LatLng;
@@ -715,84 +715,39 @@ export async function fetchWalkingRouteAlternatives(params: {
     return [toWalkCandidate('walk-a', '직선', t, 'fallback')];
   }
 
-  const sources: Array<{
-    id: string;
-    label: string;
-    source: string;
-    run: () => Promise<DirectionsLegResult | null>;
-  }> = [
-    {
-      id: 'walk-tmap-0',
-      label: '추천 보도',
-      source: 'tmap',
-      run: async () => {
-        const t = await fetchTmapDirectionsLeg({
-          from,
-          to,
-          requestedMode: 'walking',
-          searchOption: '0',
-          signal: params.signal,
-        });
-        return t ? { ...t, source: 'tmap' as const } : null;
-      },
-    },
-    {
-      id: 'walk-tmap-2',
-      label: '빠른 길',
-      source: 'tmap',
-      run: async () => {
-        const t = await fetchTmapDirectionsLeg({
-          from,
-          to,
-          requestedMode: 'walking',
-          searchOption: '2',
-          signal: params.signal,
-        });
-        return t ? { ...t, source: 'tmap' as const } : null;
-      },
-    },
-    {
-      id: 'walk-tmap-4',
-      label: '계단 적음',
-      source: 'tmap',
-      run: async () => {
-        const t = await fetchTmapDirectionsLeg({
-          from,
-          to,
-          requestedMode: 'walking',
-          searchOption: '4',
-          signal: params.signal,
-        });
-        return t ? { ...t, source: 'tmap' as const } : null;
-      },
-    },
-    {
-      id: 'walk-google',
-      label: '다른 보도',
-      source: 'google',
-      run: () => fetchGoogleWalkingLegOnly(from, to, params.signal),
-    },
+  const tmapOptions: Array<{ id: string; searchOption: '0' | '2' | '4' }> = [
+    { id: 'walk-tmap-0', searchOption: '0' },
+    { id: 'walk-tmap-2', searchOption: '2' },
+    { id: 'walk-tmap-4', searchOption: '4' },
   ];
-
-  const settled = await Promise.all(sources.map((s) => s.run()));
-  const out: WalkRouteCandidate[] = [];
-
-  for (let i = 0; i < sources.length; i++) {
-    const r = settled[i];
-    if (!r || r.path.length < 2) continue;
-    const dup = out.some((c) => isSimilarWalkPath(c.path, r.path));
-    if (dup) continue;
-    out.push(toWalkCandidate(sources[i].id, sources[i].label, r, sources[i].source));
-    if (out.length >= 3) break;
+  const settled = await Promise.all(
+    tmapOptions.map(async (opt) => {
+      const t = await fetchTmapDirectionsLeg({
+        from,
+        to,
+        requestedMode: 'walking',
+        searchOption: opt.searchOption,
+        signal: params.signal,
+      });
+      if (!t || t.path.length < 2) return null;
+      return toWalkCandidate(opt.id, '도보 경로', { ...t, source: 'tmap' }, 'walk');
+    }),
+  );
+  const candidates = settled.filter(Boolean) as WalkRouteCandidate[];
+  if (candidates.length > 0) {
+    candidates.sort((a, b) => {
+      if (a.durationMinutes !== b.durationMinutes) {
+        return a.durationMinutes - b.durationMinutes;
+      }
+      return a.distanceMeters - b.distanceMeters;
+    });
+    return [candidates[0]];
   }
 
-  if (out.length === 0) {
+  {
     const fb = straightLineFallbackLeg(from, to, 'walking');
-    out.push(toWalkCandidate('walk-fallback', '직선 표시', fb, 'fallback'));
+    return [toWalkCandidate('walk-fallback', '도보 경로', fb, 'walk')];
   }
-
-  out.sort((a, b) => a.durationMinutes - b.durationMinutes);
-  return out.slice(0, 3);
 }
 
 export type TransitRouteCandidate = {

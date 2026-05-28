@@ -43,6 +43,14 @@ export type UserSavedRoute = {
   publishedToPublic?: boolean;
   /** 공유 루트를 복사·수정해 만든 개인 루트일 때 원본 공유 코스 id */
   forkedFromSharedId?: string | null;
+  /** 체인 최초 원작자 — 다중 수정·재공유 후에도 유지 */
+  forkSourceAuthorUuid?: string | null;
+  forkSourceAuthorUserId?: string | null;
+  /** 체인 최초 원본 공유 코스 id */
+  rootForkSourceCourseId?: string | null;
+  /** 이 개인 루트를 저장·공유한 사용자(수정자) */
+  forkModifierAuthorUuid?: string | null;
+  forkModifierAuthorUserId?: string | null;
 };
 
 /** 공유 코스에서 이미 만든 개인 루트 서버 id (있으면 copy 재호출 방지) */

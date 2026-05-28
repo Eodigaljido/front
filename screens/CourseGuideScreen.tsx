@@ -106,6 +106,7 @@ export default function CourseGuideScreen(): React.JSX.Element {
   } | null>(null);
 
   const lastApproachFetchRef = useRef<string>("");
+  const lastGpsLogAtRef = useRef(0);
 
   const ur = useMemo(
     () => userSavedRoutes.find((r) => sameCourseId(r.id, courseId)),
@@ -323,20 +324,36 @@ export default function CourseGuideScreen(): React.JSX.Element {
     setCamera({ lat: center.lat, lng: center.lng, fitToRoute: true });
   }, [approachPath, polylinePath, stopPoints, userLocation, ur, courseId]);
 
-  useEffect(() => {
-    if (!course && loadingCourse) return;
-    if (!entranceNavActive) fitCameraToRoute();
-  }, [course, loadingCourse, fitCameraToRoute, entranceNavActive]);
+  /** 자동 카메라 맞춤: 코스 경로 중심(내 위치 변화로 재실행되지 않음) */
+  const fitCameraToCourse = useCallback(() => {
+    const fitPoints: LatLng[] = [];
+    if (polylinePath && polylinePath.length >= 2) fitPoints.push(...polylinePath);
+    else if (stopPoints.length >= 1) fitPoints.push(...stopPoints);
+
+    const fit = computeMapRouteFit(fitPoints, {
+      minZoom: 10,
+      maxZoom: 16,
+      paddingZoomOut: 0.85,
+    });
+    if (fit) {
+      setCamera({
+        lat: fit.lat,
+        lng: fit.lng,
+        zoom: fit.zoom,
+        fitToRoute: false,
+      });
+      return;
+    }
+    const center = ur
+      ? userRouteMapCenter(ur)
+      : getCourseMapCenter(courseId);
+    setCamera({ lat: center.lat, lng: center.lng, fitToRoute: true });
+  }, [polylinePath, stopPoints, ur, courseId]);
 
   useEffect(() => {
-    if (!entranceNavActive || !userLocation) return;
-    setCamera({
-      lat: userLocation.latitude,
-      lng: userLocation.longitude,
-      zoom: GUIDE_FOLLOW_ZOOM,
-      fitToRoute: false,
-    });
-  }, [entranceNavActive, userLocation?.latitude, userLocation?.longitude]);
+    if (!course && loadingCourse) return;
+    if (!entranceNavActive) fitCameraToCourse();
+  }, [course, loadingCourse, fitCameraToCourse, entranceNavActive]);
 
   useEffect(() => {
     let posSub: Location.LocationSubscription | null = null;
@@ -346,8 +363,14 @@ export default function CourseGuideScreen(): React.JSX.Element {
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (cancelled) return;
+      if (__DEV__) {
+        console.log("[GPS] foreground permission status =", status);
+      }
       if (status !== "granted") {
         setLocationDenied(true);
+        if (__DEV__) {
+          console.log("[GPS] permission denied - tracking unavailable");
+        }
         return;
       }
       setLocationDenied(false);
@@ -361,6 +384,9 @@ export default function CourseGuideScreen(): React.JSX.Element {
         });
       } catch {
         /* 나침반 미지원 기기 */
+        if (__DEV__) {
+          console.log("[GPS] heading watch unavailable on this device");
+        }
       }
 
       posSub = await Location.watchPositionAsync(
@@ -370,6 +396,18 @@ export default function CourseGuideScreen(): React.JSX.Element {
           timeInterval: 1500,
         },
         (loc) => {
+          const now = Date.now();
+          if (__DEV__ && now - lastGpsLogAtRef.current > 5000) {
+            lastGpsLogAtRef.current = now;
+            console.log("[GPS] tracking OK", {
+              lat: Number(loc.coords.latitude.toFixed(6)),
+              lng: Number(loc.coords.longitude.toFixed(6)),
+              accuracyM: loc.coords.accuracy,
+              heading: loc.coords.heading,
+              speed: loc.coords.speed,
+              timestamp: loc.timestamp,
+            });
+          }
           setUserLocation({
             latitude: loc.coords.latitude,
             longitude: loc.coords.longitude,
@@ -380,12 +418,18 @@ export default function CourseGuideScreen(): React.JSX.Element {
           }
         },
       );
+      if (__DEV__) {
+        console.log("[GPS] watchPosition subscribed");
+      }
     })();
 
     return () => {
       cancelled = true;
       posSub?.remove();
       headSub?.remove();
+      if (__DEV__) {
+        console.log("[GPS] tracking unsubscribed");
+      }
     };
   }, []);
 
@@ -404,35 +448,18 @@ export default function CourseGuideScreen(): React.JSX.Element {
       setEntranceNavActive(next);
       if (!next) {
         requestAnimationFrame(() => fitCameraToRoute());
-        return;
-      }
-      if (userLocation) {
-        setCamera({
-          lat: userLocation.latitude,
-          lng: userLocation.longitude,
-          zoom: GUIDE_FOLLOW_ZOOM,
-          fitToRoute: false,
-        });
       }
     },
-    [fitCameraToRoute, userLocation],
+    [fitCameraToRoute],
   );
 
   const title = course?.title ?? paramTitle ?? "코스 안내";
   const departure = course?.departure ?? "—";
   const arrival = course?.arrival ?? "—";
 
-  const mapLat =
-    entranceNavActive && userLocation
-      ? userLocation.latitude
-      : (camera?.lat ?? 37.5665);
-  const mapLng =
-    entranceNavActive && userLocation
-      ? userLocation.longitude
-      : (camera?.lng ?? 126.978);
-  const mapZoom = entranceNavActive
-    ? GUIDE_FOLLOW_ZOOM
-    : camera?.zoom;
+  const mapLat = camera?.lat ?? 37.5665;
+  const mapLng = camera?.lng ?? 126.978;
+  const mapZoom = camera?.zoom;
   const mapFitToRoute =
     !entranceNavActive && (camera?.fitToRoute ?? true);
 
@@ -453,7 +480,7 @@ export default function CourseGuideScreen(): React.JSX.Element {
         level={8}
         zoom={mapZoom}
         fitToRoute={mapFitToRoute}
-        followUser={entranceNavActive && Boolean(userLocation)}
+        followUser={false}
         followZoom={GUIDE_FOLLOW_ZOOM}
         mapHeading={mapHeading}
         chromeless

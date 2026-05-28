@@ -56,8 +56,23 @@ import { formatOverallDurationLabel } from "../utils/formatOverallDurationLabel"
 import { resolveCourseRegionLabel } from "../utils/inferCourseRegionLabel";
 import { shareCollaborativeRoute } from "../utils/shareCollaborativeRoute";
 import { sameCourseId } from "../utils/sameCourseId";
-import { getCourseAuthorLabel, isOwnServerCourse } from "../utils/formatCourseAuthor";
-import { CourseCardAuthorRow } from "../components/CourseCardAuthorRow";
+import {
+  getCourseAuthorLabel,
+  getCourseModifierLabel,
+  isOwnServerCourse,
+} from "../utils/formatCourseAuthor";
+import {
+  CourseAuthorCardRow,
+  CourseAuthorDetailChip,
+} from "../components/CourseAuthorDisplay";
+import {
+  enrichCourseWithForkOriginAuthor,
+  enrichCoursesWithForkOriginAuthors,
+} from "../utils/enrichForkOriginAuthor";
+import {
+  applyCachedAuthorCredits,
+  mergeCourseAuthorCredits,
+} from "../utils/courseAuthorCredits";
 import { useAuthStore } from "../store/authStore";
 import {
   applyMineAuthorToPersonalRoutes,
@@ -90,7 +105,7 @@ function CourseCard({
   onEdit,
   isFavorite,
   isCollaborative,
-  authorLabel,
+  authorCtx,
 }: {
   item: CourseItem;
   onPressCard: () => void;
@@ -99,7 +114,12 @@ function CourseCard({
   onEdit: () => void;
   isFavorite?: boolean;
   isCollaborative?: boolean;
-  authorLabel: string;
+  authorCtx: {
+    myUuid?: string | null;
+    myUserId?: string | null;
+    myNickname?: string | null;
+    isLocalOwnRoute?: boolean;
+  };
 }) {
   return (
     <View
@@ -143,7 +163,7 @@ function CourseCard({
                 {item.title}
               </Text>
             </View>
-            <CourseCardAuthorRow label={authorLabel} />
+            <CourseAuthorCardRow course={item} authorCtx={authorCtx} />
             <Text className="mt-1 text-xs text-gray-500" numberOfLines={1}>
               {item.meta}
             </Text>
@@ -246,6 +266,7 @@ export default function MyRouteScreen(): React.JSX.Element {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [apiMyCourses, setApiMyCourses] = useState<CourseItem[]>([]);
+  const [enrichedMyCourses, setEnrichedMyCourses] = useState<CourseItem[]>([]);
   const [filterVisible, setFilterVisible] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
@@ -309,10 +330,64 @@ export default function MyRouteScreen(): React.JSX.Element {
   const [myDetailCourseApi, setMyDetailCourseApi] = useState<CourseItem | null>(null);
   const [myCourseDetailLoading, setMyCourseDetailLoading] = useState(false);
 
+  const isCollaborativeRouteId = useCallback(
+    (id: string) =>
+      userSavedRoutes.some(
+        (r) => sameCourseId(r.id, id) && r.collaborative === true,
+      ),
+    [userSavedRoutes],
+  );
+
+  const mergedCourses = useMemo(() => {
+    const fromUser = userSavedRoutes.map(userRouteToCourseItem);
+    const apiTitles = new Set(
+      apiMyCourses
+        .map((c) => String(c.title ?? "").trim())
+        .filter(Boolean),
+    );
+    const merged = mergeApiAndLocalCourseLists(apiMyCourses, fromUser);
+    const filtered = merged.filter((c) => {
+      const k = String(c.id ?? "");
+      if (
+        k.startsWith("ur-") &&
+        apiTitles.has(String(c.title ?? "").trim())
+      ) {
+        return false;
+      }
+      return Boolean(k);
+    });
+    const deduped = dedupeMyCourseList(filtered, userSavedRoutes);
+    return applyMineAuthorToPersonalRoutes(deduped, userSavedRoutes, authorCtx);
+  }, [userSavedRoutes, apiMyCourses, authorCtx]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void enrichCoursesWithForkOriginAuthors(
+      mergedCourses,
+      userSavedRoutes,
+    ).then((list) => {
+      if (!cancelled) {
+        setEnrichedMyCourses((prev) => mergeCourseAuthorCredits(list, prev));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [mergedCourses, userSavedRoutes]);
+
+  const displayCourses = useMemo(() => {
+    const base =
+      enrichedMyCourses.length > 0 ? enrichedMyCourses : mergedCourses;
+    return applyCachedAuthorCredits(base);
+  }, [enrichedMyCourses, mergedCourses]);
+
   const detailMapCourse = useMemo(() => {
     if (!viewingCourseId) return null;
     const ur = userSavedRoutes.find((r) =>
       sameCourseId(r.id, viewingCourseId),
+    );
+    const fromDisplay = displayCourses.find((c) =>
+      sameCourseId(c.id, viewingCourseId),
     );
     const courseFromApi = apiMyCourses.find((c) =>
       sameCourseId(c.id, viewingCourseId),
@@ -322,12 +397,13 @@ export default function MyRouteScreen(): React.JSX.Element {
       sameCourseId(myDetailCourseApi.id, viewingCourseId)
         ? myDetailCourseApi
         : null) ??
-      courseFromApi ??
-      (ur ? userRouteToCourseItem(ur) : null) ??
+      fromDisplay ??
       (viewingCourseSnapshot &&
       sameCourseId(viewingCourseSnapshot.id, viewingCourseId)
         ? viewingCourseSnapshot
-        : null)
+        : null) ??
+      courseFromApi ??
+      (ur ? userRouteToCourseItem(ur) : null)
     );
   }, [
     viewingCourseId,
@@ -335,6 +411,7 @@ export default function MyRouteScreen(): React.JSX.Element {
     apiMyCourses,
     myDetailCourseApi,
     viewingCourseSnapshot,
+    displayCourses,
   ]);
   const detailMapStepPoints = useMemo(() => {
     if (!viewingCourseId || !detailMapCourse) return null;
@@ -521,9 +598,13 @@ export default function MyRouteScreen(): React.JSX.Element {
     let mounted = true;
     setMyCourseDetailLoading(true);
     resolveCourseDetailForRoute(viewingCourseId)
-      .then(({ course }) => {
+      .then(async ({ course }) => {
         if (!mounted) return;
-        setMyDetailCourseApi(course ?? null);
+        const enriched = await enrichCourseWithForkOriginAuthor(
+          course,
+          userSavedRoutes,
+        );
+        setMyDetailCourseApi(enriched ?? course ?? null);
         setMyCourseDetailLoading(false);
       })
       .catch(() => {
@@ -602,38 +683,8 @@ export default function MyRouteScreen(): React.JSX.Element {
     viewingCourseSnapshot,
   ]);
 
-  const isCollaborativeRouteId = useCallback(
-    (id: string) =>
-      userSavedRoutes.some(
-        (r) => sameCourseId(r.id, id) && r.collaborative === true,
-      ),
-    [userSavedRoutes],
-  );
-
-  const mergedCourses = useMemo(() => {
-    const fromUser = userSavedRoutes.map(userRouteToCourseItem);
-    const apiTitles = new Set(
-      apiMyCourses
-        .map((c) => String(c.title ?? "").trim())
-        .filter(Boolean),
-    );
-    const merged = mergeApiAndLocalCourseLists(apiMyCourses, fromUser);
-    const filtered = merged.filter((c) => {
-      const k = String(c.id ?? "");
-      if (
-        k.startsWith("ur-") &&
-        apiTitles.has(String(c.title ?? "").trim())
-      ) {
-        return false;
-      }
-      return Boolean(k);
-    });
-    const deduped = dedupeMyCourseList(filtered, userSavedRoutes);
-    return applyMineAuthorToPersonalRoutes(deduped, userSavedRoutes, authorCtx);
-  }, [userSavedRoutes, apiMyCourses, authorCtx]);
-
   const filteredCourses = useMemo(() => {
-    let list = mergedCourses;
+    let list = displayCourses;
 
     if (selectedCategory)
       list = list.filter((c) => c.category === selectedCategory);
@@ -671,7 +722,7 @@ export default function MyRouteScreen(): React.JSX.Element {
 
     return list;
   }, [
-    mergedCourses,
+    displayCourses,
     searchQuery,
     selectedCategory,
     selectedRegion,
@@ -699,6 +750,22 @@ export default function MyRouteScreen(): React.JSX.Element {
     [apiMyCourses, authorCtx, userSavedRoutes],
   );
 
+  const removeCourseFromUi = useCallback((courseId: string) => {
+    setApiMyCourses((prev) => prev.filter((c) => !sameCourseId(c.id, courseId)));
+    setEnrichedMyCourses((prev) =>
+      prev.filter((c) => !sameCourseId(c.id, courseId)),
+    );
+    setViewingCourseSnapshot((prev) =>
+      prev && sameCourseId(prev.id, courseId) ? null : prev,
+    );
+    setMyDetailCourseApi((prev) =>
+      prev && sameCourseId(prev.id, courseId) ? null : prev,
+    );
+    if (sameCourseId(viewingCourseId, courseId)) {
+      dismissCourseDetailImmediate();
+    }
+  }, [viewingCourseId]);
+
   const handleRemove = (item: CourseItem) => {
     Alert.alert(
       "저장 삭제",
@@ -709,18 +776,32 @@ export default function MyRouteScreen(): React.JSX.Element {
           text: "삭제",
           style: "destructive",
           onPress: async () => {
-            if (isUserSavedRouteId(item.id)) {
-              // 기기에만 저장된 루트 — 서버 DELETE 호출 시 404
-              deleteUserRoute(item.id);
-            } else if (isOwnServerCourse(item, authorCtx)) {
-              await deleteMyCourse(item.id);
-            } else {
-              // 공유 코스 북마크(내 루트 추가) — save 해제
-              await unsaveSharedCourse(item.id);
-            }
-            removeSavedCourse(item.id);
-            if (sameCourseId(viewingCourseId, item.id)) {
-              dismissCourseDetailImmediate();
+            const prevApi = apiMyCourses;
+            const prevEnriched = enrichedMyCourses;
+            const prevSnapshot = viewingCourseSnapshot;
+            const prevDetail = myDetailCourseApi;
+            const prevViewingId = viewingCourseId;
+            try {
+              // 삭제 버튼 즉시 반영 (낙관적 UI)
+              removeCourseFromUi(item.id);
+              if (isUserSavedRouteId(item.id)) {
+                // 기기에만 저장된 루트 — 서버 DELETE 호출 시 404
+                deleteUserRoute(item.id);
+              } else if (isOwnServerCourse(item, authorCtx)) {
+                await deleteMyCourse(item.id);
+              } else {
+                // 공유 코스 북마크(내 루트 추가) — save 해제
+                await unsaveSharedCourse(item.id);
+              }
+              removeSavedCourse(item.id);
+            } catch {
+              // 실패 시 UI 롤백
+              setApiMyCourses(prevApi);
+              setEnrichedMyCourses(prevEnriched);
+              setViewingCourseSnapshot(prevSnapshot);
+              setMyDetailCourseApi(prevDetail);
+              if (prevViewingId) setViewingCourseId(prevViewingId);
+              Alert.alert("오류", "코스 삭제에 실패했어요. 잠시 후 다시 시도해 주세요.");
             }
           },
         },
@@ -862,14 +943,15 @@ export default function MyRouteScreen(): React.JSX.Element {
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => {
             const ur = userSavedRoutes.find((r) => sameCourseId(r.id, item.id));
-            const authorLabel = getCourseAuthorLabel(item, {
+            const cardAuthorCtx = {
               ...authorCtx,
-              isLocalOwnRoute: Boolean(ur),
-            });
+              isLocalOwnRoute:
+                Boolean(ur) && !String(ur?.forkedFromSharedId ?? "").trim(),
+            };
             return (
               <CourseCard
                 item={item}
-                authorLabel={authorLabel}
+                authorCtx={cardAuthorCtx}
                 isFavorite={favoriteCourseIds.some((fid) =>
                   sameCourseId(fid, item.id),
                 )}
@@ -980,6 +1062,9 @@ export default function MyRouteScreen(): React.JSX.Element {
                   const ur = userSavedRoutes.find((r) =>
                     sameCourseId(r.id, viewingCourseId),
                   );
+                  const courseFromDisplay = displayCourses.find((c) =>
+                    sameCourseId(c.id, viewingCourseId),
+                  );
                   const courseFromApi = apiMyCourses.find((c) =>
                     sameCourseId(c.id, viewingCourseId),
                   );
@@ -988,12 +1073,13 @@ export default function MyRouteScreen(): React.JSX.Element {
                     sameCourseId(myDetailCourseApi.id, viewingCourseId)
                       ? myDetailCourseApi
                       : null) ??
-                    courseFromApi ??
-                    (ur ? userRouteToCourseItem(ur) : null) ??
+                    courseFromDisplay ??
                     (viewingCourseSnapshot &&
                     sameCourseId(viewingCourseSnapshot.id, viewingCourseId)
                       ? viewingCourseSnapshot
-                      : null);
+                      : null) ??
+                    courseFromApi ??
+                    (ur ? userRouteToCourseItem(ur) : null);
                   if (!course) {
                     return (
                       <View
@@ -1309,48 +1395,59 @@ export default function MyRouteScreen(): React.JSX.Element {
                         <Text className="mb-1 text-base font-semibold text-gray-900">
                           {course.title}
                         </Text>
-                        {(() => {
-                          const authorLabel = getCourseAuthorLabel(course, {
+                        <CourseAuthorDetailChip
+                          course={course}
+                          authorCtx={{
                             ...authorCtx,
-                            isLocalOwnRoute: Boolean(ur),
-                          });
-                          const authorUuid = String(course.authorUuid ?? '').trim();
-                          const authorUserId = String(course.authorUserId ?? '').trim();
-                          const isMine = authorLabel.includes('(나)') || authorLabel === '내가 제작';
-                          const canOpenProfile = !isMine && Boolean(authorUuid || authorUserId);
-                          return (
-                            <Pressable
-                              disabled={!canOpenProfile}
-                              onPress={() => {
-                                if (!canOpenProfile) return;
-                                rootNavigate('UserProfile', {
-                                  userUuid: authorUuid || undefined,
-                                  userId: authorUserId || undefined,
-                                  nickname:
-                                    authorLabel.startsWith('@') || authorLabel === '제작자 미표시'
-                                      ? undefined
-                                      : authorLabel,
-                                });
-                              }}
-                              className="mb-2 flex-row items-center self-start rounded-full px-3 py-1.5"
-                              style={{
-                                backgroundColor: canOpenProfile ? '#EFF6FF' : '#F3F4F6',
-                              }}
-                            >
-                              <Ionicons
-                                name={canOpenProfile ? 'person-circle-outline' : 'person-outline'}
-                                size={14}
-                                color={canOpenProfile ? '#2563EB' : '#6B7280'}
-                              />
-                              <Text
-                                className="ml-1 text-xs font-semibold"
-                                style={{ color: canOpenProfile ? '#1D4ED8' : '#6B7280' }}
-                              >
-                                제작자 {authorLabel}
-                              </Text>
-                            </Pressable>
-                          );
-                        })()}
+                            isLocalOwnRoute:
+                              Boolean(ur) &&
+                              !String(ur?.forkedFromSharedId ?? "").trim(),
+                          }}
+                          onPressCreator={() => {
+                            const authorLabel = getCourseAuthorLabel(course, {
+                              ...authorCtx,
+                              isLocalOwnRoute:
+                                Boolean(ur) &&
+                                !String(ur?.forkedFromSharedId ?? "").trim(),
+                            });
+                            const authorUuid = String(
+                              course.authorUuid ?? "",
+                            ).trim();
+                            const authorUserId = String(
+                              course.authorUserId ?? "",
+                            ).trim();
+                            rootNavigate("UserProfile", {
+                              userUuid: authorUuid || undefined,
+                              userId: authorUserId || undefined,
+                              nickname:
+                                authorLabel.startsWith("@") ||
+                                authorLabel === "제작자 미표시"
+                                  ? undefined
+                                  : authorLabel,
+                            });
+                          }}
+                          onPressModifier={() => {
+                            const modLabel = getCourseModifierLabel(
+                              course,
+                              authorCtx,
+                            );
+                            const modUuid = String(
+                              course.modifierUuid ?? "",
+                            ).trim();
+                            const modUserId = String(
+                              course.modifierUserId ?? "",
+                            ).trim();
+                            rootNavigate("UserProfile", {
+                              userUuid: modUuid || undefined,
+                              userId: modUserId || undefined,
+                              nickname:
+                                modLabel.startsWith("@") ||
+                                modLabel === "수정자 미표시"
+                                  ? undefined
+                                  : modLabel,
+                            });
+                          }}
+                        />
                         {Array.isArray(course.tags) && course.tags.length > 0 ? (
                           <View className="mb-2 flex-row flex-wrap gap-1.5">
                             {course.tags.slice(0, 2).map((tag) => (

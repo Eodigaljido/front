@@ -47,7 +47,10 @@ import {
   submitSharedCourseReview,
 } from "../api/courses";
 import { displayCourseRegionChip } from "../utils/inferCourseRegionLabel";
-import { getCourseAuthorLabel } from "../utils/formatCourseAuthor";
+import {
+  getCourseAuthorLabel,
+  getCourseModifierLabel,
+} from "../utils/formatCourseAuthor";
 import {
   CourseAuthorCardRow,
   CourseAuthorDetailChip,
@@ -66,6 +69,8 @@ import FilterBottomSheet, {
 import { sameCourseId } from "../utils/sameCourseId";
 import { courseMatchesTagOrCategory } from "../utils/courseTagFilter";
 import { mergeLocalThumbnailsIntoCourses } from "../utils/mergeCourseThumbnails";
+import { enrichCoursesWithForkOriginAuthors, enrichCourseWithForkOriginAuthor } from "../utils/enrichForkOriginAuthor";
+import { mergeCourseAuthorCredits } from "../utils/courseAuthorCredits";
 import { rootNavigate } from "../navigation/rootNavigation";
 
 type SharedRouteParams = {
@@ -265,6 +270,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
   const [reviewCourseId, setReviewCourseId] = useState<string | null>(null);
   const [reviewComposerOpen, setReviewComposerOpen] = useState(false);
   const [reviewUserName, setReviewUserName] = useState("나");
+  const [reviewAnonymous, setReviewAnonymous] = useState(false);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewBody, setReviewBody] = useState("");
   const [savingMyRoute, setSavingMyRoute] = useState(false);
@@ -282,9 +288,15 @@ export default function SharedRouteScreen(): React.JSX.Element {
     try {
       const courses = await fetchSharedCourses();
       const normalized = normalizeCourseList(courses);
-      setCoursesData(
-        mergeLocalThumbnailsIntoCourses(normalized, userSavedRoutes),
+      const withThumbs = mergeLocalThumbnailsIntoCourses(
+        normalized,
+        userSavedRoutes,
       );
+      const withAuthors = await enrichCoursesWithForkOriginAuthors(
+        withThumbs,
+        userSavedRoutes,
+      );
+      setCoursesData((prev) => mergeCourseAuthorCredits(withAuthors, prev));
     } catch {
       setCoursesData([]);
     }
@@ -417,14 +429,19 @@ export default function SharedRouteScreen(): React.JSX.Element {
     }
     let mounted = true;
     fetchSharedCourseDetail(viewingCourseId)
-      .then((course) => {
-        if (mounted && course) setSharedDetailCourseApi(course);
+      .then(async (course) => {
+        if (!mounted || !course) return;
+        const enriched = await enrichCourseWithForkOriginAuthor(
+          course,
+          userSavedRoutes,
+        );
+        if (mounted && enriched) setSharedDetailCourseApi(enriched);
       })
       .catch(() => {});
     return () => {
       mounted = false;
     };
-  }, [viewingCourseId]);
+  }, [viewingCourseId, userSavedRoutes]);
 
   useEffect(() => {
     if (!viewingCourseId) {
@@ -1019,7 +1036,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
                           <CourseAuthorDetailChip
                             course={course}
                             authorCtx={authorCtx}
-                            onPress={() => {
+                            onPressCreator={() => {
                               const authorLabel = getCourseAuthorLabel(
                                 course,
                                 authorCtx,
@@ -1038,6 +1055,27 @@ export default function SharedRouteScreen(): React.JSX.Element {
                                   authorLabel === "제작자 미표시"
                                     ? undefined
                                     : authorLabel,
+                              });
+                            }}
+                            onPressModifier={() => {
+                              const modLabel = getCourseModifierLabel(
+                                course,
+                                authorCtx,
+                              );
+                              const modUuid = String(
+                                course.modifierUuid ?? "",
+                              ).trim();
+                              const modUserId = String(
+                                course.modifierUserId ?? "",
+                              ).trim();
+                              rootNavigate("UserProfile", {
+                                userUuid: modUuid || undefined,
+                                userId: modUserId || undefined,
+                                nickname:
+                                  modLabel.startsWith("@") ||
+                                  modLabel === "수정자 미표시"
+                                    ? undefined
+                                    : modLabel,
                               });
                             }}
                           />
@@ -1074,11 +1112,6 @@ export default function SharedRouteScreen(): React.JSX.Element {
                               </Text>
                             </View>
                           </View>
-
-                          <Text className="mb-4 text-xs text-gray-400">
-                            이용자들이 실제로 코스를 다녀온 기록을 기반으로 한
-                            대략적인 체류 시간입니다.
-                          </Text>
 
                           {/* 출발/도착 요약 */}
                           <View className="mb-6 rounded-xl bg-gray-50 p-3">
@@ -1203,7 +1236,10 @@ export default function SharedRouteScreen(): React.JSX.Element {
                           <Pressable
                             onPress={() => {
                               setReviewCourseId(course.id);
-                              setReviewUserName("나");
+                              setReviewUserName(
+                                String(authUser?.nickname ?? "").trim() || "나",
+                              );
+                              setReviewAnonymous(false);
                               setReviewRating(5);
                               setReviewBody("");
                               setReviewComposerOpen(true);
@@ -1220,10 +1256,6 @@ export default function SharedRouteScreen(): React.JSX.Element {
                             </Text>
                           </Pressable>
 
-                          <Text className="mt-1 text-[11px] text-gray-400">
-                            작성한 후기는 서버로 전송되며, 연결 실패 시에만 이 기기에
-                            임시 표시됩니다.
-                          </Text>
                         </ScrollView>
                       </>
                     );
@@ -1276,16 +1308,42 @@ export default function SharedRouteScreen(): React.JSX.Element {
                   </Text>
 
                   <Text className="mt-4 text-xs font-semibold text-gray-600">
-                    닉네임
+                    작성자 공개
                   </Text>
-                  <TextInput
-                    value={reviewUserName}
-                    onChangeText={setReviewUserName}
-                    placeholder="표시될 이름"
-                    placeholderTextColor="#9ca3af"
-                    className="mt-1 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-base text-gray-900"
-                    maxLength={20}
-                  />
+                  <View className="mt-2 flex-row gap-2">
+                    <Pressable
+                      onPress={() => setReviewAnonymous(false)}
+                      className={`flex-1 rounded-xl border px-3 py-2.5 ${
+                        !reviewAnonymous
+                          ? "border-blue-500 bg-blue-50"
+                          : "border-gray-200 bg-gray-50"
+                      }`}
+                    >
+                      <Text
+                        className={`text-center text-sm font-semibold ${
+                          !reviewAnonymous ? "text-blue-700" : "text-gray-700"
+                        }`}
+                      >
+                        닉네임 공개
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setReviewAnonymous(true)}
+                      className={`flex-1 rounded-xl border px-3 py-2.5 ${
+                        reviewAnonymous
+                          ? "border-blue-500 bg-blue-50"
+                          : "border-gray-200 bg-gray-50"
+                      }`}
+                    >
+                      <Text
+                        className={`text-center text-sm font-semibold ${
+                          reviewAnonymous ? "text-blue-700" : "text-gray-700"
+                        }`}
+                      >
+                        익명
+                      </Text>
+                    </Pressable>
+                  </View>
 
                   <Text className="mt-3 text-xs font-semibold text-gray-600">
                     별점
@@ -1307,7 +1365,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
                   </View>
 
                   <Text className="mt-4 text-xs font-semibold text-gray-600">
-                    후기
+                    후기 작성
                   </Text>
                   <TextInput
                     value={reviewBody}
@@ -1333,17 +1391,20 @@ export default function SharedRouteScreen(): React.JSX.Element {
                       onPress={async () => {
                         if (!reviewCourseId) return;
                         const t = reviewBody.trim();
+                        const displayName = reviewAnonymous
+                          ? "익명"
+                          : String(reviewUserName ?? "").trim() || "나";
                         if (!t) {
                           showToast('후기 내용을 입력해 주세요');
                           return;
                         }
                         const ok = await submitSharedCourseReview(reviewCourseId, {
-                          userName: reviewUserName,
+                          userName: displayName,
                           rating: reviewRating,
                           text: t,
                         });
                         addSharedCourseReview(reviewCourseId, {
-                          userName: reviewUserName,
+                          userName: displayName,
                           rating: reviewRating,
                           text: t,
                         });

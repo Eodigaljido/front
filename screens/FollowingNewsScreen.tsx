@@ -5,6 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { fetchFollowingNews, type FollowingNewsItem } from "../api/courses";
 import { safeGoBack } from "../navigation/rootNavigation";
+import FollowingNewsAvatar from "../components/FollowingNewsAvatar";
 
 export default function FollowingNewsScreen(): React.JSX.Element {
   const navigation = useNavigation<any>();
@@ -37,17 +38,17 @@ export default function FollowingNewsScreen(): React.JSX.Element {
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
         renderItem={({ item }) => (
           <View
-            className="mb-2.5 flex-row items-center rounded-[16px] p-3 bg-white"
+            className="mb-2.5 flex-row items-center gap-3 rounded-[16px] p-3 bg-white"
             style={{
               borderWidth: 0.5,
               borderColor: "rgba(37,99,235,0.12)",
             }}
           >
-            <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-blue-100">
-              <Text style={{ fontSize: 13, fontWeight: "600", color: "#2563EB" }}>
-                {item.user.slice(0, 1)}
-              </Text>
-            </View>
+            <FollowingNewsAvatar
+              displayName={item.user}
+              profileImageUrl={item.profileImageUrl}
+              size={40}
+            />
             <View className="min-w-0 flex-1">
               <Text style={{ fontSize: 13, fontWeight: "400", color: "#1A1A2E" }} numberOfLines={1}>
                 <Text style={{ fontWeight: "600" }}>{item.user}</Text>님이 {item.action}

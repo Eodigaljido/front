@@ -56,6 +56,14 @@ export type CourseItem = {
   authorUserId?: string;
   /** false면 공유 목록·상세에서 제작자 프로필 비노출 */
   authorProfilePublic?: boolean;
+  /** 포크·재공유 시 직전 부모 공유 코스 id */
+  forkSourceCourseId?: string | null;
+  /** 포크 체인 최초 원본 공유 코스 id */
+  rootForkSourceCourseId?: string | null;
+  /** 포크·재공유 후 공개한 사용자(수정자) */
+  modifierUuid?: string;
+  modifierUserId?: string;
+  modifierProfilePublic?: boolean;
   /** 로그인 사용자가 이 공유 코스를 저장(북마크)했는지 — API `savedByMe` 등 */
   savedByMe?: boolean;
 };

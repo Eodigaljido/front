@@ -480,10 +480,8 @@ export default function GoogleMapWebView({
       fitToRoute,
       followUser,
       followZoom,
-      mapHeading:
-        typeof mapHeading === 'number' && Number.isFinite(mapHeading)
-          ? mapHeading
-          : undefined,
+      // heading은 별도 가이드 카메라 주입에서만 처리 (재중심화 루프 방지)
+      mapHeading: undefined,
       allowTap,
       avoidLineOverlap,
       path: pathArr,
@@ -509,7 +507,6 @@ export default function GoogleMapWebView({
     level,
     zoomProp,
     fitToRoute,
-    mapHeading,
     followUser,
     followZoom,
     allowTap,
@@ -558,8 +555,9 @@ export default function GoogleMapWebView({
   useEffect(() => {
     if (!mapDomReadyRef.current && Platform.OS !== 'web') return;
     if (Platform.OS === 'web' && !webIframeReady) return;
+    if (!followUser) return;
     injectGuideCameraJs();
-  }, [injectGuideCameraJs, webIframeReady]);
+  }, [injectGuideCameraJs, webIframeReady, followUser]);
 
   const onWebViewLoadEnd = useCallback(() => {
     mapDomReadyRef.current = true;
