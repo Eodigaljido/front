@@ -887,14 +887,14 @@ export default function HomeScreen(): React.JSX.Element {
           borderBottomWidth: StyleSheet.hairlineWidth,
           borderBottomColor: "rgba(37,99,235,0.1)",
           zIndex: 100,
-          elevation: Platform.OS === "android" ? 4 : 0,
+          elevation: 0,
         }}
       >
         <View className="flex-row items-center" style={{ width: "100%" }}>
           <Animated.View style={{ width: locationSlotWidth, overflow: "hidden" }}>
             {!searchExpanded ? (
               <Pressable
-                className="flex-row items-center rounded-full px-3 py-2"
+                className="flex-row items-center px-3 py-2 rounded-full"
                 style={{ backgroundColor: "#dbeafe", maxWidth: LOCATION_MAX_W }}
               >
                 <Ionicons name="location" size={14} color="#1d4ed8" />
@@ -911,7 +911,7 @@ export default function HomeScreen(): React.JSX.Element {
               <Pressable
                 onPress={collapseSearchOnly}
                 hitSlop={10}
-                className="items-center justify-center rounded-full bg-white"
+                className="items-center justify-center bg-white rounded-full"
                 style={{
                   width: LOCATION_COLLAPSED_W,
                   height: HEADER_ICON_BTN,
@@ -931,7 +931,7 @@ export default function HomeScreen(): React.JSX.Element {
             <>
               <View style={{ flex: 1 }} />
               <Pressable
-                className="items-center justify-center rounded-full bg-white"
+                className="items-center justify-center bg-white rounded-full"
                 style={{
                   width: HEADER_ICON_BTN,
                   height: HEADER_ICON_BTN,
@@ -950,7 +950,7 @@ export default function HomeScreen(): React.JSX.Element {
                 <Ionicons name="search-outline" size={20} color="#1a1a2e" />
               </Pressable>
               <Pressable
-                className="items-center justify-center rounded-full bg-white"
+                className="items-center justify-center bg-white rounded-full"
                 style={{
                   width: HEADER_ICON_BTN,
                   height: HEADER_ICON_BTN,
@@ -979,7 +979,7 @@ export default function HomeScreen(): React.JSX.Element {
               }}
             >
               <View
-                className="flex-1 flex-row items-center rounded-2xl bg-white px-3"
+                className="flex-row items-center flex-1 px-3 bg-white rounded-2xl"
                 style={{
                   minHeight: 46,
                   paddingVertical: 6,
@@ -998,7 +998,7 @@ export default function HomeScreen(): React.JSX.Element {
                   hitSlop={10}
                   accessibilityRole="button"
                   accessibilityLabel="검색 접기"
-                  className="mr-2 h-9 w-9 items-center justify-center rounded-xl"
+                  className="items-center justify-center mr-2 h-9 w-9 rounded-xl"
                   style={{ backgroundColor: "rgba(37,99,235,0.08)" }}
                 >
                   <Ionicons name="chevron-back" size={22} color="#2563EB" />
@@ -1022,7 +1022,7 @@ export default function HomeScreen(): React.JSX.Element {
                 />
               </View>
               <Pressable
-                className="items-center justify-center rounded-full bg-white"
+                className="items-center justify-center bg-white rounded-full"
                 style={{
                   width: HEADER_ICON_BTN,
                   height: HEADER_ICON_BTN,
@@ -1039,7 +1039,7 @@ export default function HomeScreen(): React.JSX.Element {
                 <Ionicons name="arrow-forward" size={20} color="#2563eb" />
               </Pressable>
               <Pressable
-                className="items-center justify-center rounded-full bg-white"
+                className="items-center justify-center bg-white rounded-full"
                 style={{
                   width: HEADER_ICON_BTN,
                   height: HEADER_ICON_BTN,
@@ -1129,7 +1129,7 @@ export default function HomeScreen(): React.JSX.Element {
               <Text style={{ marginTop: 4, fontSize: 13, fontWeight: "400", color: "#dbeafe" }}>{weatherMoodMessage}</Text>
               <Pressable
                 onPress={openRouteCreate}
-                className="mt-4 self-start active:opacity-90"
+                className="self-start mt-4 active:opacity-90"
                 style={{
                   backgroundColor: "#2563EB",
                   borderRadius: 10,
@@ -1171,8 +1171,8 @@ export default function HomeScreen(): React.JSX.Element {
           </View>
         </LinearGradient>
 
-        <View className="mt-5 flex-row items-center justify-between px-4 py-3" style={CARD_STYLE}>
-          <View className="min-w-0 flex-1 pr-2">
+        <View className="flex-row items-center justify-between px-4 py-3 mt-5" style={CARD_STYLE}>
+          <View className="flex-1 min-w-0 pr-2">
             <View className="flex-row items-center">
               <Image
                 source={getWeatherIconSource(integrated?.current?.weatherIcon)}
@@ -1209,12 +1209,12 @@ export default function HomeScreen(): React.JSX.Element {
         </View>
         {weatherError ? <Text className="mt-1 text-xs text-rose-600">{weatherError}</Text> : null}
         {sortedSchedules.length > 0 ? (
-          <View className="mt-2 rounded-2xl px-4 py-3" style={CARD_STYLE}>
+          <View className="px-4 py-3 mt-2 rounded-2xl" style={CARD_STYLE}>
             <Text style={{ fontSize: 12, color: "#2563EB", fontWeight: "600" }}>
               예정된 코스 약속
             </Text>
             {sortedSchedules.slice(0, 2).map((item) => (
-              <View key={item.id} className="mt-2 flex-row items-center justify-between">
+              <View key={item.id} className="flex-row items-center justify-between mt-2">
                 <Text
                   numberOfLines={1}
                   style={{ flex: 1, fontSize: 13, color: "#1A1A2E", marginRight: 8 }}
@@ -1264,7 +1264,7 @@ export default function HomeScreen(): React.JSX.Element {
                       resizeMode="cover"
                     />
                   ) : (
-                    <View className="h-full w-full items-center justify-center bg-blue-50">
+                    <View className="items-center justify-center w-full h-full bg-blue-50">
                       <Ionicons name="map-outline" size={28} color="#60a5fa" />
                     </View>
                   )}
@@ -1311,7 +1311,7 @@ export default function HomeScreen(): React.JSX.Element {
                 <Text style={{ marginTop: 4, fontSize: 12, fontWeight: "400", color: "#6B7280" }}>
                   핀 {course.pinCount}개 · {course.distanceKm}km
                 </Text>
-                <View className="mt-3 flex-row">
+                <View className="flex-row mt-3">
                   <Pressable
                     className="mr-2 active:opacity-80"
                     style={{
@@ -1395,7 +1395,7 @@ export default function HomeScreen(): React.JSX.Element {
                   }
                 >
                   <Pressable
-                    className="min-w-0 flex-1 flex-row items-center active:opacity-95"
+                    className="flex-row items-center flex-1 min-w-0 active:opacity-95"
                     onPress={() =>
                       navigation.navigate("SharedRoute", {
                         viewCourseId: fid,
@@ -1403,22 +1403,22 @@ export default function HomeScreen(): React.JSX.Element {
                     }
                   >
                     <View
-                      className="mr-3 h-12 w-12 overflow-hidden rounded-xl"
+                      className="w-12 h-12 mr-3 overflow-hidden rounded-xl"
                       style={{ backgroundColor: getCategoryTint(course.category) }}
                     >
                       {course.thumbnail ? (
                         <Image
                           source={{ uri: course.thumbnail }}
-                          className="h-full w-full"
+                          className="w-full h-full"
                           resizeMode="cover"
                         />
                       ) : (
-                        <View className="h-full w-full items-center justify-center">
+                        <View className="items-center justify-center w-full h-full">
                           <Ionicons name="map-outline" size={22} color="#2563EB" />
                         </View>
                       )}
                     </View>
-                    <View className="min-w-0 flex-1">
+                    <View className="flex-1 min-w-0">
                       <Text style={{ fontSize: 14, fontWeight: "600", color: "#1A1A2E" }} numberOfLines={1}>
                         {course.title}
                       </Text>
@@ -1499,7 +1499,7 @@ export default function HomeScreen(): React.JSX.Element {
                         {bookmarked ? "저장됨" : "인기"}
                       </Text>
                     </View>
-                    <View className="mt-1 flex-row items-center">
+                    <View className="flex-row items-center mt-1">
                       <Ionicons
                         name={bookmarked ? "bookmark" : "bookmark-outline"}
                         size={12}
@@ -1542,10 +1542,10 @@ export default function HomeScreen(): React.JSX.Element {
                   className="mb-2.5 flex-row items-center rounded-[16px] p-3"
                   style={CARD_STYLE}
                 >
-                  <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-blue-100">
+                  <View className="items-center justify-center w-10 h-10 mr-3 bg-blue-100 rounded-full">
                     <Text style={{ fontSize: 13, fontWeight: "600", color: "#2563EB" }}>{news.user.slice(0, 1)}</Text>
                   </View>
-                  <View className="min-w-0 flex-1">
+                  <View className="flex-1 min-w-0">
                     <Text style={{ fontSize: 13, fontWeight: "400", color: "#1A1A2E" }} numberOfLines={1}>
                       <Text style={{ fontWeight: "600" }}>{news.user}</Text>님이 {news.action}
                     </Text>
@@ -1563,7 +1563,7 @@ export default function HomeScreen(): React.JSX.Element {
                 </Text>
                 <Pressable
                   onPress={() => navigation.navigate("Chat")}
-                  className="mt-3 self-start active:opacity-80"
+                  className="self-start mt-3 active:opacity-80"
                   accessibilityRole="link"
                   accessibilityLabel="친구 추가하기, 채팅 탭으로 이동"
                 >
@@ -1585,7 +1585,7 @@ export default function HomeScreen(): React.JSX.Element {
             paddingHorizontal: 20,
           }}
         >
-          <View className="rounded-2xl bg-white p-4">
+          <View className="p-4 bg-white rounded-2xl">
             <Text style={{ fontSize: 16, fontWeight: "700", color: "#1A1A2E" }}>
               코스 약속 잡기
             </Text>
@@ -1617,16 +1617,16 @@ export default function HomeScreen(): React.JSX.Element {
                 }}
               />
             </View>
-            <View className="mt-3 flex-row justify-end">
+            <View className="flex-row justify-end mt-3">
               <Pressable
                 onPress={closeScheduleModal}
-                className="mr-2 rounded-xl border border-gray-300 px-4 py-2"
+                className="px-4 py-2 mr-2 border border-gray-300 rounded-xl"
               >
                 <Text style={{ color: "#475569", fontWeight: "600" }}>취소</Text>
               </Pressable>
               <Pressable
                 onPress={saveCourseSchedule}
-                className="rounded-xl bg-blue-600 px-4 py-2"
+                className="px-4 py-2 bg-blue-600 rounded-xl"
               >
                 <Text style={{ color: "#fff", fontWeight: "700" }}>약속 추가</Text>
               </Pressable>
