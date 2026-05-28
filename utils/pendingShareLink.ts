@@ -1,4 +1,4 @@
-import type { NavigationContainerRef } from '@react-navigation/native';
+import type { NavigationContainerRef, NavigationProp } from '@react-navigation/native';
 import type { ParsedSharePath } from './parseSharePath';
 
 let pending: ParsedSharePath | null = null;
@@ -16,8 +16,11 @@ export function clearPendingShareLink(): void {
 }
 
 /** 로그인·온보딩 완료 후 Tabs로 이동 + 공유/친구 화면으로 연결 */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ResetNavigation = Pick<NavigationProp<any>, 'reset'>;
+
 export function consumePendingShareNavigation(
-  navigation: NavigationContainerRef<Record<string, unknown>> | { reset: (o: object) => void },
+  navigation: NavigationContainerRef<Record<string, unknown>> | ResetNavigation,
 ): boolean {
   const link = getPendingShareLink();
   if (!link) return false;
@@ -80,9 +83,7 @@ export function consumePendingShareNavigation(
 }
 
 /** 로그인·온보딩 후 메인 진입 (보류 중인 공유 링크가 있으면 해당 탭으로) */
-export function resetToMainAfterAuth(navigation: {
-  reset: (o: object) => void;
-}): void {
+export function resetToMainAfterAuth(navigation: ResetNavigation): void {
   if (consumePendingShareNavigation(navigation)) return;
   navigation.reset({ index: 0, routes: [{ name: 'Tabs' }] });
 }

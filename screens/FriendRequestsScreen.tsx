@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React, { useCallback, useState } from 'react';
-import { View, Text, Pressable, FlatList, Image, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, FlatList, Image, ActivityIndicator, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -138,9 +138,6 @@ export default function FriendRequestsScreen(): React.JSX.Element {
           <Ionicons name="chevron-back" size={22} color="#2563eb" />
         </Pressable>
         <Text className="flex-1 text-lg font-bold text-gray-900">친구 요청</Text>
-        <Pressable onPress={load} className="p-2 active:opacity-70">
-          <Ionicons name="refresh-outline" size={20} color="#6b7280" />
-        </Pressable>
       </View>
 
       {/* 탭 */}
@@ -177,25 +174,22 @@ export default function FriendRequestsScreen(): React.JSX.Element {
         onClose={() => setModal(HIDDEN_MODAL)}
       />
 
-      {loading ? (
-        <ActivityIndicator className="mt-12" color="#2563eb" />
-      ) : (
-        <FlatList
-          data={filtered}
-          keyExtractor={item => String(item.requestId)}
-          renderItem={renderItem}
-          contentContainerStyle={filtered.length === 0 ? { flex: 1 } : { backgroundColor: '#FFF' }}
-          style={{ backgroundColor: '#F0F5FF' }}
-          ListEmptyComponent={
-            <View className="items-center justify-center flex-1">
-              <Ionicons name="people-outline" size={48} color="#d1d5db" />
-              <Text className="mt-3 text-sm text-gray-400">
-                {tab === 'RECEIVED' ? '받은 친구 요청이 없습니다.' : '보낸 친구 요청이 없습니다.'}
-              </Text>
-            </View>
-          }
-        />
-      )}
+      <FlatList
+        data={filtered}
+        keyExtractor={item => String(item.requestId)}
+        renderItem={renderItem}
+        contentContainerStyle={filtered.length === 0 ? { flex: 1 } : { backgroundColor: '#FFF' }}
+        style={{ backgroundColor: '#F0F5FF' }}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={load} colors={['#2563eb']} tintColor="#2563eb" />}
+        ListEmptyComponent={
+          <View className="items-center justify-center flex-1">
+            <Ionicons name="people-outline" size={48} color="#d1d5db" />
+            <Text className="mt-3 text-sm text-gray-400">
+              {tab === 'RECEIVED' ? '받은 친구 요청이 없습니다.' : '보낸 친구 요청이 없습니다.'}
+            </Text>
+          </View>
+        }
+      />
     </SafeAreaView>
   );
 }
