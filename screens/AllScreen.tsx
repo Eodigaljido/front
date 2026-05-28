@@ -6,7 +6,6 @@ import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/nativ
 import { Ionicons } from '@expo/vector-icons';
 
 import type { RootTabParamList } from '../App';
-import { getMyProfile } from '../api/users';
 import {
   addFriendByCode,
   getFriends,
@@ -27,7 +26,6 @@ export default function AllScreen(): React.JSX.Element {
   const navigation = useNavigation<any>();
   const route = useRoute();
   const authUser = useAuthStore(s => s.user);
-  const setUser = useAuthStore(s => s.setUser);
   const profileImageCacheBust = useAuthStore(s => s.profileImageCacheBust);
   const setForcedActiveTab = useTabStore(s => s.setForcedActiveTab);
   const [friendCount, setFriendCount] = useState<number>(0);
@@ -40,26 +38,16 @@ export default function AllScreen(): React.JSX.Element {
 
   const refreshMe = useCallback(async () => {
     try {
-      const [me, friends, reqs] = await Promise.all([
-        getMyProfile(),
+      const [friends, reqs] = await Promise.all([
         getFriends().catch(() => []),
         getFriendRequests().catch(() => []),
       ]);
-      setUser({
-        id: (me as any).id ?? 0,
-        uuid: me.uuid,
-        userId: me.userId ?? '',
-        email: me.email ?? '',
-        nickname: me.nickname ?? '',
-        role: me.role ?? 'USER',
-        profileImageUrl: me.profileImageUrl ?? null,
-      });
       setFriendCount(friends.length);
       setPendingRequestCount(reqs.filter(r => r.direction === 'RECEIVED').length);
     } catch {
-      // 프로필 요청 실패 시 기존 상태 유지
+      // 무시
     }
-  }, [setUser]);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -225,22 +213,29 @@ export default function AllScreen(): React.JSX.Element {
 
   return (
     <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={['top']}>
-      <View className="flex-row items-center justify-between px-5 pt-4 pb-2">
-        <Text className="text-xl font-bold text-gray-900">전체</Text>
-        <Pressable
-          onPress={() => navigation.getParent()?.getParent()?.navigate('NotificationCenter')}
-          className="items-center justify-center w-10 h-10 rounded-full active:opacity-70"
-          hitSlop={8}
-        >
-          <Ionicons name="notifications-outline" size={24} color="#374151" />
-        </Pressable>
-      </View>
+      <Pressable
+        onPress={() => navigation.getParent()?.getParent()?.navigate('NotificationCenter')}
+        className="absolute z-10 items-center justify-center bg-white rounded-full active:opacity-70"
+        style={{
+          top: 48,
+          right: 16,
+          width: 36,
+          height: 36,
+          shadowColor: '#0f172a',
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.06,
+          shadowRadius: 3,
+          elevation: 2,
+        }}
+        hitSlop={8}
+      >
+        <Ionicons name="notifications-outline" size={20} color="#1a1a2e" />
+      </Pressable>
 
       <ScrollView
         contentContainerStyle={{
           paddingHorizontal: 16,
-          paddingTop: 8,
-          paddingBottom: 120,
+          paddingTop: 50,
         }}
       >
         <Text className="mb-2 ml-1 text-xs font-semibold tracking-wide text-gray-400 uppercase">
