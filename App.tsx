@@ -230,7 +230,7 @@ function TabNavigator() {
           paddingBottom: 8,
           backgroundColor: 'transparent',
           borderTopWidth: 0,
-          elevation: Platform.OS === 'android' ? 14 : 0,
+          elevation: 0,
           shadowColor: '#0f172a',
           shadowOffset: { width: 0, height: 8 },
           shadowOpacity: Platform.OS === 'ios' ? 0.12 : 0.18,
