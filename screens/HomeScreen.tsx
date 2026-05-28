@@ -16,7 +16,9 @@ import {
   PanResponder,
   Keyboard,
   Platform,
+  Modal,
 } from "react-native";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
@@ -79,6 +81,13 @@ const REFRESH_MIN_HOLD_MS = 420;
 const PULL_MAX = 100;
 const PULL_TRIGGER_DISTANCE = 50;
 const DEFAULT_WEATHER_LOCATION = "서울 강남구";
+const KO_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
+  month: "long",
+  day: "numeric",
+  weekday: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+});
 const WEATHER_ICON_IMAGES = {
   sunny: require("../assets/Weather/Sunny.png"),
   partly_cloudy: require("../assets/Weather/PartlyCloudy.png"),
@@ -217,6 +226,13 @@ export default function HomeScreen(): React.JSX.Element {
   const [refreshing, setRefreshing] = useState(false);
   const [homeSearchQuery, setHomeSearchQuery] = useState("");
   const [searchExpanded, setSearchExpanded] = useState(false);
+  const [courseRecommendDate, setCourseRecommendDate] = useState<Date | null>(null);
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [scheduleDraftDate, setScheduleDraftDate] = useState(new Date());
+  const [scheduleDraftTitle, setScheduleDraftTitle] = useState("");
+  const [courseSchedules, setCourseSchedules] = useState<
+    { id: string; title: string; date: Date }[]
+  >([]);
   const [heroLocationLabel, setHeroLocationLabel] = useState("위치 확인 중...");
   const weatherLocationRef = useRef("");
   const pullOffset = useRef(new Animated.Value(0)).current;
@@ -292,6 +308,17 @@ export default function HomeScreen(): React.JSX.Element {
       `미세 ${integrated?.air?.pm10Grade ?? "--"}`,
     ];
   }, [integrated?.air?.pm10Grade, integrated?.current]);
+  const recommendDayLabel = useMemo(() => {
+    if (!courseRecommendDate) return "코스 추천일 ☀️";
+    return `추천일 ${KO_DATE_TIME_FORMATTER.format(courseRecommendDate)}`;
+  }, [courseRecommendDate]);
+  const sortedSchedules = useMemo(
+    () =>
+      [...courseSchedules].sort(
+        (a, b) => a.date.getTime() - b.date.getTime(),
+      ),
+    [courseSchedules],
+  );
   const myRecentCoursesForHome = useMemo(() => {
     const seen = new Set<string>();
     const out = [];
@@ -338,7 +365,18 @@ export default function HomeScreen(): React.JSX.Element {
   );
   const trendingCourses = useMemo(
     () =>
-      popularCourses.slice(0, 3).map((course) => {
+      popularCourses
+      .filter((course) => {
+        const id = String(course?.id ?? "").trim();
+        if (!id) return false;
+        const isSaved =
+          savedCourseIds.includes(id) ||
+          pickCourseSavedByMe(course) ||
+          course.savedByMe === true;
+        return !isSaved;
+      })
+      .slice(0, 3)
+      .map((course) => {
         const steps = Array.isArray(course.routeSteps) ? course.routeSteps : [];
         const saveCount = pickCourseSaveCount(course);
         const tagList = Array.isArray(course.tags)
@@ -376,7 +414,7 @@ export default function HomeScreen(): React.JSX.Element {
         statsLine: statsLine.join(" · "),
       };
       }),
-    [popularCourses],
+    [popularCourses, savedCourseIds],
   );
   const followingNews = Array.isArray(followingNewsApi) ? followingNewsApi : [];
 
@@ -723,6 +761,30 @@ export default function HomeScreen(): React.JSX.Element {
   const handleShareCourse = useCallback((courseId: string, title: string) => {
     void sharePublicCourse({ courseId, title });
   }, []);
+  const openScheduleModal = useCallback(() => {
+    const seed = courseRecommendDate ?? new Date();
+    setScheduleDraftDate(seed);
+    setScheduleDraftTitle("");
+    setScheduleModalOpen(true);
+  }, [courseRecommendDate]);
+  const closeScheduleModal = useCallback(() => {
+    setScheduleModalOpen(false);
+  }, []);
+  const saveCourseSchedule = useCallback(() => {
+    const title = scheduleDraftTitle.trim();
+    if (!title) {
+      showToast("약속 이름을 입력해 주세요");
+      return;
+    }
+    const pickedDate = new Date(scheduleDraftDate);
+    setCourseRecommendDate(pickedDate);
+    setCourseSchedules((prev) => [
+      ...prev,
+      { id: `schedule-${Date.now()}`, title, date: pickedDate },
+    ]);
+    setScheduleModalOpen(false);
+    showToast("코스 약속이 추가됐어요");
+  }, [scheduleDraftDate, scheduleDraftTitle, showToast]);
   const executeRouteSearch = useCallback(() => {
     const q = homeSearchQuery.trim();
     navigation.navigate("SharedRoute", q ? { initialQuery: q } : undefined);
@@ -1127,7 +1189,10 @@ export default function HomeScreen(): React.JSX.Element {
               {weatherHighlights.join(" · ")}
             </Text>
           </View>
-          <View
+          <Pressable
+            onPress={openScheduleModal}
+            accessibilityRole="button"
+            accessibilityLabel="코스 추천일 설정"
             style={{
               backgroundColor: "#EFF6FF",
               paddingVertical: 5,
@@ -1138,11 +1203,31 @@ export default function HomeScreen(): React.JSX.Element {
             }}
           >
             <Text style={{ color: "#2563EB", fontSize: 12, fontWeight: "500" }} numberOfLines={1}>
-              코스 추천일 ☀️
+              {recommendDayLabel}
             </Text>
-          </View>
+          </Pressable>
         </View>
         {weatherError ? <Text className="mt-1 text-xs text-rose-600">{weatherError}</Text> : null}
+        {sortedSchedules.length > 0 ? (
+          <View className="mt-2 rounded-2xl px-4 py-3" style={CARD_STYLE}>
+            <Text style={{ fontSize: 12, color: "#2563EB", fontWeight: "600" }}>
+              예정된 코스 약속
+            </Text>
+            {sortedSchedules.slice(0, 2).map((item) => (
+              <View key={item.id} className="mt-2 flex-row items-center justify-between">
+                <Text
+                  numberOfLines={1}
+                  style={{ flex: 1, fontSize: 13, color: "#1A1A2E", marginRight: 8 }}
+                >
+                  {item.title}
+                </Text>
+                <Text style={{ fontSize: 12, color: "#6B7280" }}>
+                  {KO_DATE_TIME_FORMATTER.format(item.date)}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
         <View style={{ marginTop: 20 }}>
           <View style={{ marginBottom: 12 }}>
@@ -1491,6 +1576,64 @@ export default function HomeScreen(): React.JSX.Element {
         </Animated.ScrollView>
       </View>
 
+      <Modal visible={scheduleModalOpen} transparent animationType="fade">
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(15,23,42,0.45)",
+            justifyContent: "center",
+            paddingHorizontal: 20,
+          }}
+        >
+          <View className="rounded-2xl bg-white p-4">
+            <Text style={{ fontSize: 16, fontWeight: "700", color: "#1A1A2E" }}>
+              코스 약속 잡기
+            </Text>
+            <Text style={{ marginTop: 4, fontSize: 12, color: "#6B7280" }}>
+              날짜와 시간을 고르고 약속 이름을 입력해 주세요.
+            </Text>
+            <TextInput
+              value={scheduleDraftTitle}
+              onChangeText={setScheduleDraftTitle}
+              placeholder="예: 토요일 한강 산책"
+              placeholderTextColor="#94a3b8"
+              style={{
+                marginTop: 12,
+                borderWidth: 1,
+                borderColor: "rgba(37,99,235,0.25)",
+                borderRadius: 12,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                color: "#0f172a",
+              }}
+            />
+            <View style={{ marginTop: 10 }}>
+              <DateTimePicker
+                value={scheduleDraftDate}
+                mode="datetime"
+                display={Platform.OS === "ios" ? "inline" : "default"}
+                onChange={(_, date) => {
+                  if (date) setScheduleDraftDate(date);
+                }}
+              />
+            </View>
+            <View className="mt-3 flex-row justify-end">
+              <Pressable
+                onPress={closeScheduleModal}
+                className="mr-2 rounded-xl border border-gray-300 px-4 py-2"
+              >
+                <Text style={{ color: "#475569", fontWeight: "600" }}>취소</Text>
+              </Pressable>
+              <Pressable
+                onPress={saveCourseSchedule}
+                className="rounded-xl bg-blue-600 px-4 py-2"
+              >
+                <Text style={{ color: "#fff", fontWeight: "700" }}>약속 추가</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
