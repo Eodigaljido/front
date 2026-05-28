@@ -21,7 +21,6 @@ import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../store/authStore';
 import { useToast } from '../context/ToastContext';
 import {
-  deleteMyAccount,
   deleteMyProfileImage,
   getMyProfile,
   patchMyPhone,
@@ -34,6 +33,13 @@ import ProfileAvatar from '../components/ProfileAvatar';
 
 const DEFAULT_AVATAR_URI = '';
 
+function formatPhoneNumber(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 11);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+}
+
 export default function ProfileSettingsScreen(): React.JSX.Element {
   const navigation = useNavigation<any>();
   const { showToast } = useToast();
@@ -41,7 +47,6 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
   const bumpProfileImageCache = useAuthStore(s => s.bumpProfileImageCache);
   const profileImageCacheBust = useAuthStore(s => s.profileImageCacheBust);
   const setUser = useAuthStore(s => s.setUser);
-  const logout = useAuthStore(s => s.logout);
 
   const [avatarUri, setAvatarUri] = useState<string>(DEFAULT_AVATAR_URI);
   const [pickingImage, setPickingImage] = useState(false);
@@ -85,8 +90,8 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
       setNickname(me.nickname ?? '');
       setEmail(me.email ?? '');
       setBio(me.bio ?? '');
-      setPhone(me.phone ?? '');
-      setOriginalPhone(me.phone ?? '');
+      setPhone(formatPhoneNumber(me.phone ?? ''));
+      setOriginalPhone(formatPhoneNumber(me.phone ?? ''));
       setAvatarUri(
         me.profileImageUrl
           ? bustProfileImageUri(me.profileImageUrl, profileImageCacheBust)
@@ -188,7 +193,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
 
   const handleSendPhoneCode = useCallback(async () => {
     if (phoneSending) return;
-    const trimmed = phone.trim();
+    const trimmed = phone.replace(/-/g, '').trim();
     if (!trimmed) {
       Alert.alert('입력 확인', '전화번호를 입력해 주세요.');
       return;
@@ -219,7 +224,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
     setPhoneVerifying(true);
     try {
       await verifyPhoneCode({
-        phone: phone.trim(),
+        phone: phone.replace(/-/g, '').trim(),
         code: phoneCode.trim(),
         purpose: 'CHANGE_PHONE',
       });
@@ -249,17 +254,18 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
         nickname: nickname.trim(),
         bio: bio.trim(),
       });
-      const phoneTrimmed = phone.trim();
-      if (phoneTrimmed && phoneTrimmed !== originalPhone) {
+      const phoneTrimmed = phone.replace(/-/g, '').trim();
+      const originalPhoneTrimmed = originalPhone.replace(/-/g, '').trim();
+      if (phoneTrimmed && phoneTrimmed !== originalPhoneTrimmed) {
         if (!phoneVerified) {
           Alert.alert('인증 필요', '변경된 전화번호는 인증 후 저장할 수 있습니다.');
           setSaving(false);
           return;
         }
         await patchMyPhone(phoneTrimmed);
-        setOriginalPhone(phoneTrimmed);
+        setOriginalPhone(formatPhoneNumber(phoneTrimmed));
         setPhoneVerified(false);
-      } else if (phoneTrimmed && phoneTrimmed === originalPhone) {
+      } else if (phoneTrimmed && phoneTrimmed === originalPhoneTrimmed) {
         // 번호 변경 없음 — 그대로 유지
       }
       await refreshProfile();
@@ -290,28 +296,6 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
       );
     }
   }, [bumpProfileImageCache, refreshProfile, showToast]);
-
-  const handleDeleteAccount = useCallback(() => {
-    Alert.alert('회원 탈퇴', '정말 탈퇴하시겠어요? 이 작업은 되돌릴 수 없습니다.', [
-      { text: '취소', style: 'cancel' },
-      {
-        text: '탈퇴',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteMyAccount();
-            await logout();
-            navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
-          } catch (e: any) {
-            Alert.alert(
-              '오류',
-              e?.response?.data?.message ?? e?.message ?? '회원 탈퇴에 실패했습니다.',
-            );
-          }
-        },
-      },
-    ]);
-  }, [logout, navigation]);
 
   return (
     <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={['top', 'left', 'right']}>
@@ -433,7 +417,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
                 <TextInput
                   value={phone}
                   onChangeText={v => {
-                    setPhone(v);
+                    setPhone(formatPhoneNumber(v));
                     setPhoneVerified(false);
                     setPhoneCodeSent(false);
                     setPhoneCode('');
@@ -445,7 +429,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
                   keyboardType="phone-pad"
                   className="flex-1 text-base font-semibold text-gray-900"
                 />
-                {phoneVerified || (!!originalPhone && phone.trim() === originalPhone) ? (
+                {phoneVerified || (!!originalPhone && phone.replace(/-/g, '').trim() === originalPhone.replace(/-/g, '').trim()) ? (
                   <View
                     className="flex-row items-center gap-1 px-3 py-1.5 rounded-lg"
                     style={{ backgroundColor: '#dcfce7' }}
@@ -556,13 +540,6 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
             ) : (
               <Text className="text-base font-semibold text-white">변경 사항 저장</Text>
             )}
-          </Pressable>
-
-          <Pressable
-            onPress={handleDeleteAccount}
-            className="items-center py-4 mt-3 bg-white border rounded-2xl border-rose-200 active:opacity-90"
-          >
-            <Text className="text-base font-semibold text-rose-600">회원 탈퇴</Text>
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
