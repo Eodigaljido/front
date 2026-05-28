@@ -42,12 +42,14 @@
     "expo-navigation-bar": "~5.0.10",
     "expo-secure-store": "~15.0.8",
     "expo-status-bar": "~3.0.9",
+    "lightningcss": "^1.32.0",
     "lucide-react-native": "^1.7.0",
     "nativewind": "^4.0.1",
     "patch-package": "^8.0.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
+    "react-native-calendars": "^1.1314.0",
     "react-native-dropdown-picker": "^5.4.6",
     "react-native-gesture-handler": "~2.28.0",
     "react-native-keyboard-controller": "1.18.5",
@@ -62,6 +64,7 @@
     "sockjs-client": "^1.6.1",
     "storybook": "^10.3.5",
     "tailwindcss": "^3.4.19",
+    "xdate": "^0.8.3",
     "zustand": "^5.0.12"
   },
   "devDependencies": {

@@ -19,6 +19,7 @@ import {
   Modal,
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import { Calendar } from "react-native-calendars";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
@@ -36,6 +37,7 @@ import {
   pickCourseSavedByMe,
   saveSharedCourse,
 } from "../api/courses";
+import { getChatRooms, type ChatRoom as ChatRoomType } from "../api/chat/chat";
 import { useMockData } from "../context/MockDataContext";
 import { useToast } from "../context/ToastContext";
 import { userRouteToCourseItem } from "../data/userSavedRoute";
@@ -89,6 +91,64 @@ const KO_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
   hour: "2-digit",
   minute: "2-digit",
 });
+const KO_DATE_ONLY_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
+  month: "long",
+  day: "numeric",
+  weekday: "short",
+});
+const KO_TIME_ONLY_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
+  hour: "2-digit",
+  minute: "2-digit",
+});
+function toDateKey(d: Date): string {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+const DUMMY_SCHEDULES = (() => {
+  const now = new Date();
+  const makeDate = (addDays: number, hour: number, minute: number) => {
+    const d = new Date(now);
+    d.setDate(d.getDate() + addDays);
+    d.setHours(hour, minute, 0, 0);
+    return d;
+  };
+  return [
+    {
+      id: "dummy-schedule-1",
+      title: "성수 카페 코스",
+      date: makeDate(1, 19, 0),
+      participants: ["지민", "서연", "민수"],
+      chatRoomUuid: "dummy-room-1",
+      chatRoomName: "주말 번개방",
+    },
+    {
+      id: "dummy-schedule-2",
+      title: "한강 산책 코스",
+      date: makeDate(2, 18, 30),
+      participants: ["유진", "태호"],
+      chatRoomUuid: "dummy-room-2",
+      chatRoomName: "한강 러닝 크루",
+    },
+    {
+      id: "dummy-schedule-3",
+      title: "홍대 맛집 투어",
+      date: makeDate(4, 12, 0),
+      participants: ["수빈", "준호", "하린"],
+      chatRoomUuid: "dummy-room-3",
+      chatRoomName: "맛집 탐험대",
+    },
+    {
+      id: "dummy-schedule-4",
+      title: "북촌 사진 산책",
+      date: makeDate(6, 15, 30),
+      participants: ["도윤", "예린"],
+      chatRoomUuid: "dummy-room-4",
+      chatRoomName: "사진 동호회",
+    },
+  ];
+})();
 const WEATHER_ICON_IMAGES = {
   sunny: require("../assets/Weather/Sunny.png"),
   partly_cloudy: require("../assets/Weather/PartlyCloudy.png"),
@@ -204,6 +264,7 @@ function getCategoryTint(category: string) {
 export default function HomeScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<HomeNavProp>();
+  const accessToken = useAuthStore((s: any) => s.accessToken);
   const authUser = useAuthStore((s: any) => s.user);
   const { showToast } = useToast();
   const {
@@ -227,13 +288,27 @@ export default function HomeScreen(): React.JSX.Element {
   const [refreshing, setRefreshing] = useState(false);
   const [homeSearchQuery, setHomeSearchQuery] = useState("");
   const [searchExpanded, setSearchExpanded] = useState(false);
-  const [courseRecommendDate, setCourseRecommendDate] = useState<Date | null>(null);
+  const [courseRecommendDate, setCourseRecommendDate] = useState<Date | null>(
+    DUMMY_SCHEDULES[0]?.date ?? null,
+  );
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [scheduleDraftDate, setScheduleDraftDate] = useState(new Date());
+  const [scheduleDraftTime, setScheduleDraftTime] = useState(new Date());
   const [scheduleDraftTitle, setScheduleDraftTitle] = useState("");
+  const [scheduleChatRooms, setScheduleChatRooms] = useState<ChatRoomType[]>([]);
+  const [scheduleChatRoomsLoading, setScheduleChatRoomsLoading] = useState(false);
+  const [selectedScheduleChatRoomUuid, setSelectedScheduleChatRoomUuid] = useState<string | null>(null);
+  const [scheduleDetailFormOpen, setScheduleDetailFormOpen] = useState(false);
   const [courseSchedules, setCourseSchedules] = useState<
-    { id: string; title: string; date: Date }[]
-  >([]);
+    {
+      id: string;
+      title: string;
+      date: Date;
+      participants: string[];
+      chatRoomUuid?: string | null;
+      chatRoomName?: string | null;
+    }[]
+  >(() => DUMMY_SCHEDULES);
   const [heroLocationLabel, setHeroLocationLabel] = useState("위치 확인 중...");
   const weatherLocationRef = useRef("");
   const pullOffset = useRef(new Animated.Value(0)).current;
@@ -309,10 +384,6 @@ export default function HomeScreen(): React.JSX.Element {
       `미세 ${integrated?.air?.pm10Grade ?? "--"}`,
     ];
   }, [integrated?.air?.pm10Grade, integrated?.current]);
-  const recommendDayLabel = useMemo(() => {
-    if (!courseRecommendDate) return "코스 추천일 ☀️";
-    return `추천일 ${KO_DATE_TIME_FORMATTER.format(courseRecommendDate)}`;
-  }, [courseRecommendDate]);
   const sortedSchedules = useMemo(
     () =>
       [...courseSchedules].sort(
@@ -320,6 +391,46 @@ export default function HomeScreen(): React.JSX.Element {
       ),
     [courseSchedules],
   );
+  const nearestSchedule = useMemo(() => sortedSchedules[0] ?? null, [sortedSchedules]);
+  const nearestScheduleDdayLabel = useMemo(() => {
+    if (!nearestSchedule) return "";
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const target = new Date(
+      nearestSchedule.date.getFullYear(),
+      nearestSchedule.date.getMonth(),
+      nearestSchedule.date.getDate(),
+    );
+    const diffDays = Math.floor(
+      (target.getTime() - startOfToday.getTime()) / (1000 * 60 * 60 * 24),
+    );
+    if (diffDays <= 0) return "D-DAY";
+    return `D-${diffDays}`;
+  }, [nearestSchedule]);
+  const scheduleSelectedDateKey = useMemo(
+    () => toDateKey(scheduleDraftDate),
+    [scheduleDraftDate],
+  );
+  const scheduleMarkedDates = useMemo(() => {
+    const marked: Record<string, any> = {};
+    for (const item of courseSchedules) {
+      const key = toDateKey(item.date);
+      marked[key] = {
+        ...(marked[key] ?? {}),
+        marked: true,
+        dotColor: "#60A5FA",
+      };
+    }
+    marked[scheduleSelectedDateKey] = {
+      ...(marked[scheduleSelectedDateKey] ?? {}),
+      selected: true,
+      selectedColor: "#2563EB",
+      selectedTextColor: "#FFFFFF",
+      marked: true,
+      dotColor: "#DBEAFE",
+    };
+    return marked;
+  }, [courseSchedules, scheduleSelectedDateKey]);
   const myRecentCoursesForHome = useMemo(() => {
     const seen = new Set<string>();
     const out = [];
@@ -767,27 +878,87 @@ export default function HomeScreen(): React.JSX.Element {
   const openScheduleModal = useCallback(() => {
     const seed = courseRecommendDate ?? new Date();
     setScheduleDraftDate(seed);
+    setScheduleDraftTime(seed);
     setScheduleDraftTitle("");
+    setSelectedScheduleChatRoomUuid(null);
+    setScheduleDetailFormOpen(false);
     setScheduleModalOpen(true);
-  }, [courseRecommendDate]);
+    if (accessToken) {
+      setScheduleChatRoomsLoading(true);
+      getChatRooms(accessToken)
+        .then((rooms) => setScheduleChatRooms(Array.isArray(rooms) ? rooms : []))
+        .catch(() => {
+          setScheduleChatRooms([]);
+          showToast("채팅방 목록을 불러오지 못했어요");
+        })
+        .finally(() => setScheduleChatRoomsLoading(false));
+    } else {
+      setScheduleChatRooms([]);
+    }
+  }, [accessToken, courseRecommendDate, showToast]);
   const closeScheduleModal = useCallback(() => {
     setScheduleModalOpen(false);
   }, []);
+  const handleScheduleCancel = useCallback(() => {
+    if (scheduleDetailFormOpen) {
+      setScheduleDetailFormOpen(false);
+      return;
+    }
+    closeScheduleModal();
+  }, [closeScheduleModal, scheduleDetailFormOpen]);
   const saveCourseSchedule = useCallback(() => {
     const title = scheduleDraftTitle.trim();
     if (!title) {
       showToast("약속 이름을 입력해 주세요");
       return;
     }
+    if (!selectedScheduleChatRoomUuid) {
+      showToast("채팅방을 선택해 주세요");
+      return;
+    }
+    const selectedChatRoom = scheduleChatRooms.find(
+      (room) => room.uuid === selectedScheduleChatRoomUuid,
+    );
+    const participantsFromRoom = selectedChatRoom
+      ? [
+          ...(selectedChatRoom.members ?? [])
+            .map((member) => String(member.nickname ?? member.userId ?? "").trim())
+            .filter(Boolean),
+          ...((selectedChatRoom.memberUserIds ?? [])
+            .map((id) => String(id ?? "").trim())
+            .filter(Boolean) as string[]),
+        ]
+      : [];
+    const participants = [...new Set(participantsFromRoom)].slice(0, 8);
     const pickedDate = new Date(scheduleDraftDate);
+    pickedDate.setHours(
+      scheduleDraftTime.getHours(),
+      scheduleDraftTime.getMinutes(),
+      0,
+      0,
+    );
     setCourseRecommendDate(pickedDate);
     setCourseSchedules((prev) => [
       ...prev,
-      { id: `schedule-${Date.now()}`, title, date: pickedDate },
+      {
+        id: `schedule-${Date.now()}`,
+        title,
+        date: pickedDate,
+        participants,
+        chatRoomUuid: selectedChatRoom?.uuid ?? null,
+        chatRoomName: selectedChatRoom?.name ?? null,
+      },
     ]);
     setScheduleModalOpen(false);
     showToast("코스 약속이 추가됐어요");
-  }, [scheduleDraftDate, scheduleDraftTitle, showToast]);
+  }, [
+    scheduleDraftDate,
+    scheduleDraftTime,
+    scheduleDraftTitle,
+    scheduleChatRooms,
+    selectedScheduleChatRoomUuid,
+    showToast,
+  ]);
   const executeRouteSearch = useCallback(() => {
     const q = homeSearchQuery.trim();
     navigation.navigate("SharedRoute", q ? { initialQuery: q } : undefined);
@@ -1130,6 +1301,57 @@ export default function HomeScreen(): React.JSX.Element {
                 오늘은 어디를 걸어볼까요?
               </Text>
               <Text style={{ marginTop: 4, fontSize: 13, fontWeight: "400", color: "#dbeafe" }}>{weatherMoodMessage}</Text>
+              {nearestSchedule ? (
+                <View
+                  style={{
+                    marginTop: 10,
+                    backgroundColor: "rgba(255,255,255,0.16)",
+                    borderWidth: 1,
+                    borderColor: "rgba(219,234,254,0.32)",
+                    borderRadius: 12,
+                    paddingHorizontal: 10,
+                    paddingVertical: 8,
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", flex: 1, marginRight: 8 }}>
+                      <View
+                        style={{
+                          backgroundColor: "rgba(255,255,255,0.2)",
+                          borderRadius: 999,
+                          paddingHorizontal: 8,
+                          paddingVertical: 3,
+                          marginRight: 6,
+                        }}
+                      >
+                        <Text style={{ color: "#FFFFFF", fontSize: 11, fontWeight: "700" }}>
+                          {nearestScheduleDdayLabel}
+                        </Text>
+                      </View>
+                      <Text numberOfLines={1} style={{ color: "#EFF6FF", fontSize: 12, fontWeight: "600", flex: 1 }}>
+                        {nearestSchedule.title}
+                      </Text>
+                    </View>
+                    <Pressable
+                      onPress={openScheduleModal}
+                      accessibilityRole="button"
+                      accessibilityLabel="약속 전체보기"
+                      style={{
+                        backgroundColor: "rgba(255,255,255,0.24)",
+                        borderRadius: 999,
+                        paddingHorizontal: 9,
+                        paddingVertical: 4,
+                      }}
+                    >
+                      <Text style={{ color: "#FFFFFF", fontSize: 11, fontWeight: "700" }}>전체보기</Text>
+                    </Pressable>
+                  </View>
+                  <Text style={{ marginTop: 4, color: "#DBEAFE", fontSize: 11 }}>
+                    {KO_DATE_TIME_FORMATTER.format(nearestSchedule.date)}
+                    {nearestSchedule.chatRoomName ? ` · ${nearestSchedule.chatRoomName}` : ""}
+                  </Text>
+                </View>
+              ) : null}
               <Pressable
                 onPress={openRouteCreate}
                 className="self-start mt-4 active:opacity-90"
@@ -1143,16 +1365,20 @@ export default function HomeScreen(): React.JSX.Element {
                 <Text style={{ color: "#ffffff", fontSize: 13, fontWeight: "600" }}>새 코스 만들기</Text>
               </Pressable>
             </View>
-            <View className="items-end justify-end">
+            <View
+              style={{
+                width: 78,
+                alignItems: "flex-end",
+                justifyContent: "flex-start",
+                paddingTop: 4,
+              }}
+            >
               <View
                 style={{
                   width: 72,
                   height: 72,
                   borderRadius: 999,
                   backgroundColor: "rgba(255,255,255,0.22)",
-                  position: "absolute",
-                  right: 0,
-                  bottom: 0,
                   alignItems: "center",
                   justifyContent: "center",
                 }}
@@ -1195,7 +1421,7 @@ export default function HomeScreen(): React.JSX.Element {
           <Pressable
             onPress={openScheduleModal}
             accessibilityRole="button"
-            accessibilityLabel="코스 추천일 설정"
+            accessibilityLabel="일정 보기"
             style={{
               backgroundColor: "#EFF6FF",
               paddingVertical: 5,
@@ -1206,31 +1432,11 @@ export default function HomeScreen(): React.JSX.Element {
             }}
           >
             <Text style={{ color: "#2563EB", fontSize: 12, fontWeight: "500" }} numberOfLines={1}>
-              {recommendDayLabel}
+              일정보기
             </Text>
           </Pressable>
         </View>
         {weatherError ? <Text className="mt-1 text-xs text-rose-600">{weatherError}</Text> : null}
-        {sortedSchedules.length > 0 ? (
-          <View className="px-4 py-3 mt-2 rounded-2xl" style={CARD_STYLE}>
-            <Text style={{ fontSize: 12, color: "#2563EB", fontWeight: "600" }}>
-              예정된 코스 약속
-            </Text>
-            {sortedSchedules.slice(0, 2).map((item) => (
-              <View key={item.id} className="flex-row items-center justify-between mt-2">
-                <Text
-                  numberOfLines={1}
-                  style={{ flex: 1, fontSize: 13, color: "#1A1A2E", marginRight: 8 }}
-                >
-                  {item.title}
-                </Text>
-                <Text style={{ fontSize: 12, color: "#6B7280" }}>
-                  {KO_DATE_TIME_FORMATTER.format(item.date)}
-                </Text>
-              </View>
-            ))}
-          </View>
-        ) : null}
 
         <View style={{ marginTop: 20 }}>
           <View style={{ marginBottom: 12 }}>
@@ -1590,48 +1796,262 @@ export default function HomeScreen(): React.JSX.Element {
             paddingHorizontal: 20,
           }}
         >
-          <View className="p-4 bg-white rounded-2xl">
-            <Text style={{ fontSize: 16, fontWeight: "700", color: "#1A1A2E" }}>
-              코스 약속 잡기
-            </Text>
-            <Text style={{ marginTop: 4, fontSize: 12, color: "#6B7280" }}>
-              날짜와 시간을 고르고 약속 이름을 입력해 주세요.
-            </Text>
-            <TextInput
-              value={scheduleDraftTitle}
-              onChangeText={setScheduleDraftTitle}
-              placeholder="예: 토요일 한강 산책"
-              placeholderTextColor="#94a3b8"
-              style={{
-                marginTop: 12,
-                borderWidth: 1,
-                borderColor: "rgba(37,99,235,0.25)",
-                borderRadius: 12,
-                paddingHorizontal: 12,
-                paddingVertical: 10,
-                color: "#0f172a",
-              }}
-            />
-            <View style={{ marginTop: 10 }}>
-              <DateTimePicker
-                value={scheduleDraftDate}
-                mode="datetime"
-                display={Platform.OS === "ios" ? "inline" : "default"}
-                onChange={(_, date) => {
-                  if (date) setScheduleDraftDate(date);
+          <View
+            style={{
+              backgroundColor: "#fff",
+              borderRadius: 20,
+              paddingHorizontal: 16,
+              paddingTop: 10,
+              paddingBottom: 14,
+              borderWidth: 1,
+              borderColor: "rgba(37,99,235,0.12)",
+              shadowColor: "#0f172a",
+              shadowOpacity: 0.14,
+              shadowRadius: 16,
+              shadowOffset: { width: 0, height: 8 },
+              elevation: 5,
+            }}
+          >
+            <ScrollView
+              showsVerticalScrollIndicator
+              bounces={false}
+              style={{ maxHeight: SCREEN_WIDTH * 1.35 }}
+              contentContainerStyle={{ paddingBottom: 4 }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <View
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 16,
+                      backgroundColor: "#DBEAFE",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      marginRight: 8,
+                    }}
+                  >
+                    <Ionicons name="calendar-outline" size={16} color="#2563EB" />
+                  </View>
+                  <Text style={{ fontSize: 17, fontWeight: "700", color: "#1A1A2E" }}>
+                    코스 약속 잡기
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={closeScheduleModal}
+                  accessibilityRole="button"
+                  accessibilityLabel="코스 약속 잡기 닫기"
+                  hitSlop={8}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 14,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: "#F1F5F9",
+                  }}
+                >
+                  <Ionicons name="close" size={16} color="#475569" />
+                </Pressable>
+              </View>
+              <Text style={{ marginTop: 12, marginBottom: 6, fontSize: 12, color: "#475569", fontWeight: "600" }}>
+                날짜 선택
+              </Text>
+              <View
+                style={{
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: "rgba(37,99,235,0.18)",
+                  backgroundColor: "#F8FAFF",
+                  paddingHorizontal: 4,
+                  paddingVertical: 4,
+                  overflow: "hidden",
                 }}
-              />
-            </View>
-            <View className="flex-row justify-end mt-3">
+              >
+                <Calendar
+                  current={scheduleSelectedDateKey}
+                  markedDates={scheduleMarkedDates}
+                  markingType="dot"
+                  onDayPress={(day) => {
+                    if (!day?.dateString) return;
+                    const picked = new Date(`${day.dateString}T00:00:00`);
+                    if (Number.isNaN(picked.getTime())) return;
+                    setScheduleDraftDate(picked);
+                  }}
+                  theme={{
+                    backgroundColor: "#F8FAFF",
+                    calendarBackground: "#F8FAFF",
+                    selectedDayBackgroundColor: "#2563EB",
+                    selectedDayTextColor: "#FFFFFF",
+                    todayTextColor: "#2563EB",
+                    dayTextColor: "#0f172a",
+                    textDisabledColor: "#CBD5E1",
+                    monthTextColor: "#1E3A8A",
+                    arrowColor: "#2563EB",
+                    textDayFontWeight: "600",
+                    textMonthFontWeight: "700",
+                  }}
+                />
+              </View>
+              <View
+                style={{
+                  marginTop: 10,
+                  borderRadius: 12,
+                  backgroundColor: "#EFF6FF",
+                  borderWidth: 1,
+                  borderColor: "rgba(37,99,235,0.2)",
+                  paddingHorizontal: 10,
+                  paddingVertical: 8,
+                }}
+              >
+                <Text style={{ color: "#1E3A8A", fontSize: 12, fontWeight: "600" }}>
+                  선택한 날짜
+                </Text>
+                <Text style={{ color: "#1E3A8A", fontSize: 13, marginTop: 2 }}>
+                  {KO_DATE_ONLY_FORMATTER.format(scheduleDraftDate)}
+                </Text>
+              </View>
+              {!scheduleDetailFormOpen ? (
+                <View style={{ marginTop: 12, alignItems: "flex-end" }}>
+                  <Pressable
+                    onPress={() => setScheduleDetailFormOpen(true)}
+                    accessibilityRole="button"
+                    accessibilityLabel="약속 상세 입력 열기"
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor: "#2563EB",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Ionicons name="add" size={20} color="#fff" />
+                  </Pressable>
+                </View>
+              ) : (
+                <>
+                  <Text style={{ marginTop: 14, marginBottom: 6, fontSize: 12, color: "#475569", fontWeight: "600" }}>
+                    약속 이름
+                  </Text>
+                  <TextInput
+                    value={scheduleDraftTitle}
+                    onChangeText={setScheduleDraftTitle}
+                    placeholder="예: 토요일 한강 산책"
+                    placeholderTextColor="#94a3b8"
+                    style={{
+                      borderWidth: 1,
+                      borderColor: "rgba(37,99,235,0.25)",
+                      borderRadius: 12,
+                      paddingHorizontal: 12,
+                      paddingVertical: 10,
+                      color: "#0f172a",
+                      fontSize: 14,
+                      backgroundColor: "#F8FAFF",
+                    }}
+                  />
+                  <Text style={{ marginTop: 10, marginBottom: 6, fontSize: 12, color: "#475569", fontWeight: "600" }}>
+                    기준 채팅방
+                  </Text>
+                  {scheduleChatRoomsLoading ? (
+                    <Text style={{ fontSize: 12, color: "#64748B" }}>채팅방 목록 불러오는 중...</Text>
+                  ) : scheduleChatRooms.length > 0 ? (
+                    <ScrollView
+                      horizontal
+                      nestedScrollEnabled
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={{ paddingRight: 6 }}
+                    >
+                      {scheduleChatRooms.slice(0, 12).map((room) => {
+                        const selected = selectedScheduleChatRoomUuid === room.uuid;
+                        return (
+                          <Pressable
+                            key={room.uuid}
+                            onPress={() => setSelectedScheduleChatRoomUuid(room.uuid)}
+                            accessibilityRole="button"
+                            accessibilityLabel={`채팅방 ${room.name} 선택`}
+                            style={{
+                              marginRight: 8,
+                              borderWidth: 1,
+                              borderRadius: 999,
+                              paddingHorizontal: 12,
+                              paddingVertical: 8,
+                              backgroundColor: selected ? "#DBEAFE" : "#F8FAFF",
+                              borderColor: selected ? "#3B82F6" : "rgba(37,99,235,0.2)",
+                            }}
+                          >
+                            <Text
+                              style={{ color: selected ? "#1D4ED8" : "#334155", fontSize: 12, fontWeight: "600" }}
+                            >
+                              {room.name}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+                  ) : (
+                    <Text style={{ fontSize: 12, color: "#94A3B8" }}>
+                      선택 가능한 채팅방이 없어요.
+                    </Text>
+                  )}
+                  <Text style={{ marginTop: 12, marginBottom: 6, fontSize: 12, color: "#475569", fontWeight: "600" }}>
+                    시간
+                  </Text>
+                  <View
+                    style={{
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: "rgba(37,99,235,0.18)",
+                      backgroundColor: "#F8FAFF",
+                      paddingHorizontal: 6,
+                      paddingVertical: 6,
+                    }}
+                  >
+                    <DateTimePicker
+                      value={scheduleDraftTime}
+                      mode="time"
+                      display={Platform.OS === "ios" ? "spinner" : "default"}
+                      themeVariant="light"
+                      textColor="#0f172a"
+                      accentColor="#2563EB"
+                      onChange={(_, date) => {
+                        if (date) setScheduleDraftTime(date);
+                      }}
+                    />
+                  </View>
+                  <Text style={{ marginTop: 6, fontSize: 12, color: "#1E3A8A" }}>
+                    선택한 시간: {KO_TIME_ONLY_FORMATTER.format(scheduleDraftTime)}
+                  </Text>
+                </>
+              )}
+            </ScrollView>
+            <View className="flex-row justify-end mt-4">
               <Pressable
-                onPress={closeScheduleModal}
+                onPress={handleScheduleCancel}
                 className="px-4 py-2 mr-2 border border-gray-300 rounded-xl"
+                style={{ minWidth: 74, alignItems: "center", justifyContent: "center" }}
               >
                 <Text style={{ color: "#475569", fontWeight: "600" }}>취소</Text>
               </Pressable>
               <Pressable
                 onPress={saveCourseSchedule}
-                className="px-4 py-2 bg-blue-600 rounded-xl"
+                disabled={
+                  !scheduleDetailFormOpen ||
+                  !scheduleDraftTitle.trim() ||
+                  !selectedScheduleChatRoomUuid
+                }
+                className="px-4 py-2 rounded-xl"
+                style={{
+                  minWidth: 92,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor:
+                    scheduleDetailFormOpen &&
+                    scheduleDraftTitle.trim() &&
+                    selectedScheduleChatRoomUuid
+                      ? "#2563EB"
+                      : "#93C5FD",
+                }}
               >
                 <Text style={{ color: "#fff", fontWeight: "700" }}>약속 추가</Text>
               </Pressable>
