@@ -834,43 +834,41 @@ export default function RouteCreateScreen(): React.JSX.Element {
   const { height: windowH } = useWindowDimensions();
   const editRouteIdParam = route.params?.editRouteId as string | undefined;
   const isEditingMyRoute = Boolean(editRouteIdParam);
-  const clampRouteEditSheetHeight = useCallback(
+  const clampRouteSheetHeight = useCallback(
     (px: number) => {
-      const minH = Math.round(windowH * 0.45);
+      // 최소 높이는 루트 대표이미지/제목 영역이 보이는 수준으로 유지
+      const minH = Math.max(120, Math.round(windowH * 0.14));
       const maxH = Math.round(windowH * 0.94);
       return Math.min(Math.max(Math.round(px), minH), maxH);
     },
     [windowH],
   );
-  const [routeEditSheetHeightPx, setRouteEditSheetHeightPx] = useState(() => {
+  const [routeSheetHeightPx, setRouteSheetHeightPx] = useState(() => {
     const h = Dimensions.get("window").height;
-    const minH = Math.round(h * 0.45);
+    const minH = Math.max(120, Math.round(h * 0.14));
     const maxH = Math.round(h * 0.94);
-    const v = Math.round(h * 0.5);
+    const v = Math.round(h * (isEditingMyRoute ? 0.5 : 0.52));
     return Math.min(Math.max(v, minH), maxH);
   });
-  const sheetEditHeightRef = useRef(routeEditSheetHeightPx);
-  sheetEditHeightRef.current = routeEditSheetHeightPx;
-  const sheetEditPanStartRef = useRef(0);
-  const routeEditSheetPanResponder = useMemo(
+  const sheetHeightRef = useRef(routeSheetHeightPx);
+  sheetHeightRef.current = routeSheetHeightPx;
+  const sheetPanStartRef = useRef(0);
+  const routeSheetPanResponder = useMemo(
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => false,
         onMoveShouldSetPanResponder: (_, g) =>
           Math.abs(g.dy) > 6 && Math.abs(g.dy) > Math.abs(g.dx) * 0.55,
         onPanResponderGrant: () => {
-          sheetEditPanStartRef.current = sheetEditHeightRef.current;
+          sheetPanStartRef.current = sheetHeightRef.current;
         },
         onPanResponderMove: (_, g) => {
-          setRouteEditSheetHeightPx(
-            clampRouteEditSheetHeight(sheetEditPanStartRef.current - g.dy),
-          );
+          setRouteSheetHeightPx(clampRouteSheetHeight(sheetPanStartRef.current - g.dy));
         },
         onPanResponderRelease: async (_, g) => {
-          const next = clampRouteEditSheetHeight(
-            sheetEditPanStartRef.current - g.dy,
-          );
-          setRouteEditSheetHeightPx(next);
+          const next = clampRouteSheetHeight(sheetPanStartRef.current - g.dy);
+          setRouteSheetHeightPx(next);
+          if (!isEditingMyRoute) return;
           try {
             await AsyncStorage.setItem(
               ROUTE_EDIT_SHEET_HEIGHT_STORAGE_KEY,
@@ -881,7 +879,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
           }
         },
       }),
-    [clampRouteEditSheetHeight],
+    [clampRouteSheetHeight, isEditingMyRoute],
   );
   useEffect(() => {
     if (!isEditingMyRoute) return;
@@ -894,7 +892,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
         if (cancelled || raw == null) return;
         const n = Number(raw);
         if (!Number.isFinite(n)) return;
-        setRouteEditSheetHeightPx(clampRouteEditSheetHeight(n));
+        setRouteSheetHeightPx(clampRouteSheetHeight(n));
       } catch {
         /* ignore */
       }
@@ -902,11 +900,10 @@ export default function RouteCreateScreen(): React.JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [isEditingMyRoute, clampRouteEditSheetHeight]);
+  }, [isEditingMyRoute, clampRouteSheetHeight]);
   useEffect(() => {
-    if (!isEditingMyRoute) return;
-    setRouteEditSheetHeightPx((h) => clampRouteEditSheetHeight(h));
-  }, [windowH, isEditingMyRoute, clampRouteEditSheetHeight]);
+    setRouteSheetHeightPx((h) => clampRouteSheetHeight(h));
+  }, [windowH, clampRouteSheetHeight]);
   const { upsertUserRoute, getUserRoute, deleteUserRoute, userSavedRoutes } =
     useMockData();
 
@@ -3243,11 +3240,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
 
   /** 하단 시트 둥근 모서리 뒤로 지도가 비치도록 살짝 겹침 (rounded-t-3xl ≈ 24px) */
   const ROUTE_SHEET_TOP_OVERLAP = 24;
-  /** 신규 루트: 패널 높이 고정(비율). 수정 모드: 드래그로 조절 가능한 높이 */
-  const createRouteSheetHeightPx = Math.max(260, Math.round(windowH * 0.52));
-  const bottomSheetPanelHeightPx = isEditingMyRoute
-    ? routeEditSheetHeightPx
-    : createRouteSheetHeightPx;
+  const bottomSheetPanelHeightPx = routeSheetHeightPx;
 
   return (
     <View className="flex-1" style={{ backgroundColor: "#4b5563" }}>
@@ -3385,29 +3378,27 @@ export default function RouteCreateScreen(): React.JSX.Element {
             elevation: 20,
           }}
         >
-          {isEditingMyRoute ? (
+          <View
+            {...routeSheetPanResponder.panHandlers}
+            style={{
+              paddingVertical: 8,
+              paddingHorizontal: 16,
+              backgroundColor: "#f1f5f9",
+              borderBottomWidth: StyleSheet.hairlineWidth,
+              borderBottomColor: "#e2e8f0",
+            }}
+          >
             <View
-              {...routeEditSheetPanResponder.panHandlers}
               style={{
-                paddingVertical: 8,
-                paddingHorizontal: 16,
-                backgroundColor: "#f1f5f9",
-                borderBottomWidth: StyleSheet.hairlineWidth,
-                borderBottomColor: "#e2e8f0",
+                alignSelf: "center",
+                width: 40,
+                height: 5,
+                borderRadius: 3,
+                backgroundColor: "#94a3b8",
+                marginBottom: 6,
               }}
-            >
-              <View
-                style={{
-                  alignSelf: "center",
-                  width: 40,
-                  height: 5,
-                  borderRadius: 3,
-                  backgroundColor: "#94a3b8",
-                  marginBottom: 6,
-                }}
-              />
-            </View>
-          ) : null}
+            />
+          </View>
           <View className="border-b border-gray-50 px-4 pt-3 pb-2">
             <View className="flex-row items-center">
               <Pressable
