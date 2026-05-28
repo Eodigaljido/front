@@ -44,7 +44,17 @@ instance.interceptors.response.use(
     return res;
   },
   async err => {
-    console.log('[ERR]', err.response?.status, err.config?.url, err.response?.data);
+    const silentOptional = err.config?._silentOptional === true;
+    const status = err.response?.status;
+    const url = String(err.config?.url ?? "");
+    if (
+      !(
+        silentOptional &&
+        (status === 404 || status === 501)
+      )
+    ) {
+      console.log("[ERR]", status, url, err.response?.data);
+    }
 
     const originalRequest = err.config;
 

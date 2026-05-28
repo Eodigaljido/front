@@ -455,7 +455,11 @@ export async function fetchMySavedCourseIds(): Promise<string[]> {
 
   for (const params of paramVariants) {
     try {
-      const res = await instance.get("/api/courses/saved", { params });
+      const res = await instance.get("/api/courses/saved", {
+        params,
+        _silentOptional: true,
+      } as any);
+      if (res.status === 404 || res.status === 501) continue;
       const arr = pickArrayPayload(res.data);
       const ids = arr
         .map((c) =>
