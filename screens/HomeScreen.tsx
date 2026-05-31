@@ -431,6 +431,13 @@ export default function HomeScreen(): React.JSX.Element {
     };
     return marked;
   }, [courseSchedules, scheduleSelectedDateKey]);
+  const schedulesOnSelectedDate = useMemo(
+    () =>
+      courseSchedules
+        .filter((item) => toDateKey(item.date) === scheduleSelectedDateKey)
+        .sort((a, b) => a.date.getTime() - b.date.getTime()),
+    [courseSchedules, scheduleSelectedDateKey],
+  );
   const myRecentCoursesForHome = useMemo(() => {
     const seen = new Set<string>();
     const out = [];
@@ -1877,6 +1884,7 @@ export default function HomeScreen(): React.JSX.Element {
                     const picked = new Date(`${day.dateString}T00:00:00`);
                     if (Number.isNaN(picked.getTime())) return;
                     setScheduleDraftDate(picked);
+                    setScheduleDetailFormOpen(false);
                   }}
                   theme={{
                     backgroundColor: "#F8FAFF",
@@ -1904,12 +1912,49 @@ export default function HomeScreen(): React.JSX.Element {
                   paddingVertical: 8,
                 }}
               >
-                <Text style={{ color: "#1E3A8A", fontSize: 12, fontWeight: "600" }}>
-                  선택한 날짜
-                </Text>
-                <Text style={{ color: "#1E3A8A", fontSize: 13, marginTop: 2 }}>
-                  {KO_DATE_ONLY_FORMATTER.format(scheduleDraftDate)}
-                </Text>
+                {schedulesOnSelectedDate.length > 0 ? (
+                  <>
+                    <Text style={{ color: "#1E3A8A", fontSize: 12, fontWeight: "600" }}>
+                      약속
+                    </Text>
+                    {schedulesOnSelectedDate.map((item, index) => (
+                      <View
+                        key={item.id}
+                        style={{
+                          marginTop: index === 0 ? 6 : 8,
+                          paddingTop: index === 0 ? 0 : 8,
+                          borderTopWidth: index === 0 ? 0 : StyleSheet.hairlineWidth,
+                          borderTopColor: "rgba(37,99,235,0.18)",
+                        }}
+                      >
+                        <Text style={{ color: "#1E3A8A", fontSize: 14, fontWeight: "700" }}>
+                          {item.title}
+                        </Text>
+                        <Text style={{ color: "#2563EB", fontSize: 12, marginTop: 2 }}>
+                          {KO_TIME_ONLY_FORMATTER.format(item.date)}
+                          {item.chatRoomName ? ` · ${item.chatRoomName}` : ""}
+                        </Text>
+                        {item.participants.length > 0 ? (
+                          <Text style={{ color: "#64748B", fontSize: 11, marginTop: 2 }}>
+                            {item.participants.slice(0, 4).join(", ")}
+                            {item.participants.length > 4
+                              ? ` 외 ${item.participants.length - 4}명`
+                              : ""}
+                          </Text>
+                        ) : null}
+                      </View>
+                    ))}
+                  </>
+                ) : (
+                  <>
+                    <Text style={{ color: "#1E3A8A", fontSize: 12, fontWeight: "600" }}>
+                      선택한 날짜
+                    </Text>
+                    <Text style={{ color: "#1E3A8A", fontSize: 13, marginTop: 2 }}>
+                      {KO_DATE_ONLY_FORMATTER.format(scheduleDraftDate)}
+                    </Text>
+                  </>
+                )}
               </View>
               {!scheduleDetailFormOpen ? (
                 <View style={{ marginTop: 12, alignItems: "flex-end" }}>
