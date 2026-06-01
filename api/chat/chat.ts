@@ -62,6 +62,17 @@ export async function getChatRooms(accessToken: string): Promise<ChatRoom[]> {
   return Array.isArray(res.data) ? res.data : [];
 }
 
+// 채팅방 상세 조회 (멤버 목록 포함)
+export async function getChatRoomDetails(
+  roomUuid: string,
+  accessToken: string,
+): Promise<ChatRoom> {
+  const res = await instance.get<ChatRoom>(`/chats/${roomUuid}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return res.data;
+}
+
 // 채팅방 메시지 조회
 export async function getRoomMessages(
   accessToken: string,
@@ -199,7 +210,14 @@ export async function sendImageMessage(
   const form = new FormData();
   const filename = imageUri.split("/").pop() ?? "image.jpg";
   const ext = filename.split(".").pop()?.toLowerCase() ?? "jpg";
-  const mime = ext === "png" ? "image/png" : ext === "gif" ? "image/gif" : ext === "webp" ? "image/webp" : "image/jpeg";
+  const mime =
+    ext === "png"
+      ? "image/png"
+      : ext === "gif"
+        ? "image/gif"
+        : ext === "webp"
+          ? "image/webp"
+          : "image/jpeg";
   form.append("image", { uri: imageUri, name: filename, type: mime } as any);
   const res = await instance.post<ChatMessage>(
     `/chats/${roomUuid}/images`,
@@ -225,11 +243,18 @@ export async function updateChatRoomImage(
   const filename = imageUri.split("/").pop() ?? "image.png";
   const ext = filename.split(".").pop()?.toLowerCase() ?? "png";
   const mime =
-    ext === "png" ? "image/png"
-    : ext === "gif" ? "image/gif"
-    : ext === "webp" ? "image/webp"
-    : "image/jpeg";
-  form.append("image", { uri: imageUri, name: filename, type: mime } as unknown as Blob);
+    ext === "png"
+      ? "image/png"
+      : ext === "gif"
+        ? "image/gif"
+        : ext === "webp"
+          ? "image/webp"
+          : "image/jpeg";
+  form.append("image", {
+    uri: imageUri,
+    name: filename,
+    type: mime,
+  } as unknown as Blob);
   await instance.patch(`/chats/${roomUuid}/profile-image`, form, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
