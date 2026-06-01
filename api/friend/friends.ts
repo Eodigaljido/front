@@ -1,4 +1,4 @@
-import { instance } from '../axios';
+import { instance } from "../axios";
 
 export interface FriendRequest {
   requestId: number;
@@ -6,16 +6,19 @@ export interface FriendRequest {
   nickname: string;
   profileImageUrl: string;
   isDefaultImage: boolean;
-  direction: 'SENT' | 'RECEIVED';
+  direction: "SENT" | "RECEIVED";
   createdAt: string;
 }
 
 export async function getFriendRequests(): Promise<FriendRequest[]> {
-  const res = await instance.get<FriendRequest[]>('/api/friends/requests');
+  const res = await instance.get<FriendRequest[]>("/api/friends/requests");
   return Array.isArray(res.data) ? res.data : [];
 }
 
-export async function respondToFriendRequest(requestId: number, accept: boolean): Promise<void> {
+export async function respondToFriendRequest(
+  requestId: number,
+  accept: boolean,
+): Promise<void> {
   await instance.patch(`/api/friends/requests/${requestId}`, { accept });
 }
 
@@ -27,29 +30,31 @@ export interface Friends {
   isDefaultImage: boolean;
 }
 
-export async function getFriends(): Promise<Friends[]> {
-  const res = await instance.get<Friends[]>('/api/friends');
+export async function getFriends(accessToken: string): Promise<Friends[]> {
+  const res = await instance.get<Friends[]>("/api/friends");
   return Array.isArray(res.data) ? res.data : [];
 }
 
 export async function getMyFriendCode(): Promise<string> {
-  const res = await instance.get<{ friendCode: string }>('/api/friends/code');
+  const res = await instance.get<{ friendCode: string }>("/api/friends/code");
   return res.data.friendCode;
 }
 
 export async function addFriendByCode(friendCode: string): Promise<void> {
-  await instance.post('/api/friends/add', { friendCode });
+  await instance.post("/api/friends/add", { friendCode });
 }
 
-export async function getFriendsRecent(): Promise<Friends[]> {
-  const res = await instance.get<Friends[]>('/api/friends/recent');
+export async function getFriendsRecent(
+  accessToken: string,
+): Promise<Friends[]> {
+  const res = await instance.get<Friends[]>("/api/friends/recent");
   return Array.isArray(res.data) ? res.data : [];
 }
 
 export async function addFriendByCodeLink(friendCode: string): Promise<void> {
-  const code = String(friendCode ?? '').trim();
-  if (!code) throw new Error('친구 코드가 비어 있습니다.');
-  await instance.post('/api/friends/add', { friendCode: code });
+  const code = String(friendCode ?? "").trim();
+  if (!code) throw new Error("친구 코드가 비어 있습니다.");
+  await instance.post("/api/friends/add", { friendCode: code });
 }
 
 export async function deleteFriend(friendId: number): Promise<void> {
