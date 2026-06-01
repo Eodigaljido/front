@@ -11,7 +11,8 @@
     "storybook-generate": "sb-rn-get-stories",
     "storybook:dev": "storybook dev -p 6006",
     "build-storybook": "storybook build",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "log:apk": "powershell -ExecutionPolicy Bypass -File ./scripts/log-apk.ps1"
   },
   "dependencies": {
     "@babel/core": "^7.29.0",
