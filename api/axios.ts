@@ -53,7 +53,7 @@ instance.interceptors.response.use(
         (status === 404 || status === 501)
       )
     ) {
-      console.log("[ERR]", status, url, err.response?.data);
+      console.log("[ERR]", status ?? err.message, url, err.response?.data);
     }
 
     const originalRequest = err.config;
