@@ -207,18 +207,18 @@ function getWeatherMoodMessage(weather?: IntegratedWeatherResponse["current"]): 
   const desc = String(weather.weatherDesc ?? "").toLowerCase();
 
   if (rain >= 1 || desc.includes("비")) {
-    return "오늘은 실내 코스로 여유롭게 즐기기 좋은 날씨네요!";
+    return "오늘은 실내 코스 즐기기 좋은 날씨네요!";
   }
   if (temp >= 28) {
-    return "오늘은 그늘 많은 짧은 산책 코스가 딱 좋은 날씨네요!";
+    return "오늘은 그늘 많은 짧은 산책 코스가 좋은 날씨네요!";
   }
   if (temp <= 5) {
-    return "오늘은 따뜻하게 입고 가까운 코스를 즐기기 좋은 날씨네요!";
+    return "오늘은 따뜻하게 입고 코스를 즐기기 좋은 날씨네요!";
   }
   if (desc.includes("맑") || desc.includes("sun")) {
     return "오늘은 야외 산책 코스를 즐기기 좋은 날씨네요!";
   }
-  return "오늘은 가볍게 이동하며 코스를 둘러보기 좋은 날씨네요!";
+  return "오늘은 가볍게 이동하며 주변를 둘러보기 좋은 날씨네요!";
 }
 
 function SectionHeader({
