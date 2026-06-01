@@ -74,6 +74,11 @@ import {
   type TransitRouteCandidate,
 } from "../data/googleDirectionsApi";
 import {
+  ROUTE_USER_MESSAGES,
+  sanitizeRouteDisplayText,
+  toUserFacingErrorMessage,
+} from "../utils/routeCopy";
+import {
   buildUpsertPayloadFromUserRoute,
   createMyRoute,
   fetchMyRouteCollaborativeFlag,
@@ -1675,7 +1680,12 @@ export default function RouteCreateScreen(): React.JSX.Element {
       } catch (e: any) {
         if (controller.signal.aborted) return;
         setSearchResults([]);
-        setSearchError(e?.message ?? "장소 검색 중 오류가 발생했습니다.");
+        setSearchError(
+          toUserFacingErrorMessage(
+            e?.message,
+            ROUTE_USER_MESSAGES.placeSearchFailed,
+          ),
+        );
       } finally {
         if (!controller.signal.aborted) setSearchLoading(false);
       }
@@ -3703,14 +3713,20 @@ export default function RouteCreateScreen(): React.JSX.Element {
                             style={{ marginLeft: 4 }}
                           />
                         </View>
-                        {legs[index].directionsSummary ? (
-                          <Text
-                            className="mt-0.5 pl-7 text-[11px] leading-4 text-slate-600"
-                            numberOfLines={2}
-                          >
-                            {legs[index].directionsSummary}
-                          </Text>
-                        ) : null}
+                        {(() => {
+                          const legSummary = sanitizeRouteDisplayText(
+                            legs[index].directionsSummary,
+                          );
+                          if (!legSummary) return null;
+                          return (
+                            <Text
+                              className="mt-0.5 pl-7 text-[11px] leading-4 text-slate-600"
+                              numberOfLines={2}
+                            >
+                              {legSummary}
+                            </Text>
+                          );
+                        })()}
                       </Pressable>
                     )}
                     {index < stops.length - 1 &&
@@ -3990,8 +4006,8 @@ export default function RouteCreateScreen(): React.JSX.Element {
                     ))}
                   </View>
                   <Text className="mt-1 text-[10px] text-gray-500">
-                    30km 이상/무제한은 카카오 API 특성상 넓은 범위 정확도
-                    기반으로 결과가 반환될 수 있어요.
+                    30km 이상·무제한 검색은 넓은 범위 기준으로 결과가 달라질 수
+                    있어요.
                   </Text>
                 </View>
               ) : null}
@@ -4169,14 +4185,17 @@ export default function RouteCreateScreen(): React.JSX.Element {
             </Text>
             {(() => {
               const leg = legs.find((l) => l.id === editingLegId);
-              if (!leg?.directionsDetail) return null;
+              const legDetail = sanitizeRouteDisplayText(
+                leg?.directionsDetail,
+              );
+              if (!legDetail) return null;
               return (
                 <ScrollView
                   className="mb-3 max-h-40 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2"
                   nestedScrollEnabled
                 >
                   <Text className="text-xs leading-5 text-slate-700">
-                    {leg.directionsDetail}
+                    {legDetail}
                   </Text>
                 </ScrollView>
               );

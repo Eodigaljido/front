@@ -225,9 +225,14 @@ export async function sendImageMessage(
     {
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "multipart/form-data",
       },
-      transformRequest: (data) => data,
+      transformRequest: (data, headers) => {
+        if (headers) {
+          delete headers["Content-Type"];
+          delete headers["content-type"];
+        }
+        return data;
+      },
     },
   );
   return res.data;
@@ -258,9 +263,14 @@ export async function updateChatRoomImage(
   await instance.patch(`/chats/${roomUuid}/profile-image`, form, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "multipart/form-data",
     },
-    transformRequest: (data) => data,
+    transformRequest: (data, headers) => {
+      if (headers) {
+        delete headers["Content-Type"];
+        delete headers["content-type"];
+      }
+      return data;
+    },
   });
 }
 

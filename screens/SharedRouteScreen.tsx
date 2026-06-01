@@ -33,7 +33,11 @@ import {
   type CourseItem,
   type CourseReview,
 } from "../data/mockData";
-import type { DirectionsMode } from "../data/googleDirectionsApi";
+import {
+  looksLikeStraightStopConnectorPath,
+  resolveCoursePreviewDirectionsMode,
+  type DirectionsMode,
+} from "../data/googleDirectionsApi";
 import { useMockData } from "../context/MockDataContext";
 import { useToast } from "../context/ToastContext";
 import {
@@ -460,29 +464,28 @@ export default function SharedRouteScreen(): React.JSX.Element {
       return;
     }
     const stepPoints = courseRouteStepsToMapPath(course.id, routeSteps);
-    const legModes = (course.routeLegs ?? []).map((l) => l.mode);
-    let directionsMode: DirectionsMode = "driving";
-    if (legModes.length > 0 && legModes.every((m) => m === "walk")) {
-      directionsMode = "walking";
-    } else if (legModes.some((m) => m === "bike")) {
-      directionsMode = "bicycling";
-    } else if (
-      legModes.some((m) => m === "transit") &&
-      !legModes.some((m) => m === "car")
-    ) {
-      directionsMode = "transit";
-    }
+    const directionsMode = resolveCoursePreviewDirectionsMode(course.routeLegs);
     const ac = new AbortController();
     setCourseDetailPathLoading(true);
     setCourseDetailMergedPath(null);
-    fetchMergedDirectionsPolyline({
-      points: stepPoints,
-      mode: directionsMode,
-      signal: ac.signal,
-    })
-      .then((path) => {
-        if (!ac.signal.aborted && path.length >= 2)
-          setCourseDetailMergedPath(path);
+    const loadMergedPath = (mode: DirectionsMode) =>
+      fetchMergedDirectionsPolyline({
+        points: stepPoints,
+        mode,
+        signal: ac.signal,
+      });
+    loadMergedPath(directionsMode)
+      .then(async (path) => {
+        if (ac.signal.aborted) return;
+        let final = path;
+        if (
+          looksLikeStraightStopConnectorPath(path, stepPoints.length) &&
+          directionsMode === "transit"
+        ) {
+          final = await loadMergedPath("driving");
+        }
+        if (!ac.signal.aborted && final.length >= 2)
+          setCourseDetailMergedPath(final);
       })
       .catch(() => {})
       .finally(() => {
@@ -764,11 +767,11 @@ export default function SharedRouteScreen(): React.JSX.Element {
                       routeSteps.length >= 1
                         ? courseRouteStepsToMapPath(course.id, routeSteps)
                         : undefined;
-                    // 실경로가 있으면 단순화해서 사용하고, 없으면 경유지 연결선으로 대체
+                    // 실경로만 표시 (실패 시 정류장 직선 연결·부채꼴 방지)
                     const polylinePath = simplifyRoutePath(
                       courseDetailMergedPath && courseDetailMergedPath.length >= 2
                         ? courseDetailMergedPath
-                        : pathPts,
+                        : undefined,
                     );
                     const startStepName =
                       routeSteps[0]?.name ?? course.departure;

@@ -1,4 +1,5 @@
 import { getGoogleMapsWebServiceKey } from '../constants/googleMaps';
+import { ROUTE_USER_MESSAGES } from '../utils/routeCopy';
 import type { MapRouteSegment } from '../components/mapTypes';
 import {
   fetchKakaoNaviCarDirectionsLeg,
@@ -88,9 +89,8 @@ function straightLineFallbackLeg(from: LatLng, to: LatLng, mode: DirectionsMode)
       : [{ mode: 'ride' as const, points: path.slice() }],
     durationMinutes: roughMinutesStraightLine(mode, d),
     distanceMeters: d,
-    summary: '직선으로 표시 · 상세 경로 없음',
-    detail:
-      'Google Directions에서 이 구간을 찾지 못했습니다. 장소를 다시 검색하거나, 해상·폐쇄구역 등은 다른 이동수단으로 나눠 보세요. (카카오·T맵 내비 API는 별도 연동)',
+    summary: ROUTE_USER_MESSAGES.straightLineSummary,
+    detail: ROUTE_USER_MESSAGES.straightLineDetail,
     source: 'fallback',
   };
 }
@@ -450,7 +450,7 @@ async function fetchDirectionsJson(
   }
   const url = `https://maps.googleapis.com/maps/api/directions/json?${q.toString()}`;
   const res = await fetch(url, { method: 'GET', signal });
-  if (!res.ok) throw new Error(`Directions 요청 실패 (${res.status})`);
+  if (!res.ok) throw new Error(ROUTE_USER_MESSAGES.directionsUnavailable);
   return res.json();
 }
 
@@ -488,7 +488,7 @@ export async function fetchGoogleDirectionsLeg(params: {
   signal?: AbortSignal;
 }): Promise<DirectionsLegResult> {
   const key = getGoogleMapsWebServiceKey();
-  if (!key) throw new Error('Google Directions API 키가 없습니다. (.env에 WEB/API 키 확인, expo 재시작)');
+  if (!key) throw new Error(ROUTE_USER_MESSAGES.directionsKeyMissing);
 
   const from = normalizeLatLngForDirections(params.from.latitude, params.from.longitude);
   const to = normalizeLatLngForDirections(params.to.latitude, params.to.longitude);
@@ -585,8 +585,11 @@ export async function fetchGoogleDirectionsLeg(params: {
       return straightLineFallbackLeg(from, to, params.mode);
     }
     const em = typeof body?.error_message === 'string' ? body.error_message.trim() : '';
-    const detail = em ? `${body.status}: ${em}` : st || 'UNKNOWN';
-    throw new Error(`Directions 오류: ${detail}`);
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      const detail = em ? `${body.status}: ${em}` : st || 'UNKNOWN';
+      console.warn('[Directions] 오류:', detail);
+    }
+    throw new Error(ROUTE_USER_MESSAGES.directionsUnavailable);
   }
 
   let parsed = parseDirectionsLeg(body);
@@ -712,7 +715,7 @@ export async function fetchWalkingRouteAlternatives(params: {
 
   if (haversineMeters(from, to) < 12) {
     const t = trivialDirectionsLeg(from, to, 'walking');
-    return [toWalkCandidate('walk-a', '직선', t, 'fallback')];
+    return [toWalkCandidate('walk-a', '근접 구간', t, 'fallback')];
   }
 
   const tmapOptions: Array<{ id: string; searchOption: '0' | '2' | '4' }> = [
@@ -803,7 +806,7 @@ export async function fetchTransitRouteAlternatives(params: {
   signal?: AbortSignal;
 }): Promise<TransitRouteCandidate[]> {
   const key = getGoogleMapsWebServiceKey();
-  if (!key) throw new Error('Google Directions API 키가 없습니다.');
+  if (!key) throw new Error(ROUTE_USER_MESSAGES.directionsKeyMissing);
 
   const from = normalizeLatLngForDirections(params.from.latitude, params.from.longitude);
   const to = normalizeLatLngForDirections(params.to.latitude, params.to.longitude);
@@ -811,7 +814,7 @@ export async function fetchTransitRouteAlternatives(params: {
   if (haversineMeters(from, to) < 12) {
     const t = trivialDirectionsLeg(from, to, 'transit');
     return [
-      toTransitCandidate('transit-fallback', '직선', t, '', '', 0),
+      toTransitCandidate('transit-fallback', '근접 구간', t, '', '', 0),
     ];
   }
 
@@ -930,7 +933,7 @@ export async function fetchMergedDirectionsPolyline(opts: {
   );
   if (pts.length < 2) return pts;
 
-  const mode = opts.mode ?? 'transit';
+  const mode = opts.mode ?? 'driving';
   const transitType = opts.transitType;
   const signal = opts.signal;
 
@@ -938,53 +941,120 @@ export async function fetchMergedDirectionsPolyline(opts: {
   for (let i = 0; i < pts.length - 1; i++) {
     const from = pts[i];
     const to = pts[i + 1];
-    try {
-      let effectiveMode: DirectionsMode = mode;
-      if (mode === 'transit') {
-        const straightMeters = haversineMeters(from, to);
-        // 구간 간 실제 체감거리를 우선하기 위해 도보 leg를 먼저 조회해 판단한다.
-        if (straightMeters <= TRANSIT_WALKING_PROBE_MAX_STRAIGHT_METERS) {
-          try {
-            const walkProbe = await fetchGoogleDirectionsLeg({
-              from,
-              to,
-              mode: 'walking',
-              signal,
-            });
-            if (walkProbe.distanceMeters > 0 && walkProbe.distanceMeters <= TRANSIT_WALKING_PRIORITY_METERS) {
-              effectiveMode = 'walking';
-            }
-          } catch {
-            // 도보 probe 실패 시 기존 transit 판단으로 진행
-          }
+    const seg = await fetchRoadPathBetween(from, to, mode, transitType, signal);
+    mergeLegPathInto(merged, seg, from, to);
+  }
+  return dedupeConsecutivePolyline(merged);
+}
+
+/** 코스 카드·상세 지도 미리보기용 이동 수단 (기본: 도로 경로) */
+export function resolveCoursePreviewDirectionsMode(
+  routeLegs?: Array<{ mode?: string }>,
+): DirectionsMode {
+  const legModes = (routeLegs ?? []).map((l) => l.mode);
+  if (legModes.length > 0 && legModes.every((m) => m === 'walk')) return 'walking';
+  if (legModes.some((m) => m === 'bike')) return 'bicycling';
+  if (legModes.some((m) => m === 'transit') && !legModes.some((m) => m === 'car')) {
+    return 'transit';
+  }
+  return 'driving';
+}
+
+/** Directions 실패 시 정류장만 직선으로 잇힌 형태인지 (부채꼴 1자 경로) */
+export function looksLikeStraightStopConnectorPath(
+  merged: LatLng[],
+  stopCount: number,
+): boolean {
+  if (stopCount < 2 || merged.length < 2) return false;
+  return merged.length <= stopCount + 1;
+}
+
+function mergeLegPathInto(
+  merged: LatLng[],
+  seg: LatLng[],
+  _from: LatLng,
+  _to: LatLng,
+): void {
+  if (seg.length < 2) return;
+  if (merged.length === 0) merged.push(...seg);
+  else merged.push(...seg.slice(1));
+}
+
+async function fetchRoadPathBetween(
+  from: LatLng,
+  to: LatLng,
+  mode: DirectionsMode,
+  transitType: DirectionsTransitType | undefined,
+  signal?: AbortSignal,
+): Promise<LatLng[]> {
+  let effectiveMode: DirectionsMode = mode;
+  if (mode === 'transit') {
+    const straightMeters = haversineMeters(from, to);
+    if (straightMeters <= TRANSIT_WALKING_PROBE_MAX_STRAIGHT_METERS) {
+      try {
+        const walkProbe = await fetchGoogleDirectionsLeg({
+          from,
+          to,
+          mode: 'walking',
+          signal,
+        });
+        if (
+          walkProbe.distanceMeters > 0 &&
+          walkProbe.distanceMeters <= TRANSIT_WALKING_PRIORITY_METERS
+        ) {
+          effectiveMode = 'walking';
         }
-      }
-      const leg = await fetchGoogleDirectionsLeg({
-        from,
-        to,
-        mode: effectiveMode,
-        transitType: effectiveMode === 'transit' ? transitType : undefined,
-        signal,
-      });
-      const seg = leg.path ?? [];
-      if (seg.length >= 2) {
-        if (merged.length === 0) merged.push(...seg);
-        else merged.push(...seg.slice(1));
-      } else if (merged.length === 0) {
-        merged.push(from, to);
-      } else {
-        const last = merged[merged.length - 1];
-        if (last.latitude !== to.latitude || last.longitude !== to.longitude) merged.push(to);
-      }
-    } catch {
-      if (merged.length === 0) merged.push(from, to);
-      else {
-        const last = merged[merged.length - 1];
-        if (last.latitude !== to.latitude || last.longitude !== to.longitude) merged.push(to);
+      } catch {
+        /* transit 판단 유지 */
       }
     }
   }
-  return dedupeConsecutivePolyline(merged);
+
+  try {
+    const leg = await fetchGoogleDirectionsLeg({
+      from,
+      to,
+      mode: effectiveMode,
+      transitType: effectiveMode === 'transit' ? transitType : undefined,
+      signal,
+    });
+    const seg = leg.path ?? [];
+    if (seg.length >= 2 && leg.source !== 'fallback') return seg;
+    if (seg.length >= 3) return seg;
+  } catch {
+    /* Kakao/Tmap 시도 */
+  }
+
+  const kakao = await fetchKakaoNaviCarDirectionsLeg({
+    from,
+    to,
+    requestedMode: effectiveMode === 'walking' ? 'walking' : 'driving',
+    signal,
+  });
+  if (kakao && kakao.path.length >= 2) return kakao.path;
+
+  const tmap = await fetchTmapDirectionsLeg({
+    from,
+    to,
+    requestedMode: effectiveMode === 'walking' ? 'walking' : 'driving',
+    signal,
+  });
+  if (tmap && tmap.path.length >= 2) return tmap.path;
+
+  try {
+    const leg = await fetchGoogleDirectionsLeg({
+      from,
+      to,
+      mode: effectiveMode,
+      transitType: effectiveMode === 'transit' ? transitType : undefined,
+      signal,
+    });
+    if (leg.path?.length >= 2) return leg.path;
+  } catch {
+    /* 직선 폴백은 호출부에서 생략 */
+  }
+
+  return [];
 }
 
 /** 코스 상세 — 경유지 확대 시 도보 경로 선 색 */

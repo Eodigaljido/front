@@ -1,3 +1,5 @@
+import { formatRouteDistanceDuration, ROUTE_USER_MESSAGES } from '../utils/routeCopy';
+
 type LatLng = { latitude: number; longitude: number };
 
 /** googleDirectionsApi.DirectionsMode 와 동일 (순환 import 방지) */
@@ -126,7 +128,6 @@ function tmapBody(
 function parseTmapCommonResult(
   features: any[],
   fallbackMode: 'walk' | 'ride',
-  sourceLabel: string,
 ): TmapDirectionsLegResult | null {
   const path = toLatLngListFromFeatures(features);
   if (path.length < 2) return null;
@@ -150,11 +151,11 @@ function parseTmapCommonResult(
     segments: [{ mode: fallbackMode, points: path.slice() }],
     durationMinutes,
     distanceMeters: totalDistance,
-    summary:
-      totalDistance < 1000
-        ? `${sourceLabel} · 약 ${totalDistance}m · 약 ${durationMinutes}분`
-        : `${sourceLabel} · 약 ${(totalDistance / 1000).toFixed(1)}km · 약 ${durationMinutes}분`,
-    detail: detailLines.length > 0 ? detailLines.slice(0, 12).join('\n') : `${sourceLabel} 경로 안내`,
+    summary: formatRouteDistanceDuration(totalDistance, durationMinutes),
+    detail:
+      detailLines.length > 0
+        ? detailLines.slice(0, 12).join('\n')
+        : ROUTE_USER_MESSAGES.routeDetailFallback,
   };
 }
 
@@ -215,5 +216,5 @@ export async function fetchTmapDirectionsLeg(params: {
   const features = Array.isArray(json?.features) ? json.features : [];
   if (features.length === 0) return null;
 
-  return parseTmapCommonResult(features, isWalking ? 'walk' : 'ride', isWalking ? 'Tmap 도보' : 'Tmap 자동차');
+  return parseTmapCommonResult(features, isWalking ? 'walk' : 'ride');
 }

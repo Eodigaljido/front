@@ -36,6 +36,8 @@ import { useMockData } from "../context/MockDataContext";
 import {
   fetchGoogleDirectionsLeg,
   fetchMergedDirectionsPolyline,
+  looksLikeStraightStopConnectorPath,
+  resolveCoursePreviewDirectionsMode,
 } from "../data/googleDirectionsApi";
 import {
   computeMapRouteFit,
@@ -166,20 +168,31 @@ export default function CourseGuideScreen(): React.JSX.Element {
     const ac = new AbortController();
     setPathLoading(true);
     setRoutePath(null);
-    fetchMergedDirectionsPolyline({
-      points: stopPoints,
-      mode: "transit",
-      signal: ac.signal,
-    })
-      .then((path) => {
-        if (!ac.signal.aborted && path.length >= 2) setRoutePath(path);
+    const directionsMode = resolveCoursePreviewDirectionsMode(course?.routeLegs);
+    const loadMergedPath = (mode: typeof directionsMode) =>
+      fetchMergedDirectionsPolyline({
+        points: stopPoints,
+        mode,
+        signal: ac.signal,
+      });
+    loadMergedPath(directionsMode)
+      .then(async (path) => {
+        if (ac.signal.aborted) return;
+        let final = path;
+        if (
+          looksLikeStraightStopConnectorPath(path, stopPoints.length) &&
+          directionsMode === "transit"
+        ) {
+          final = await loadMergedPath("driving");
+        }
+        if (!ac.signal.aborted && final.length >= 2) setRoutePath(final);
       })
       .catch(() => {})
       .finally(() => {
         if (!ac.signal.aborted) setPathLoading(false);
       });
     return () => ac.abort();
-  }, [stopPoints]);
+  }, [stopPoints, course?.routeLegs]);
 
   const polylinePath = useMemo(
     () =>

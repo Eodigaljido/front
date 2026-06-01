@@ -87,7 +87,11 @@ const ROUTE_KIND_CHIPS: { key: RouteKindFilter; label: string }[] = [
   { key: "personal", label: "개인" },
   { key: "collaborative", label: "공동" },
 ];
-import { fetchMergedDirectionsPolyline } from "../data/googleDirectionsApi";
+import {
+  fetchMergedDirectionsPolyline,
+  looksLikeStraightStopConnectorPath,
+  resolveCoursePreviewDirectionsMode,
+} from "../data/googleDirectionsApi";
 import { useCourseStepWalkingSegments } from "../hooks/useCourseStepWalkingSegments";
 
 const CARD_STYLE = {
@@ -121,17 +125,22 @@ function CourseCard({
     isLocalOwnRoute?: boolean;
   };
 }) {
+  const cardPressedStyle = ({ pressed }: { pressed: boolean }) =>
+    pressed ? { opacity: 0.96 } : undefined;
+
   return (
     <View
       className="mx-4 mb-3 overflow-hidden bg-white rounded-2xl"
       style={CARD_STYLE}
     >
-      <TouchableOpacity
-        onPress={onPressCard}
-        style={({ pressed }) => ({ opacity: pressed ? 0.96 : 1 })}
-      >
-        {/* 상단: 썸네일 + 제목/메타 + 삭제 아이콘 */}
-        <View className="flex-row border-b border-gray-100 p-3.5">
+      {/* 상단: 카드 탭(상세) / 수정·삭제는 별도 터치 영역 */}
+      <View className="flex-row border-b border-gray-100 p-3.5">
+        <Pressable
+          onPress={onPressCard}
+          style={({ pressed }) => [{ flex: 1, flexDirection: "row" }, cardPressedStyle({ pressed })]}
+          accessibilityRole="button"
+          accessibilityLabel={`${item.title} 코스 상세`}
+        >
           <View className="h-[80px] w-[80px] shrink-0 overflow-hidden rounded-xl bg-blue-50">
             {item.thumbnail ? (
               <Image
@@ -168,55 +177,71 @@ function CourseCard({
               {item.meta}
             </Text>
           </View>
-          <View className="flex-row items-center">
-            <TouchableOpacity
-              onPress={onEdit}
-              className="justify-center pl-1"
-              hitSlop={8}
-            >
-              <Ionicons name="create-outline" size={22} color="#3b82f6" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={onRemove}
-              className="justify-center pl-2"
-              hitSlop={8}
-            >
-              <Ionicons name="trash-outline" size={22} color="#ef4444" />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* 경로 안내 */}
-        <View className="flex-row items-center px-3.5 py-2.5">
-          <View className="px-2 py-1 bg-blue-600 rounded-md">
-            <Text className="text-[11px] font-semibold text-white">출발</Text>
-          </View>
-          <Text className="ml-2 text-[13px] text-gray-900" numberOfLines={1}>
-            {item.departure}
-          </Text>
-          <View className="w-px h-3 mx-2 bg-gray-300" />
-          <View className="px-2 py-1 bg-slate-500 rounded-md">
-            <Text className="text-[11px] font-semibold text-white">도착</Text>
-          </View>
-          <Text
-            className="ml-2 flex-1 text-[13px] text-gray-900"
-            numberOfLines={1}
+        </Pressable>
+        <View className="flex-row items-center">
+          <TouchableOpacity
+            onPress={onEdit}
+            className="justify-center pl-1"
+            hitSlop={8}
           >
-            {item.arrival}
-          </Text>
+            <Ionicons name="create-outline" size={22} color="#3b82f6" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={onRemove}
+            className="justify-center pl-2"
+            hitSlop={8}
+          >
+            <Ionicons name="trash-outline" size={22} color="#ef4444" />
+          </TouchableOpacity>
         </View>
-      </TouchableOpacity>
+      </View>
 
-      <View className="border-t border-gray-100 px-3.5 py-2.5">
-        <TouchableOpacity
+      <Pressable
+        onPress={onPressCard}
+        style={({ pressed }) => [
+          { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 10 },
+          cardPressedStyle({ pressed }),
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel="출발·도착 보기"
+      >
+        <View className="px-2 py-1 bg-blue-600 rounded-md">
+          <Text className="text-[11px] font-semibold text-white">출발</Text>
+        </View>
+        <Text className="ml-2 text-[13px] text-gray-900" numberOfLines={1}>
+          {item.departure}
+        </Text>
+        <View className="w-px h-3 mx-2 bg-gray-300" />
+        <View className="px-2 py-1 bg-slate-500 rounded-md">
+          <Text className="text-[11px] font-semibold text-white">도착</Text>
+        </View>
+        <Text className="ml-2 flex-1 text-[13px] text-gray-900" numberOfLines={1}>
+          {item.arrival}
+        </Text>
+      </Pressable>
+
+      <View
+        className="border-t border-gray-100 px-3.5 py-2.5"
+        style={{ zIndex: 2, elevation: 2 }}
+      >
+        <Pressable
           onPress={onGuide}
-          activeOpacity={0.85}
-          className="flex-row items-center justify-center gap-2 rounded-xl bg-blue-50 py-2.5"
+          style={({ pressed }) => ({
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            borderRadius: 12,
+            backgroundColor: "#eff6ff",
+            paddingVertical: 10,
+            opacity: pressed ? 0.85 : 1,
+          })}
+          accessibilityRole="button"
           accessibilityLabel="지도 안내"
         >
           <Ionicons name="map-outline" size={18} color="#2563eb" />
           <Text className="text-sm font-semibold text-blue-600">안내</Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
     </View>
   );
@@ -661,13 +686,25 @@ export default function MyRouteScreen(): React.JSX.Element {
     const ac = new AbortController();
     setDetailPathLoading(true);
     setDetailMergedPath(null);
-    fetchMergedDirectionsPolyline({
-      points: stepPoints,
-      mode: "transit",
-      signal: ac.signal,
-    })
-      .then((path) => {
-        if (!ac.signal.aborted && path.length >= 2) setDetailMergedPath(path);
+    const directionsMode = resolveCoursePreviewDirectionsMode(course.routeLegs);
+    const loadMergedPath = (mode: typeof directionsMode) =>
+      fetchMergedDirectionsPolyline({
+        points: stepPoints,
+        mode,
+        signal: ac.signal,
+      });
+
+    loadMergedPath(directionsMode)
+      .then(async (path) => {
+        if (ac.signal.aborted) return;
+        let final = path;
+        if (
+          looksLikeStraightStopConnectorPath(path, stepPoints.length) &&
+          directionsMode === "transit"
+        ) {
+          final = await loadMergedPath("driving");
+        }
+        if (!ac.signal.aborted && final.length >= 2) setDetailMergedPath(final);
       })
       .catch(() => {})
       .finally(() => {
@@ -1159,11 +1196,11 @@ export default function MyRouteScreen(): React.JSX.Element {
                     pathPts && pathPts.length >= 1
                       ? buildMapMarkersFromPathPoints(pathPts)
                       : undefined;
-                  // 실경로가 있으면 단순화해서 사용하고, 없으면 경유지 연결선으로 대체
+                  // 실경로만 표시 (실패 시 정류장 직선 연결·부채꼴 방지)
                   const polylinePath = simplifyRoutePath(
                     detailMergedPath && detailMergedPath.length >= 2
                       ? detailMergedPath
-                      : pathPts,
+                      : undefined,
                   );
                   const fallbackCenter = ur
                     ? userRouteMapCenter(ur)
