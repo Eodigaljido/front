@@ -2,6 +2,10 @@
 import axios from "axios";
 import { tokenStorage } from "../utils/tokenStorage";
 
+/** preview APK 등 __DEV__=false 빌드에서 EAS env `EXPO_PUBLIC_APK_DEBUG=1` 로 API 로그 활성화 */
+const apkDebug = String(process.env.EXPO_PUBLIC_APK_DEBUG ?? "").trim() === "1";
+const apiLogEnabled = typeof __DEV__ !== "undefined" && __DEV__ ? true : apkDebug;
+
 export const instance = axios.create({
   baseURL: String(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").replace(/\/+$/, ""),
   headers: { "Content-Type": "application/json" },
@@ -13,15 +17,29 @@ instance.interceptors.request.use(async config => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
-  if (__DEV__) {
+  // APK(릴리스) 포함: 기본 application/json 이 FormData에 붙으면 업로드 전부 실패
+  if (typeof FormData !== "undefined" && config.data instanceof FormData) {
+    const h = config.headers;
+    if (h) {
+      delete h["Content-Type"];
+      delete h["content-type"];
+      if (typeof h.delete === "function") {
+        h.delete("Content-Type");
+        h.delete("content-type");
+      }
+    }
+  }
+  if (apiLogEnabled) {
     const base = String(config.baseURL ?? "").replace(/\/+$/, "");
     const url = String(config.url ?? "").replace(/^\/+/, "");
     const hasAuth = Boolean((config.headers as any)?.Authorization);
+    const isMultipart =
+      typeof FormData !== "undefined" && config.data instanceof FormData;
     console.log(
       "[REQ]",
       config.method?.toUpperCase(),
       `${base}/${url}`,
-      { hasAuth, data: config.data },
+      { hasAuth, multipart: isMultipart },
     );
   }
   return config;
@@ -38,8 +56,8 @@ function processQueue(newToken: string) {
 
 instance.interceptors.response.use(
   res => {
-    if (__DEV__) {
-      console.log('[RES]', res.status, res.config.url, res.data);
+    if (apiLogEnabled) {
+      console.log("[RES]", res.status, res.config.url);
     }
     return res;
   },
@@ -53,7 +71,11 @@ instance.interceptors.response.use(
         (status === 404 || status === 501)
       )
     ) {
-      console.log("[ERR]", status, url, err.response?.data);
+      const msg =
+        err.response?.data?.message ??
+        err.response?.data?.error ??
+        err.message;
+      console.warn("[ERR]", status, url, msg, err.response?.data);
     }
 
     const originalRequest = err.config;
