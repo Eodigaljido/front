@@ -12,7 +12,8 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { NavigationProp, useNavigation } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ChevronLeft } from 'lucide-react-native';
 
 import { RootStackParamList } from '@/App';
@@ -22,7 +23,7 @@ import { createGroup } from '@/api/meet/groups';
 import type { GroupType } from '@/api/meet/types';
 
 export default function MeetCreateScreen(): React.JSX.Element {
-  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const accessToken = useAuthStore((s) => s.accessToken) ?? '';
 
   const [name, setName] = useState('');
