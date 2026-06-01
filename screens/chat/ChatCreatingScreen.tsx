@@ -441,6 +441,57 @@ export default function ChatCreatingScreen(): React.JSX.Element {
                     </TouchableOpacity>
                   </View>
                 )}
+
+                {/* 빈 상태 */}
+                {filteredRecent.length === 0 && filteredAll.length === 0 && (
+                  <View
+                    style={{
+                      alignItems: "center",
+                      paddingVertical: 48,
+                      gap: 12,
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 64,
+                        height: 64,
+                        borderRadius: 32,
+                        backgroundColor: searchQuery ? "#F3F4F6" : "#EFF6FF",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {searchQuery ? (
+                        <Search color="#9CA3AF" size={26} />
+                      ) : (
+                        <UserPlus color="#3B82F6" size={26} />
+                      )}
+                    </View>
+                    <Text
+                      style={{
+                        fontSize: 15,
+                        fontWeight: "600",
+                        color: "#374151",
+                      }}
+                    >
+                      {searchQuery
+                        ? `"${searchQuery}" 검색 결과 없음`
+                        : "아직 친구가 없어요"}
+                    </Text>
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        color: "#9CA3AF",
+                        textAlign: "center",
+                        lineHeight: 20,
+                      }}
+                    >
+                      {searchQuery
+                        ? "다른 이름으로 다시 검색해보세요"
+                        : "친구를 추가하면\n함께 채팅방을 만들 수 있어요"}
+                    </Text>
+                  </View>
+                )}
               </>
             )}
           </View>
