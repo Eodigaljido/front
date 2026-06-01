@@ -17,6 +17,7 @@ import {
   Animated,
   Dimensions,
   PanResponder,
+  Platform,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -775,7 +776,7 @@ export default function MyRouteScreen(): React.JSX.Element {
             shadowOffset: { width: 0, height: 2 },
             shadowOpacity: 0.06,
             shadowRadius: 8,
-            elevation: 3,
+            elevation: Platform.OS === 'android' ? 0 : 3,
           }}
         >
           <View
@@ -808,7 +809,7 @@ export default function MyRouteScreen(): React.JSX.Element {
             shadowOffset: { width: 0, height: 2 },
             shadowOpacity: 0.06,
             shadowRadius: 8,
-            elevation: 3,
+            elevation: Platform.OS === 'android' ? 0 : 3,
           }}
         >
           <Ionicons name="options-outline" size={23} color="#2563EB" />
