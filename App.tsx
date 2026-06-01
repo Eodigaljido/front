@@ -43,6 +43,7 @@ import { appLinking } from './constants/shareLinking';
 import UserProfileScreen from './screens/UserProfileScreen';
 import { ChatRouteHistory } from './screens/chat/ChatRouteHistory';
 import { useTabStore } from './store/tabStore';
+import SwipeTabWrapper from './components/SwipeTabWrapper';
 
 export type RootTabParamList = {
   Home: undefined;
@@ -138,6 +139,23 @@ function AllStackNavigator() {
     </AllStack.Navigator>
   );
 }
+
+function withSwipeTab<P extends object>(Component: React.ComponentType<P>): React.ComponentType<P> {
+  function SwipeTabScreen(props: P) {
+    return (
+      <SwipeTabWrapper>
+        <Component {...props} />
+      </SwipeTabWrapper>
+    );
+  }
+  return SwipeTabScreen;
+}
+
+const HomeScreenSwipe = withSwipeTab(HomeScreen);
+const SharedRouteScreenSwipe = withSwipeTab(SharedRouteScreen);
+const MyRouteScreenSwipe = withSwipeTab(MyRouteScreen);
+const ChatHomeScreenSwipe = withSwipeTab(ChatHomeScreen);
+const AllStackNavigatorSwipe = withSwipeTab(AllStackNavigator);
 
 const TAB_ACCENT = '#2563eb';
 const TAB_INACTIVE = '#9ca3af';
@@ -267,27 +285,27 @@ function TabNavigator() {
     >
       <Tab.Screen
         name="Home"
-        component={HomeScreen}
+        component={HomeScreenSwipe}
         options={{ headerShown: false, tabBarLabel: '홈' }}
       />
       <Tab.Screen
         name="SharedRoute"
-        component={SharedRouteScreen}
+        component={SharedRouteScreenSwipe}
         options={{ headerShown: false, tabBarLabel: '공유 루트' }}
       />
       <Tab.Screen
         name="MyRoute"
-        component={MyRouteScreen}
+        component={MyRouteScreenSwipe}
         options={{ headerShown: false, tabBarLabel: '내 루트' }}
       />
       <Tab.Screen
         name="Chat"
-        component={ChatHomeScreen}
+        component={ChatHomeScreenSwipe}
         options={{ headerShown: false, title: '채팅', tabBarLabel: '채팅' }}
       />
       <Tab.Screen
         name="All"
-        component={AllStackNavigator}
+        component={AllStackNavigatorSwipe}
         options={{ headerShown: false, title: '전체', tabBarLabel: '전체' }}
       />
     </Tab.Navigator>
