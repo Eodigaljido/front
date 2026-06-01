@@ -55,7 +55,7 @@ export function useTypingIndicator(myUuid: string | undefined) {
     }
   }, []);
 
-  return { handleTypingEvent, typingText: buildTypingText(typingUsers) };
+  return { handleTypingEvent, typingText: buildTypingText(typingUsers), typingUsers };
 }
 
 function buildTypingText(users: Map<string, string>): string {
