@@ -80,6 +80,7 @@ export type RootStackParamList = {
     | undefined;
   ProfileSettings: undefined;
   UserProfile: {
+    uuid?: string;
     userUuid?: string;
     userId?: string;
     nickname?: string;
