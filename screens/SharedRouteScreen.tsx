@@ -70,7 +70,7 @@ import FilterBottomSheet, {
   REGIONS,
   SORT_OPTIONS,
 } from "../components/FilterBottomSheet";
-import { sameCourseId } from "../utils/sameCourseId";
+import { dedupeCoursesById, sameCourseId } from "../utils/sameCourseId";
 import { courseMatchesTagOrCategory } from "../utils/courseTagFilter";
 import { mergeLocalThumbnailsIntoCourses } from "../utils/mergeCourseThumbnails";
 import { enrichCoursesWithForkOriginAuthors, enrichCourseWithForkOriginAuthor } from "../utils/enrichForkOriginAuthor";
@@ -555,7 +555,7 @@ export default function SharedRouteScreen({
       list = [...list].sort((a, b) => b.views - a.views);
     }
 
-    return list;
+    return dedupeCoursesById(list);
   }, [activeTab, searchQuery, selectedCategory, selectedRegion, selectedSort, coursesData]);
 
   const handleCategoryToggle = (cat: string) => {
@@ -576,7 +576,9 @@ export default function SharedRouteScreen({
   return (
     <ScreenRoot {...screenRootProps}>
       {/* 검색 + 필터 — 배경과 분리된 카드형 검색바 */}
-      <View className="flex-row items-center gap-2.5 px-4 py-3">
+      <View
+        className={`flex-row items-center gap-2.5 px-4 ${embedded ? 'pb-2 pt-1' : 'py-3'}`}
+      >
         <View
           className="flex-1 flex-row items-center rounded-2xl bg-white px-3.5"
           style={{
@@ -664,7 +666,7 @@ export default function SharedRouteScreen({
       {/* 코스 리스트 */}
       <FlatList<CourseItem>
         data={filteredCourses ?? []}
-        keyExtractor={(item: CourseItem) => item.id}
+        keyExtractor={(item: CourseItem, index) => `shared-${item.id}-${index}`}
         renderItem={({ item }: { item: CourseItem }) => (
           <CourseCard
             item={item}

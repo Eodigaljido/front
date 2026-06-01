@@ -55,7 +55,7 @@ import FilterBottomSheet from "../components/FilterBottomSheet";
 import { formatOverallDurationLabel } from "../utils/formatOverallDurationLabel";
 import { resolveCourseRegionLabel } from "../utils/inferCourseRegionLabel";
 import { shareCollaborativeRoute } from "../utils/shareCollaborativeRoute";
-import { sameCourseId } from "../utils/sameCourseId";
+import { dedupeCoursesById, sameCourseId } from "../utils/sameCourseId";
 import {
   getCourseAuthorLabel,
   getCourseModifierLabel,
@@ -757,7 +757,7 @@ export default function MyRouteScreen({
       list = [...list].sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
     }
 
-    return list;
+    return dedupeCoursesById(list);
   }, [
     displayCourses,
     searchQuery,
@@ -865,7 +865,9 @@ export default function MyRouteScreen({
   return (
     <ScreenRoot {...screenRootProps}>
       {/* 검색 + 필터 — 배경과 분리된 카드형 검색바 */}
-      <View className="flex-row items-center gap-2.5 px-4 py-3">
+      <View
+        className={`flex-row items-center gap-2.5 px-4 ${embedded ? 'pb-2 pt-1' : 'py-3'}`}
+      >
         <View
           className="flex-1 flex-row items-center rounded-2xl bg-white px-3.5"
           style={{
@@ -961,7 +963,7 @@ export default function MyRouteScreen({
       ) : (
         <FlatList<CourseItem>
           data={filteredCourses ?? []}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item, index) => `my-${item.id}-${index}`}
           renderItem={({ item }) => {
             const ur = userSavedRoutes.find((r) => sameCourseId(r.id, item.id));
             const cardAuthorCtx = {
