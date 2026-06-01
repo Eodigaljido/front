@@ -1,0 +1,12 @@
+---
+description: Git 커밋·PR에 Cursor 기여자 표기 금지
+alwaysApply: true
+---
+
+커밋·PR·코멘트에 아래를 절대 넣지 마세요.
+
+- `Co-authored-by: Cursor`
+- `Made-with: Cursor`
+- `cursoragent@cursor.com`
+
+커밋 작성자는 항상 저장소 사용자의 git `user.name` / `user.email`만 사용합니다.

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -142,7 +143,10 @@ export const ChatRoomScreen = () => {
 
   useEffect(() => {
     if (typingUsers.size > 0) {
-      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 50);
+      setTimeout(
+        () => scrollViewRef.current?.scrollToEnd({ animated: true }),
+        50,
+      );
     }
   }, [typingUsers.size]);
 
@@ -234,9 +238,18 @@ export const ChatRoomScreen = () => {
     );
     try {
       await sendImageMessage(accessToken, roomUuid, imageUri);
-    } catch (err) {
-      console.error("[Chat] 이미지 전송 실패:", err);
+    } catch (err: any) {
+      console.warn(
+        "[Chat] 이미지 전송 실패:",
+        err?.response?.status,
+        err?.response?.data,
+      );
       setMessages((prev) => prev.filter((m) => m.uuid !== pendingUuid));
+      const detail =
+        err?.response?.data?.message ??
+        err?.message ??
+        "이미지를 보내지 못했습니다.";
+      Alert.alert("이미지 전송 실패", String(detail));
     }
   };
 
@@ -434,4 +447,3 @@ const modalStyles = StyleSheet.create({
     color: "#888",
   },
 });
-

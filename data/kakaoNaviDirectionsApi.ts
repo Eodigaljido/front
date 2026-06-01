@@ -6,15 +6,24 @@
  * (로컬 검색과 동일 키: EXPO_PUBLIC_KAKAO_REST_API_KEY)
  */
 
+import {
+  formatRouteDistanceDuration,
+  ROUTE_USER_MESSAGES,
+} from "../utils/routeCopy";
+
 type LatLng = { latitude: number; longitude: number };
 
 /** googleDirectionsApi.DirectionsMode 와 동일 (순환 import 방지) */
-export type KakaoDirectionsRequestMode = 'walking' | 'transit' | 'driving' | 'bicycling';
+export type KakaoDirectionsRequestMode =
+  | "walking"
+  | "transit"
+  | "driving"
+  | "bicycling";
 
 export type KakaoDirectionsLegResult = {
   path: LatLng[];
   segments: Array<{
-    mode: 'walk' | 'ride';
+    mode: "walk" | "ride";
     points: LatLng[];
     lineLabel?: string;
   }>;
@@ -24,10 +33,11 @@ export type KakaoDirectionsLegResult = {
   detail: string;
 };
 
-const KAKAO_NAVI_DIRECTIONS_URL = 'https://apis-navi.kakaomobility.com/v1/directions';
+const KAKAO_NAVI_DIRECTIONS_URL =
+  "https://apis-navi.kakaomobility.com/v1/directions";
 
 function getKakaoRestKey(): string {
-  return String(process.env.EXPO_PUBLIC_KAKAO_REST_API_KEY ?? '').trim();
+  return String(process.env.EXPO_PUBLIC_KAKAO_REST_API_KEY ?? "").trim();
 }
 
 function dedupeConsecutive(pts: LatLng[]): LatLng[] {
@@ -86,10 +96,15 @@ function mergeRoadPaths(sections: any[]): LatLng[] {
   return merged;
 }
 
-function scaleDurationForMode(carMinutes: number, requested: KakaoDirectionsRequestMode): number {
-  if (requested === 'walking') return Math.max(1, Math.round(carMinutes * 2.8));
-  if (requested === 'bicycling') return Math.max(1, Math.round(carMinutes * 1.35));
-  if (requested === 'transit') return Math.max(1, Math.round(carMinutes * 1.15));
+function scaleDurationForMode(
+  carMinutes: number,
+  requested: KakaoDirectionsRequestMode,
+): number {
+  if (requested === "walking") return Math.max(1, Math.round(carMinutes * 2.8));
+  if (requested === "bicycling")
+    return Math.max(1, Math.round(carMinutes * 1.35));
+  if (requested === "transit")
+    return Math.max(1, Math.round(carMinutes * 1.15));
   return Math.max(1, carMinutes);
 }
 
@@ -106,26 +121,21 @@ export function kakaoCarRouteToDirectionsLeg(
 ): KakaoDirectionsLegResult {
   const pathDeduped = dedupeConsecutive(path);
   if (pathDeduped.length < 2) {
-    throw new Error('KAKAO_NAVI_EMPTY_PATH');
+    throw new Error("KAKAO_NAVI_EMPTY_PATH");
   }
   const carMinutes = Math.max(1, Math.round(durationSec / 60));
   const durationMinutes = scaleDurationForMode(carMinutes, requestedMode);
-  const walkish = requestedMode === 'walking';
-  const segMode = walkish ? ('walk' as const) : ('ride' as const);
-  const guideLine = guidesSample.filter(Boolean).slice(0, 4).join(' → ');
+  const walkish = requestedMode === "walking";
+  const segMode = walkish ? ("walk" as const) : ("ride" as const);
+  const guideLine = guidesSample.filter(Boolean).slice(0, 4).join(" → ");
 
   return {
     path: pathDeduped,
     segments: [{ mode: segMode, points: pathDeduped.slice() }],
     durationMinutes,
     distanceMeters,
-    summary:
-      distanceMeters < 1000
-        ? `카카오 · 약 ${distanceMeters}m · 약 ${durationMinutes}분`
-        : `카카오 · 약 ${(distanceMeters / 1000).toFixed(1)}km · 약 ${durationMinutes}분`,
-    detail:
-      (guideLine ? `${guideLine}\n` : '') +
-      '※ 카카오 자동차 길찾기 기준 경로입니다. 도보/자전거 모드는 지도 표시용이며 실제와 다를 수 있습니다.',
+    summary: formatRouteDistanceDuration(distanceMeters, durationMinutes),
+    detail: guideLine || ROUTE_USER_MESSAGES.routeDetailFallback,
   };
 }
 
@@ -148,17 +158,17 @@ export async function fetchKakaoNaviCarDirectionsLeg(params: {
   const q = new URLSearchParams({
     origin: `${ox},${oy}`,
     destination: `${dx},${dy}`,
-    priority: 'RECOMMEND',
-    summary: 'false',
-    alternatives: 'false',
+    priority: "RECOMMEND",
+    summary: "false",
+    alternatives: "false",
   });
 
   try {
     const res = await fetch(`${KAKAO_NAVI_DIRECTIONS_URL}?${q.toString()}`, {
-      method: 'GET',
+      method: "GET",
       headers: {
         Authorization: `KakaoAK ${key}`,
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       signal: params.signal,
     });
@@ -180,7 +190,7 @@ export async function fetchKakaoNaviCarDirectionsLeg(params: {
     for (const sec of sections) {
       const gs = Array.isArray(sec?.guides) ? sec.guides : [];
       for (const g of gs) {
-        const t = String(g?.guidance ?? '').trim();
+        const t = String(g?.guidance ?? "").trim();
         if (t && !guides.includes(t)) guides.push(t);
       }
     }
@@ -196,4 +206,3 @@ export async function fetchKakaoNaviCarDirectionsLeg(params: {
     return null;
   }
 }
-

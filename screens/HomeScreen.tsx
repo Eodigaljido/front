@@ -1,5 +1,11 @@
 // @ts-nocheck
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   AppState,
   View,
@@ -21,7 +27,10 @@ import {
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Calendar } from "react-native-calendars";
 import { LinearGradient } from "expo-linear-gradient";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import type { RootTabParamList } from "../App";
@@ -160,7 +169,9 @@ const WEATHER_ICON_IMAGES = {
 } as const;
 
 function getWeatherIconSource(iconKey?: string) {
-  const key = String(iconKey ?? "").toLowerCase() as keyof typeof WEATHER_ICON_IMAGES;
+  const key = String(
+    iconKey ?? "",
+  ).toLowerCase() as keyof typeof WEATHER_ICON_IMAGES;
   return WEATHER_ICON_IMAGES[key] ?? WEATHER_ICON_IMAGES.partly_cloudy;
 }
 
@@ -200,25 +211,29 @@ function buildWeatherLocationQuery(
   return joined || DEFAULT_WEATHER_LOCATION;
 }
 
-function getWeatherMoodMessage(weather?: IntegratedWeatherResponse["current"]): string {
+function getWeatherMoodMessage(
+  weather?: IntegratedWeatherResponse["current"],
+): string {
   if (!weather) return "오늘 코스를 천천히 고르기 좋은 날씨네요!";
   const temp = Number.isFinite(weather.temperature) ? weather.temperature : 18;
-  const rain = Number.isFinite(weather.precipitation1h) ? weather.precipitation1h : 0;
+  const rain = Number.isFinite(weather.precipitation1h)
+    ? weather.precipitation1h
+    : 0;
   const desc = String(weather.weatherDesc ?? "").toLowerCase();
 
   if (rain >= 1 || desc.includes("비")) {
-    return "오늘은 실내 코스로 여유롭게 즐기기 좋은 날씨네요!";
+    return "오늘은 실내 코스 즐기기 좋은 날씨네요!";
   }
   if (temp >= 28) {
-    return "오늘은 그늘 많은 짧은 산책 코스가 딱 좋은 날씨네요!";
+    return "오늘은 그늘 많은 짧은 산책 코스가 좋은 날씨네요!";
   }
   if (temp <= 5) {
-    return "오늘은 따뜻하게 입고 가까운 코스를 즐기기 좋은 날씨네요!";
+    return "오늘은 따뜻하게 입고 코스를 즐기기 좋은 날씨네요!";
   }
   if (desc.includes("맑") || desc.includes("sun")) {
     return "오늘은 야외 산책 코스를 즐기기 좋은 날씨네요!";
   }
-  return "오늘은 가볍게 이동하며 코스를 둘러보기 좋은 날씨네요!";
+  return "오늘은 가볍게 이동하며 주변를 둘러보기 좋은 날씨네요!";
 }
 
 function SectionHeader({
@@ -232,7 +247,9 @@ function SectionHeader({
 }) {
   return (
     <View className="flex-row items-center justify-between">
-      <Text style={{ fontSize: 15, fontWeight: "600", color: "#1A1A2E" }}>{title}</Text>
+      <Text style={{ fontSize: 15, fontWeight: "600", color: "#1A1A2E" }}>
+        {title}
+      </Text>
       {actionLabel ? (
         <Pressable hitSlop={12} onPress={onPressAction}>
           <View className="flex-row items-center">
@@ -275,16 +292,15 @@ export default function HomeScreen(): React.JSX.Element {
   } = useMockData();
   const [homeCourses, setHomeCourses] = useState<any[]>([]);
   const [popularCourses, setPopularCourses] = useState<any[]>([]);
-  const [popularBookmarkBusyId, setPopularBookmarkBusyId] = useState<string | null>(
-    null,
-  );
+  const [popularBookmarkBusyId, setPopularBookmarkBusyId] = useState<
+    string | null
+  >(null);
   const [followingNewsApi, setFollowingNewsApi] = useState<any[]>([]);
 
   const [weatherLoading, setWeatherLoading] = useState(true);
   const [weatherError, setWeatherError] = useState<string | null>(null);
-  const [integrated, setIntegrated] = useState<IntegratedWeatherResponse | null>(
-    null,
-  );
+  const [integrated, setIntegrated] =
+    useState<IntegratedWeatherResponse | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [homeSearchQuery, setHomeSearchQuery] = useState("");
   const [searchExpanded, setSearchExpanded] = useState(false);
@@ -295,9 +311,13 @@ export default function HomeScreen(): React.JSX.Element {
   const [scheduleDraftDate, setScheduleDraftDate] = useState(new Date());
   const [scheduleDraftTime, setScheduleDraftTime] = useState(new Date());
   const [scheduleDraftTitle, setScheduleDraftTitle] = useState("");
-  const [scheduleChatRooms, setScheduleChatRooms] = useState<ChatRoomType[]>([]);
-  const [scheduleChatRoomsLoading, setScheduleChatRoomsLoading] = useState(false);
-  const [selectedScheduleChatRoomUuid, setSelectedScheduleChatRoomUuid] = useState<string | null>(null);
+  const [scheduleChatRooms, setScheduleChatRooms] = useState<ChatRoomType[]>(
+    [],
+  );
+  const [scheduleChatRoomsLoading, setScheduleChatRoomsLoading] =
+    useState(false);
+  const [selectedScheduleChatRoomUuid, setSelectedScheduleChatRoomUuid] =
+    useState<string | null>(null);
   const [scheduleDetailFormOpen, setScheduleDetailFormOpen] = useState(false);
   const [courseSchedules, setCourseSchedules] = useState<
     {
@@ -322,11 +342,15 @@ export default function HomeScreen(): React.JSX.Element {
 
   const fetchHomeFeedData = useCallback(async () => {
     const [recent, popular, news] = await Promise.all([
-      fetchHomeCourses(6).catch(() => [] as Awaited<ReturnType<typeof fetchHomeCourses>>),
+      fetchHomeCourses(6).catch(
+        () => [] as Awaited<ReturnType<typeof fetchHomeCourses>>,
+      ),
       fetchPopularCoursesBySaves(6).catch(
         () => [] as Awaited<ReturnType<typeof fetchPopularCoursesBySaves>>,
       ),
-      fetchFollowingNews(3).catch(() => [] as Awaited<ReturnType<typeof fetchFollowingNews>>),
+      fetchFollowingNews(3).catch(
+        () => [] as Awaited<ReturnType<typeof fetchFollowingNews>>,
+      ),
     ]);
     const recentNorm = normalizeCourseList(recent);
     const popularNorm = normalizeCourseList(popular);
@@ -386,16 +410,21 @@ export default function HomeScreen(): React.JSX.Element {
   }, [integrated?.air?.pm10Grade, integrated?.current]);
   const sortedSchedules = useMemo(
     () =>
-      [...courseSchedules].sort(
-        (a, b) => a.date.getTime() - b.date.getTime(),
-      ),
+      [...courseSchedules].sort((a, b) => a.date.getTime() - b.date.getTime()),
     [courseSchedules],
   );
-  const nearestSchedule = useMemo(() => sortedSchedules[0] ?? null, [sortedSchedules]);
+  const nearestSchedule = useMemo(
+    () => sortedSchedules[0] ?? null,
+    [sortedSchedules],
+  );
   const nearestScheduleDdayLabel = useMemo(() => {
     if (!nearestSchedule) return "";
     const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfToday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
     const target = new Date(
       nearestSchedule.date.getFullYear(),
       nearestSchedule.date.getMonth(),
@@ -467,72 +496,83 @@ export default function HomeScreen(): React.JSX.Element {
       myRecentCoursesForHome.map((course) => {
         const steps = Array.isArray(course.routeSteps) ? course.routeSteps : [];
         const tagList = Array.isArray(course.tags)
-          ? course.tags.map((t) => String(t).trim()).filter(Boolean).slice(0, 2)
+          ? course.tags
+              .map((t) => String(t).trim())
+              .filter(Boolean)
+              .slice(0, 2)
           : [];
         return {
-        id: `recent-${course.id}`,
-        courseId: String(course.id),
-        title: course.title,
-        thumbnail: course.thumbnail ? String(course.thumbnail) : null,
-        waypoints: steps.slice(0, 3).map((step) => step?.name ?? ""),
-        pinCount: steps.length,
-        distanceKm: Number((course.overallDurationMinutes / 55).toFixed(1)),
-        tags: tagList,
-      };
+          id: `recent-${course.id}`,
+          courseId: String(course.id),
+          title: course.title,
+          thumbnail: course.thumbnail ? String(course.thumbnail) : null,
+          waypoints: steps.slice(0, 3).map((step) => step?.name ?? ""),
+          pinCount: steps.length,
+          distanceKm: Number((course.overallDurationMinutes / 55).toFixed(1)),
+          tags: tagList,
+        };
       }),
     [myRecentCoursesForHome],
   );
   const trendingCourses = useMemo(
     () =>
       popularCourses
-      .filter((course) => {
-        const id = String(course?.id ?? "").trim();
-        if (!id) return false;
-        const isSaved =
-          savedCourseIds.includes(id) ||
-          pickCourseSavedByMe(course) ||
-          course.savedByMe === true;
-        return !isSaved;
-      })
-      .slice(0, 3)
-      .map((course) => {
-        const steps = Array.isArray(course.routeSteps) ? course.routeSteps : [];
-        const saveCount = pickCourseSaveCount(course);
-        const tagList = Array.isArray(course.tags)
-          ? course.tags.map((t) => String(t).trim()).filter(Boolean).slice(0, 2)
-          : [];
-        const catDisplay = sanitizeCourseCategory(course.category);
-        const regionStr = String(course.region ?? "").trim();
-        const author = course.authorUserId
-          ? `@${course.authorUserId}`
-          : regionStr
-            ? `${regionStr} 코스`
-            : tagList.length > 0
-              ? `${tagList.join(" · ")} 코스`
-              : (() => {
-                  const dep = String(course.departure ?? "").trim();
-                  if (dep && dep !== "출발지")
-                    return dep.length > 18 ? `${dep.slice(0, 18)}…` : dep;
-                  return "인기 코스";
-                })();
-        const statsLine = [`핀 ${steps.length}개`, `${Number((course.overallDurationMinutes / 55).toFixed(1))}km`];
-        if (catDisplay) statsLine.push(catDisplay);
-        else if (tagList.length) statsLine.push(tagList.join(" · "));
-        return {
-        id: `trend-${course.id}`,
-        courseId: course.id,
-        title: course.title,
-        thumbnail: course.thumbnail ? String(course.thumbnail) : null,
-        author,
-        saveCount,
-        savedByMe: pickCourseSavedByMe(course) || course.savedByMe === true,
-        pinCount: steps.length,
-        distanceKm: Number((course.overallDurationMinutes / 55).toFixed(1)),
-        category: catDisplay,
-        tags: tagList,
-        statsLine: statsLine.join(" · "),
-      };
-      }),
+        .filter((course) => {
+          const id = String(course?.id ?? "").trim();
+          if (!id) return false;
+          const isSaved =
+            savedCourseIds.includes(id) ||
+            pickCourseSavedByMe(course) ||
+            course.savedByMe === true;
+          return !isSaved;
+        })
+        .slice(0, 3)
+        .map((course) => {
+          const steps = Array.isArray(course.routeSteps)
+            ? course.routeSteps
+            : [];
+          const saveCount = pickCourseSaveCount(course);
+          const tagList = Array.isArray(course.tags)
+            ? course.tags
+                .map((t) => String(t).trim())
+                .filter(Boolean)
+                .slice(0, 2)
+            : [];
+          const catDisplay = sanitizeCourseCategory(course.category);
+          const regionStr = String(course.region ?? "").trim();
+          const author = course.authorUserId
+            ? `@${course.authorUserId}`
+            : regionStr
+              ? `${regionStr} 코스`
+              : tagList.length > 0
+                ? `${tagList.join(" · ")} 코스`
+                : (() => {
+                    const dep = String(course.departure ?? "").trim();
+                    if (dep && dep !== "출발지")
+                      return dep.length > 18 ? `${dep.slice(0, 18)}…` : dep;
+                    return "인기 코스";
+                  })();
+          const statsLine = [
+            `핀 ${steps.length}개`,
+            `${Number((course.overallDurationMinutes / 55).toFixed(1))}km`,
+          ];
+          if (catDisplay) statsLine.push(catDisplay);
+          else if (tagList.length) statsLine.push(tagList.join(" · "));
+          return {
+            id: `trend-${course.id}`,
+            courseId: course.id,
+            title: course.title,
+            thumbnail: course.thumbnail ? String(course.thumbnail) : null,
+            author,
+            saveCount,
+            savedByMe: pickCourseSavedByMe(course) || course.savedByMe === true,
+            pinCount: steps.length,
+            distanceKm: Number((course.overallDurationMinutes / 55).toFixed(1)),
+            category: catDisplay,
+            tags: tagList,
+            statsLine: statsLine.join(" · "),
+          };
+        }),
     [popularCourses, savedCourseIds],
   );
   const followingNews = Array.isArray(followingNewsApi) ? followingNewsApi : [];
@@ -643,7 +683,9 @@ export default function HomeScreen(): React.JSX.Element {
         const q = buildWeatherLocationQuery(addr?.[0]);
         await fetchWeather(cancelledRef, q);
         if (!cancelledRef?.value && addr?.[0]?.formattedAddress) {
-          setHeroLocationLabel(addr[0].formattedAddress.replace(/^대한민국\s*/, "").trim());
+          setHeroLocationLabel(
+            addr[0].formattedAddress.replace(/^대한민국\s*/, "").trim(),
+          );
         }
       } catch {
         if (!cancelledRef?.value) {
@@ -684,10 +726,7 @@ export default function HomeScreen(): React.JSX.Element {
       pullDistanceRef.current = d;
       pullOffset.setValue(d);
       if (refreshingRef.current) return;
-      if (
-        d >= PULL_TRIGGER_DISTANCE &&
-        !pullThresholdHapticFiredRef.current
-      ) {
+      if (d >= PULL_TRIGGER_DISTANCE && !pullThresholdHapticFiredRef.current) {
         pullThresholdHapticFiredRef.current = true;
         try {
           void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -744,18 +783,28 @@ export default function HomeScreen(): React.JSX.Element {
           ]);
         })(),
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("새로고침 시간 초과")), REFRESH_GUARD_TIMEOUT_MS),
+          setTimeout(
+            () => reject(new Error("새로고침 시간 초과")),
+            REFRESH_GUARD_TIMEOUT_MS,
+          ),
         ),
       ]);
       try {
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        await Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Success,
+        );
       } catch {}
     } catch {
       try {
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        await Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Warning,
+        );
       } catch {}
     } finally {
-      const remain = Math.max(0, REFRESH_MIN_HOLD_MS - (Date.now() - refreshStartedAt));
+      const remain = Math.max(
+        0,
+        REFRESH_MIN_HOLD_MS - (Date.now() - refreshStartedAt),
+      );
       setTimeout(() => {
         animatePullTo(0, {
           collapse: true,
@@ -871,7 +920,7 @@ export default function HomeScreen(): React.JSX.Element {
     (courseId: string) => {
       const id = String(courseId ?? "").trim();
       if (!id) return;
-      navigation.navigate("SharedRoute", { viewCourseId: id });
+      navigation.navigate("Route", { section: "shared", viewCourseId: id });
       try {
         void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       } catch {}
@@ -893,7 +942,9 @@ export default function HomeScreen(): React.JSX.Element {
     if (accessToken) {
       setScheduleChatRoomsLoading(true);
       getChatRooms(accessToken)
-        .then((rooms) => setScheduleChatRooms(Array.isArray(rooms) ? rooms : []))
+        .then((rooms) =>
+          setScheduleChatRooms(Array.isArray(rooms) ? rooms : []),
+        )
         .catch(() => {
           setScheduleChatRooms([]);
           showToast("채팅방 목록을 불러오지 못했어요");
@@ -929,7 +980,9 @@ export default function HomeScreen(): React.JSX.Element {
     const participantsFromRoom = selectedChatRoom
       ? [
           ...(selectedChatRoom.members ?? [])
-            .map((member) => String(member.nickname ?? member.userId ?? "").trim())
+            .map((member) =>
+              String(member.nickname ?? member.userId ?? "").trim(),
+            )
             .filter(Boolean),
           ...((selectedChatRoom.memberUserIds ?? [])
             .map((id) => String(id ?? "").trim())
@@ -968,7 +1021,10 @@ export default function HomeScreen(): React.JSX.Element {
   ]);
   const executeRouteSearch = useCallback(() => {
     const q = homeSearchQuery.trim();
-    navigation.navigate("SharedRoute", q ? { initialQuery: q } : undefined);
+    navigation.navigate(
+      "Route",
+      q ? { section: "shared", initialQuery: q } : { section: "shared" },
+    );
     setSearchExpanded(false);
     setHomeSearchQuery("");
   }, [homeSearchQuery, navigation]);
@@ -1052,11 +1108,21 @@ export default function HomeScreen(): React.JSX.Element {
           animatePullTo(0, { collapse: true });
         },
       }),
-    [animatePullTo, applyPullDistance, resetPullGesture, runRefresh, scrollPullToTop],
+    [
+      animatePullTo,
+      applyPullDistance,
+      resetPullGesture,
+      runRefresh,
+      scrollPullToTop,
+    ],
   );
 
   return (
-    <SafeAreaView className="flex-1" style={{ backgroundColor: PAGE_BG }} edges={["top"]}>
+    <SafeAreaView
+      className="flex-1"
+      style={{ backgroundColor: PAGE_BG }}
+      edges={["top"]}
+    >
       {/* 상단 바: 스크롤·당김과 분리 — 위치 고정 */}
       <View
         style={{
@@ -1072,7 +1138,9 @@ export default function HomeScreen(): React.JSX.Element {
         }}
       >
         <View className="flex-row items-center" style={{ width: "100%" }}>
-          <Animated.View style={{ width: locationSlotWidth, overflow: "hidden" }}>
+          <Animated.View
+            style={{ width: locationSlotWidth, overflow: "hidden" }}
+          >
             {!searchExpanded ? (
               <Pressable
                 className="flex-row items-center px-3 py-2 rounded-full"
@@ -1142,11 +1210,17 @@ export default function HomeScreen(): React.JSX.Element {
                   elevation: 2,
                 }}
                 onPress={() =>
-                  (navigation.getParent() as any)?.navigate("NotificationCenter")
+                  (navigation.getParent() as any)?.navigate(
+                    "NotificationCenter",
+                  )
                 }
                 hitSlop={8}
               >
-                <Ionicons name="notifications-outline" size={20} color="#1a1a2e" />
+                <Ionicons
+                  name="notifications-outline"
+                  size={20}
+                  color="#1a1a2e"
+                />
               </Pressable>
             </>
           ) : (
@@ -1231,18 +1305,28 @@ export default function HomeScreen(): React.JSX.Element {
                   elevation: 2,
                 }}
                 onPress={() =>
-                  (navigation.getParent() as any)?.navigate("NotificationCenter")
+                  (navigation.getParent() as any)?.navigate(
+                    "NotificationCenter",
+                  )
                 }
                 hitSlop={8}
               >
-                <Ionicons name="notifications-outline" size={20} color="#1a1a2e" />
+                <Ionicons
+                  name="notifications-outline"
+                  size={20}
+                  color="#1a1a2e"
+                />
               </Pressable>
             </View>
           )}
         </View>
       </View>
 
-      <View className="flex-1" style={{ minHeight: 0 }} {...pullPanResponder.panHandlers}>
+      <View
+        className="flex-1"
+        style={{ minHeight: 0 }}
+        {...pullPanResponder.panHandlers}
+      >
         <Animated.ScrollView
           ref={scrollRef}
           className="flex-1"
@@ -1281,47 +1365,125 @@ export default function HomeScreen(): React.JSX.Element {
               }}
             >
               {refreshing ? (
-                <ActivityIndicator size="large" color={REFRESH_INDICATOR_COLOR} />
+                <ActivityIndicator
+                  size="large"
+                  color={REFRESH_INDICATOR_COLOR}
+                />
               ) : (
-                <Ionicons name="refresh" size={26} color={REFRESH_INDICATOR_COLOR} />
+                <Ionicons
+                  name="refresh"
+                  size={26}
+                  color={REFRESH_INDICATOR_COLOR}
+                />
               )}
             </Animated.View>
           </Animated.View>
-        <LinearGradient
-          colors={["#2563EB", "#3B82F6"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{
-            borderRadius: 20,
-            marginHorizontal: 0,
-            minHeight: 168,
-            paddingHorizontal: 16,
-            paddingVertical: 16,
-          }}
-        >
-          <View className="flex-row justify-between">
-            <View className="flex-1 pr-3">
-              <Text className="text-sm font-semibold text-blue-100">
-                {authUser?.nickname ? `${authUser.nickname}님, 반가워요` : "반가워요"}
-              </Text>
-              <Text style={{ marginTop: 4, fontSize: 22, fontWeight: "600", lineHeight: 30, color: "#fff" }}>
-                오늘은 어디를 걸어볼까요?
-              </Text>
-              <Text style={{ marginTop: 4, fontSize: 13, fontWeight: "400", color: "#dbeafe" }}>{weatherMoodMessage}</Text>
-              {nearestSchedule ? (
-                <View
+          <LinearGradient
+            colors={["#2563EB", "#3B82F6"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={{
+              borderRadius: 20,
+              marginHorizontal: 0,
+              minHeight: 168,
+              paddingHorizontal: 16,
+              paddingVertical: 16,
+            }}
+          >
+            <View className="flex-row justify-between">
+              <View className="min-w-0 flex-1 pr-3">
+                <Text className="text-sm font-semibold text-blue-100">
+                  {authUser?.nickname
+                    ? `${authUser.nickname}님, 반가워요`
+                    : "반가워요"}
+                </Text>
+                <Text
                   style={{
-                    marginTop: 10,
-                    backgroundColor: "rgba(255,255,255,0.16)",
-                    borderWidth: 1,
-                    borderColor: "rgba(219,234,254,0.32)",
-                    borderRadius: 12,
-                    paddingHorizontal: 10,
-                    paddingVertical: 8,
+                    marginTop: 4,
+                    fontSize: 22,
+                    fontWeight: "600",
+                    lineHeight: 30,
+                    color: "#fff",
                   }}
                 >
-                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", flex: 1, marginRight: 8 }}>
+                  오늘은 어디를 걸어볼까요?
+                </Text>
+                <Text
+                  style={{
+                    marginTop: 4,
+                    fontSize: 13,
+                    fontWeight: "400",
+                    color: "#dbeafe",
+                  }}
+                >
+                  {weatherMoodMessage}
+                </Text>
+              </View>
+              <View
+                style={{
+                  width: 78,
+                  alignItems: "flex-end",
+                  justifyContent: "flex-start",
+                  paddingTop: 4,
+                }}
+              >
+                <View
+                  style={{
+                    width: 72,
+                    height: 72,
+                    borderRadius: 999,
+                    backgroundColor: "rgba(255,255,255,0.22)",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {/* TODO: 캐릭터 이미지로 교체 예정 */}
+                  {(() => {
+                    const source = require("../assets/ruty.png");
+                    if (!source) return null;
+                    return (
+                      <Image
+                        source={source}
+                        resizeMode="contain"
+                        style={{ width: 56, height: 56 }}
+                      />
+                    );
+                  })()}
+                </View>
+              </View>
+            </View>
+            <View
+              style={{
+                flexDirection: "row",
+                marginTop: 12,
+                gap: 8,
+                width: "100%",
+              }}
+            >
+              <Pressable
+                onPress={openScheduleModal}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  nearestSchedule ? "다가오는 일정 보기" : "일정 보기"
+                }
+                className="active:opacity-90"
+                style={{
+                  flex: 2,
+                  minWidth: 0,
+                  backgroundColor: "rgba(255,255,255,0.16)",
+                  borderWidth: 1,
+                  borderColor: "rgba(219,234,254,0.32)",
+                  borderRadius: 12,
+                  paddingHorizontal: 12,
+                  paddingVertical: 10,
+                  justifyContent: "center",
+                }}
+              >
+                {nearestSchedule ? (
+                  <>
+                    <View
+                      style={{ flexDirection: "row", alignItems: "center" }}
+                    >
                       <View
                         style={{
                           backgroundColor: "rgba(255,255,255,0.2)",
@@ -1331,466 +1493,664 @@ export default function HomeScreen(): React.JSX.Element {
                           marginRight: 6,
                         }}
                       >
-                        <Text style={{ color: "#FFFFFF", fontSize: 11, fontWeight: "700" }}>
+                        <Text
+                          style={{
+                            color: "#FFFFFF",
+                            fontSize: 11,
+                            fontWeight: "700",
+                          }}
+                        >
                           {nearestScheduleDdayLabel}
                         </Text>
                       </View>
-                      <Text numberOfLines={1} style={{ color: "#EFF6FF", fontSize: 12, fontWeight: "600", flex: 1 }}>
+                      <Text
+                        numberOfLines={1}
+                        style={{
+                          color: "#EFF6FF",
+                          fontSize: 13,
+                          fontWeight: "600",
+                          flex: 1,
+                        }}
+                      >
                         {nearestSchedule.title}
                       </Text>
                     </View>
-                    <Pressable
-                      onPress={openScheduleModal}
-                      accessibilityRole="button"
-                      accessibilityLabel="약속 전체보기"
+                    <Text
+                      numberOfLines={1}
+                      style={{ marginTop: 4, color: "#DBEAFE", fontSize: 11 }}
+                    >
+                      {KO_DATE_TIME_FORMATTER.format(nearestSchedule.date)}
+                      {nearestSchedule.chatRoomName
+                        ? ` · ${nearestSchedule.chatRoomName}`
+                        : ""}
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <Text
                       style={{
-                        backgroundColor: "rgba(255,255,255,0.24)",
-                        borderRadius: 999,
-                        paddingHorizontal: 9,
-                        paddingVertical: 4,
+                        color: "#FFFFFF",
+                        fontSize: 14,
+                        fontWeight: "600",
                       }}
                     >
-                      <Text style={{ color: "#FFFFFF", fontSize: 11, fontWeight: "700" }}>전체보기</Text>
-                    </Pressable>
-                  </View>
-                  <Text style={{ marginTop: 4, color: "#DBEAFE", fontSize: 11 }}>
-                    {KO_DATE_TIME_FORMATTER.format(nearestSchedule.date)}
-                    {nearestSchedule.chatRoomName ? ` · ${nearestSchedule.chatRoomName}` : ""}
-                  </Text>
-                </View>
-              ) : null}
+                      일정
+                    </Text>
+                    <Text
+                      style={{ marginTop: 2, color: "#DBEAFE", fontSize: 12 }}
+                    >
+                      약속 보기
+                    </Text>
+                  </>
+                )}
+              </Pressable>
               <Pressable
                 onPress={openRouteCreate}
-                className="self-start mt-4 active:opacity-90"
+                accessibilityRole="button"
+                accessibilityLabel="새 코스 만들기"
+                className="active:opacity-90"
                 style={{
-                  backgroundColor: "#2563EB",
-                  borderRadius: 10,
-                  paddingVertical: 9,
-                  paddingHorizontal: 18,
-                }}
-              >
-                <Text style={{ color: "#ffffff", fontSize: 13, fontWeight: "600" }}>새 코스 만들기</Text>
-              </Pressable>
-            </View>
-            <View
-              style={{
-                width: 78,
-                alignItems: "flex-end",
-                justifyContent: "flex-start",
-                paddingTop: 4,
-              }}
-            >
-              <View
-                style={{
-                  width: 72,
-                  height: 72,
-                  borderRadius: 999,
-                  backgroundColor: "rgba(255,255,255,0.22)",
-                  alignItems: "center",
+                  flex: 1,
+                  minWidth: 0,
+                  backgroundColor: "#FFFFFF",
+                  borderRadius: 12,
+                  paddingVertical: 10,
+                  paddingHorizontal: 8,
                   justifyContent: "center",
+                  alignItems: "center",
                 }}
               >
-                {/* TODO: 캐릭터 이미지로 교체 예정 */}
-                {(() => {
-                  const source = require("../assets/ruty.png");
-                  if (!source) return null;
-                  return (
-                    <Image
-                      source={source}
-                      resizeMode="contain"
-                      style={{ width: 56, height: 56 }}
-                    />
-                  );
-                })()}
-              </View>
-            </View>
-          </View>
-        </LinearGradient>
-
-        <View className="flex-row items-center justify-between px-4 py-3 mt-5" style={CARD_STYLE}>
-          <View className="flex-1 min-w-0 pr-2">
-            <View className="flex-row items-center">
-              <Image
-                source={getWeatherIconSource(integrated?.current?.weatherIcon)}
-                style={{ width: 24, height: 24 }}
-              />
-              <Text style={{ marginLeft: 8, color: "#1A1A2E", fontSize: 22, fontWeight: "600" }}>
-                {integrated?.current ? `${Math.round(integrated.current.temperature)}°` : "--°"}
-              </Text>
-              <Text style={{ marginLeft: 8, color: "#6B7280", fontSize: 13, fontWeight: "400" }}>
-                {integrated?.current?.weatherDesc ?? "날씨 확인 중"}
-              </Text>
-            </View>
-            <Text style={{ marginTop: 4, color: "#6B7280", fontSize: 12, fontWeight: "400" }} numberOfLines={1}>
-              {weatherHighlights.join(" · ")}
-            </Text>
-          </View>
-          <Pressable
-            onPress={openScheduleModal}
-            accessibilityRole="button"
-            accessibilityLabel="일정 보기"
-            style={{
-              backgroundColor: "#EFF6FF",
-              paddingVertical: 5,
-              paddingHorizontal: 10,
-              borderRadius: 20,
-              maxWidth: 120,
-              flexShrink: 0,
-            }}
-          >
-            <Text style={{ color: "#2563EB", fontSize: 12, fontWeight: "500" }} numberOfLines={1}>
-              일정보기
-            </Text>
-          </Pressable>
-        </View>
-        {weatherError ? <Text className="mt-1 text-xs text-rose-600">{weatherError}</Text> : null}
-
-        <View style={{ marginTop: 20 }}>
-          <View style={{ marginBottom: 12 }}>
-            <SectionHeader title="내 최근 코스" actionLabel="전체 보기" onPressAction={() => navigation.navigate("MyRoute")} />
-          </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            snapToInterval={RECENT_CARD_WIDTH + 12}
-            decelerationRate="fast"
-            contentContainerStyle={{ paddingTop: 12, paddingRight: 8 }}
-          >
-            {recentCourses.map((course) => (
-              <Pressable
-                key={course.id}
-                onPress={() => navigation.navigate("MyRoute")}
-                className="mr-3 rounded-[16px] p-3 active:opacity-95"
-                style={{ width: RECENT_CARD_WIDTH, ...CARD_STYLE }}
-              >
-                <View
+                <Text
+                  numberOfLines={2}
                   style={{
-                    height: 86,
-                    borderRadius: 12,
-                    backgroundColor: "#DBEAFE",
-                    borderWidth: 0.5,
-                    borderColor: "#c7d2fe",
-                    overflow: "hidden",
+                    color: "#2563EB",
+                    fontSize: 13,
+                    fontWeight: "700",
+                    textAlign: "center",
                   }}
                 >
-                  {course.thumbnail ? (
-                    <Image
-                      source={{ uri: course.thumbnail }}
-                      style={{ width: "100%", height: "100%" }}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <View className="items-center justify-center w-full h-full bg-blue-50">
-                      <Ionicons name="map-outline" size={28} color="#60a5fa" />
-                    </View>
-                  )}
+                  새 코스 만들기
+                </Text>
+              </Pressable>
+            </View>
+          </LinearGradient>
 
-                  <View style={{ position: "absolute", left: 10, bottom: 8, flexDirection: "row" }}>
-                    {course.tags.length > 0 ? (
-                      course.tags.slice(0, 2).map((tag) => {
-                      const tagStyle = getTagStyle(tag);
-                      return (
+          <View
+            className="flex-row items-center justify-between px-4 py-3 mt-5"
+            style={CARD_STYLE}
+          >
+            <View className="flex-1 min-w-0 pr-2">
+              <View className="flex-row items-center">
+                <Image
+                  source={getWeatherIconSource(
+                    integrated?.current?.weatherIcon,
+                  )}
+                  style={{ width: 24, height: 24 }}
+                />
+                <Text
+                  style={{
+                    marginLeft: 8,
+                    color: "#1A1A2E",
+                    fontSize: 22,
+                    fontWeight: "600",
+                  }}
+                >
+                  {integrated?.current
+                    ? `${Math.round(integrated.current.temperature)}°`
+                    : "--°"}
+                </Text>
+                <Text
+                  style={{
+                    marginLeft: 8,
+                    color: "#6B7280",
+                    fontSize: 13,
+                    fontWeight: "400",
+                  }}
+                >
+                  {integrated?.current?.weatherDesc ?? "날씨 확인 중"}
+                </Text>
+              </View>
+              <Text
+                style={{
+                  marginTop: 4,
+                  color: "#6B7280",
+                  fontSize: 12,
+                  fontWeight: "400",
+                }}
+                numberOfLines={1}
+              >
+                {weatherHighlights.join(" · ")}
+              </Text>
+            </View>
+            <Pressable
+              onPress={openScheduleModal}
+              accessibilityRole="button"
+              accessibilityLabel="일정 보기"
+              style={{
+                backgroundColor: "#EFF6FF",
+                paddingVertical: 5,
+                paddingHorizontal: 10,
+                borderRadius: 20,
+                maxWidth: 120,
+                flexShrink: 0,
+              }}
+            >
+              <Text
+                style={{ color: "#2563EB", fontSize: 12, fontWeight: "500" }}
+                numberOfLines={1}
+              >
+                일정보기
+              </Text>
+            </Pressable>
+          </View>
+          {weatherError ? (
+            <Text className="mt-1 text-xs text-rose-600">{weatherError}</Text>
+          ) : null}
+
+          <View style={{ marginTop: 20 }}>
+            <View style={{ marginBottom: 12 }}>
+              <SectionHeader
+                title="내 최근 코스"
+                actionLabel="전체 보기"
+                onPressAction={() =>
+                  navigation.navigate("Route", { section: "my" })
+                }
+              />
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              snapToInterval={RECENT_CARD_WIDTH + 12}
+              decelerationRate="fast"
+              contentContainerStyle={{ paddingTop: 12, paddingRight: 8 }}
+            >
+              {recentCourses.map((course) => (
+                <Pressable
+                  key={course.id}
+                  onPress={() =>
+                    navigation.navigate("Route", {
+                      section: "my",
+                      viewCourseId: String(course.id),
+                    })
+                  }
+                  className="mr-3 rounded-[16px] p-3 active:opacity-95"
+                  style={{ width: RECENT_CARD_WIDTH, ...CARD_STYLE }}
+                >
+                  <View
+                    style={{
+                      height: 86,
+                      borderRadius: 12,
+                      backgroundColor: "#DBEAFE",
+                      borderWidth: 0.5,
+                      borderColor: "#c7d2fe",
+                      overflow: "hidden",
+                    }}
+                  >
+                    {course.thumbnail ? (
+                      <Image
+                        source={{ uri: course.thumbnail }}
+                        style={{ width: "100%", height: "100%" }}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View className="items-center justify-center w-full h-full bg-blue-50">
+                        <Ionicons
+                          name="map-outline"
+                          size={28}
+                          color="#60a5fa"
+                        />
+                      </View>
+                    )}
+
+                    <View
+                      style={{
+                        position: "absolute",
+                        left: 10,
+                        bottom: 8,
+                        flexDirection: "row",
+                      }}
+                    >
+                      {course.tags.length > 0 ? (
+                        course.tags.slice(0, 2).map((tag) => {
+                          const tagStyle = getTagStyle(tag);
+                          return (
+                            <View
+                              key={`${course.id}-${tag}`}
+                              style={{
+                                marginRight: 6,
+                                backgroundColor: tagStyle.bg,
+                                paddingHorizontal: 8,
+                                paddingVertical: 3,
+                                borderRadius: 999,
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  color: tagStyle.color,
+                                  fontSize: 11,
+                                  fontWeight: "500",
+                                }}
+                              >
+                                {tag}
+                              </Text>
+                            </View>
+                          );
+                        })
+                      ) : (
                         <View
-                          key={`${course.id}-${tag}`}
                           style={{
-                            marginRight: 6,
-                            backgroundColor: tagStyle.bg,
+                            backgroundColor: "#E5E7EB",
                             paddingHorizontal: 8,
                             paddingVertical: 3,
                             borderRadius: 999,
                           }}
                         >
-                          <Text style={{ color: tagStyle.color, fontSize: 11, fontWeight: "500" }}>{tag}</Text>
+                          <Text
+                            style={{
+                              color: "#4B5563",
+                              fontSize: 11,
+                              fontWeight: "500",
+                            }}
+                          >
+                            태그 없음
+                          </Text>
                         </View>
-                      );
-                    })
-                    ) : (
-                      <View
-                        style={{
-                          backgroundColor: "#E5E7EB",
-                          paddingHorizontal: 8,
-                          paddingVertical: 3,
-                          borderRadius: 999,
-                        }}
-                      >
-                        <Text style={{ color: "#4B5563", fontSize: 11, fontWeight: "500" }}>태그 없음</Text>
-                      </View>
-                    )}
+                      )}
+                    </View>
                   </View>
-                </View>
-                <Text style={{ marginTop: 12, fontSize: 14, fontWeight: "600", color: "#1A1A2E" }} numberOfLines={1}>
-                  {course.title}
-                </Text>
-                <Text style={{ marginTop: 4, fontSize: 13, fontWeight: "400", color: "#6B7280" }} numberOfLines={1}>
-                  {course.waypoints.join(" · ")}
-                </Text>
-                <Text style={{ marginTop: 4, fontSize: 12, fontWeight: "400", color: "#6B7280" }}>
-                  핀 {course.pinCount}개 · {course.distanceKm}km
-                </Text>
-                <View className="flex-row mt-3">
-                  <Pressable
-                    className="mr-2 active:opacity-80"
+                  <Text
                     style={{
-                      backgroundColor: "transparent",
-                      borderWidth: 1,
-                      borderColor: "#D1D5DB",
-                      borderRadius: 10,
-                      paddingVertical: 9,
-                      paddingHorizontal: 18,
+                      marginTop: 12,
+                      fontSize: 14,
+                      fontWeight: "600",
+                      color: "#1A1A2E",
                     }}
-                    onPress={(e) => {
-                      e?.stopPropagation?.();
-                      handleShareCourse(course.courseId, course.title);
-                    }}
+                    numberOfLines={1}
                   >
-                    <Text style={{ color: "#6B7280", fontSize: 13, fontWeight: "400" }}>공유</Text>
-                  </Pressable>
-                  <Pressable
-                    className="active:opacity-90"
+                    {course.title}
+                  </Text>
+                  <Text
                     style={{
-                      backgroundColor: "#2563EB",
-                      borderRadius: 10,
-                      paddingVertical: 9,
-                      paddingHorizontal: 18,
+                      marginTop: 4,
+                      fontSize: 13,
+                      fontWeight: "400",
+                      color: "#6B7280",
                     }}
-                    onPress={(e) => {
-                      e?.stopPropagation?.();
-                      openSharedCourseDetail(course.courseId);
+                    numberOfLines={1}
+                  >
+                    {course.waypoints.join(" · ")}
+                  </Text>
+                  <Text
+                    style={{
+                      marginTop: 4,
+                      fontSize: 12,
+                      fontWeight: "400",
+                      color: "#6B7280",
                     }}
                   >
-                    <Text style={{ color: "#ffffff", fontSize: 13, fontWeight: "600" }}>보기</Text>
-                  </Pressable>
-                </View>
-              </Pressable>
-            ))}
-            <Pressable
-              onPress={openRouteCreate}
-              className="items-center justify-center rounded-[18px] p-3"
-              style={{
-                width: RECENT_CARD_WIDTH * 0.58,
-                borderWidth: 1.5,
-                borderColor: "#93c5fd",
-                borderStyle: "dashed",
-                backgroundColor: "#f8fbff",
-              }}
-            >
-              <Ionicons name="add-circle-outline" size={28} color="#2563EB" />
-              <Text style={{ marginTop: 8, fontSize: 13, fontWeight: "600", color: "#2563EB" }}>새 코스 만들기</Text>
-            </Pressable>
-          </ScrollView>
-        </View>
-
-        <View style={{ marginTop: 20 }}>
-          <View style={{ marginBottom: 12 }}>
-            <SectionHeader
-              title="지금 인기 코스"
-              actionLabel="더 보기"
-              onPressAction={() =>
-                navigation.navigate("SharedRoute", { openAsPopular: true })
-              }
-            />
-          </View>
-          <View className="mt-3">
-            {trendingCourses.map((course) => {
-              const fid = String(course.courseId);
-              const bookmarked =
-                savedCourseIds.includes(fid) || course.savedByMe === true;
-              const bookmarkBusy = popularBookmarkBusyId === fid;
-              return (
-                <View
-                  key={course.id}
-                  className="mb-3 flex-row items-center rounded-[16px] p-3"
-                  style={
-                    bookmarked
-                      ? {
-                          ...CARD_STYLE,
-                          borderColor: POPULAR_SAVED_BORDER,
-                          backgroundColor: POPULAR_SAVED_BG,
-                        }
-                      : CARD_STYLE
-                  }
-                >
-                  <Pressable
-                    className="flex-row items-center flex-1 min-w-0 active:opacity-95"
-                    onPress={() =>
-                      navigation.navigate("SharedRoute", {
-                        viewCourseId: fid,
-                      })
-                    }
-                  >
-                    <View
-                      className="w-12 h-12 mr-3 overflow-hidden rounded-xl"
-                      style={{ backgroundColor: getCategoryTint(course.category) }}
-                    >
-                      {course.thumbnail ? (
-                        <Image
-                          source={{ uri: course.thumbnail }}
-                          className="w-full h-full"
-                          resizeMode="cover"
-                        />
-                      ) : (
-                        <View className="items-center justify-center w-full h-full">
-                          <Ionicons name="map-outline" size={22} color="#2563EB" />
-                        </View>
-                      )}
-                    </View>
-                    <View className="flex-1 min-w-0">
-                      <Text style={{ fontSize: 14, fontWeight: "600", color: "#1A1A2E" }} numberOfLines={1}>
-                        {course.title}
-                      </Text>
-                      <Text style={{ marginTop: 2, fontSize: 13, fontWeight: "400", color: "#6B7280" }}>
-                      {course.author}
-                      </Text>
-                      <Text style={{ marginTop: 2, fontSize: 12, fontWeight: "400", color: "#6B7280" }}>
-                        {course.statsLine}
-                      </Text>
-                      {course.tags.length > 0 ? (
-                        <View className="mt-1.5 flex-row flex-wrap gap-1">
-                          {course.tags.slice(0, 2).map((tag) => {
-                            const tagStyle = getTagStyle(tag);
-                            return (
-                              <View
-                                key={`${course.id}-${tag}`}
-                                style={{
-                                  backgroundColor: tagStyle.bg,
-                                  paddingHorizontal: 8,
-                                  paddingVertical: 2,
-                                  borderRadius: 999,
-                                }}
-                              >
-                                <Text style={{ color: tagStyle.color, fontSize: 11, fontWeight: "500" }}>
-                                  {tag}
-                                </Text>
-                              </View>
-                            );
-                          })}
-                        </View>
-                      ) : null}
-                    </View>
-                  </Pressable>
-                  <View className="items-end pl-1">
+                    핀 {course.pinCount}개 · {course.distanceKm}km
+                  </Text>
+                  <View className="flex-row mt-3">
                     <Pressable
-                      className="rounded-full p-1.5"
-                      hitSlop={10}
-                      disabled={bookmarked || bookmarkBusy}
-                      onPress={() => void handlePopularBookmark(fid)}
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        bookmarked ? "내 루트에 있음" : "내 루트에 저장"
-                      }
-                      style={
-                        bookmarked
-                          ? {
-                              backgroundColor: "rgba(124,58,237,0.15)",
-                            }
-                          : undefined
-                      }
-                    >
-                      {bookmarkBusy ? (
-                        <ActivityIndicator size="small" color={POPULAR_SAVED_COLOR} />
-                      ) : (
-                        <Ionicons
-                          name={bookmarked ? "bookmark" : "bookmark-outline"}
-                          size={18}
-                          color={bookmarked ? POPULAR_SAVED_COLOR : "#6B7280"}
-                        />
-                      )}
-                    </Pressable>
-                    <View
+                      className="mr-2 active:opacity-80"
                       style={{
-                        marginTop: 4,
-                        backgroundColor: bookmarked ? "rgba(124,58,237,0.12)" : "#EFF6FF",
-                        borderRadius: 6,
-                        paddingVertical: 2,
-                        paddingHorizontal: 8,
+                        backgroundColor: "transparent",
+                        borderWidth: 1,
+                        borderColor: "#D1D5DB",
+                        borderRadius: 10,
+                        paddingVertical: 9,
+                        paddingHorizontal: 18,
+                      }}
+                      onPress={(e) => {
+                        e?.stopPropagation?.();
+                        handleShareCourse(course.courseId, course.title);
                       }}
                     >
                       <Text
                         style={{
-                          color: bookmarked ? POPULAR_SAVED_COLOR : "#2563EB",
-                          fontSize: 11,
-                          fontWeight: "500",
+                          color: "#6B7280",
+                          fontSize: 13,
+                          fontWeight: "400",
                         }}
                       >
-                        {bookmarked ? "저장됨" : "인기"}
+                        공유
                       </Text>
-                    </View>
-                    <View className="flex-row items-center mt-1">
-                      <Ionicons
-                        name={bookmarked ? "bookmark" : "bookmark-outline"}
-                        size={12}
-                        color={bookmarked ? POPULAR_SAVED_COLOR : "#6B7280"}
-                      />
+                    </Pressable>
+                    <Pressable
+                      className="active:opacity-90"
+                      style={{
+                        backgroundColor: "#2563EB",
+                        borderRadius: 10,
+                        paddingVertical: 9,
+                        paddingHorizontal: 18,
+                      }}
+                      onPress={(e) => {
+                        e?.stopPropagation?.();
+                        openSharedCourseDetail(course.courseId);
+                      }}
+                    >
                       <Text
                         style={{
-                          marginLeft: 3,
-                          fontSize: 12,
-                          fontWeight: bookmarked ? "600" : "400",
-                          color: bookmarked ? POPULAR_SAVED_COLOR : "#6B7280",
+                          color: "#ffffff",
+                          fontSize: 13,
+                          fontWeight: "600",
                         }}
                       >
-                        {bookmarked ? "내 루트에 있음" : `저장 ${course.saveCount}`}
+                        보기
                       </Text>
+                    </Pressable>
+                  </View>
+                </Pressable>
+              ))}
+              <Pressable
+                onPress={openRouteCreate}
+                className="items-center justify-center rounded-[18px] p-3"
+                style={{
+                  width: RECENT_CARD_WIDTH * 0.58,
+                  borderWidth: 1.5,
+                  borderColor: "#93c5fd",
+                  borderStyle: "dashed",
+                  backgroundColor: "#f8fbff",
+                }}
+              >
+                <Ionicons name="add-circle-outline" size={28} color="#2563EB" />
+                <Text
+                  style={{
+                    marginTop: 8,
+                    fontSize: 13,
+                    fontWeight: "600",
+                    color: "#2563EB",
+                  }}
+                >
+                  새 코스 만들기
+                </Text>
+              </Pressable>
+            </ScrollView>
+          </View>
+
+          <View style={{ marginTop: 20 }}>
+            <View style={{ marginBottom: 12 }}>
+              <SectionHeader
+                title="지금 인기 코스"
+                actionLabel="더 보기"
+                onPressAction={() =>
+                  navigation.navigate("Route", {
+                    section: "shared",
+                    openAsPopular: true,
+                  })
+                }
+              />
+            </View>
+            <View className="mt-3">
+              {trendingCourses.map((course) => {
+                const fid = String(course.courseId);
+                const bookmarked =
+                  savedCourseIds.includes(fid) || course.savedByMe === true;
+                const bookmarkBusy = popularBookmarkBusyId === fid;
+                return (
+                  <View
+                    key={course.id}
+                    className="mb-3 flex-row items-center rounded-[16px] p-3"
+                    style={
+                      bookmarked
+                        ? {
+                            ...CARD_STYLE,
+                            borderColor: POPULAR_SAVED_BORDER,
+                            backgroundColor: POPULAR_SAVED_BG,
+                          }
+                        : CARD_STYLE
+                    }
+                  >
+                    <Pressable
+                      className="flex-row items-center flex-1 min-w-0 active:opacity-95"
+                      onPress={() =>
+                        navigation.navigate("Route", {
+                          section: "shared",
+                          viewCourseId: fid,
+                        })
+                      }
+                    >
+                      <View
+                        className="w-12 h-12 mr-3 overflow-hidden rounded-xl"
+                        style={{
+                          backgroundColor: getCategoryTint(course.category),
+                        }}
+                      >
+                        {course.thumbnail ? (
+                          <Image
+                            source={{ uri: course.thumbnail }}
+                            className="w-full h-full"
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View className="items-center justify-center w-full h-full">
+                            <Ionicons
+                              name="map-outline"
+                              size={22}
+                              color="#2563EB"
+                            />
+                          </View>
+                        )}
+                      </View>
+                      <View className="flex-1 min-w-0">
+                        <Text
+                          style={{
+                            fontSize: 14,
+                            fontWeight: "600",
+                            color: "#1A1A2E",
+                          }}
+                          numberOfLines={1}
+                        >
+                          {course.title}
+                        </Text>
+                        <Text
+                          style={{
+                            marginTop: 2,
+                            fontSize: 13,
+                            fontWeight: "400",
+                            color: "#6B7280",
+                          }}
+                        >
+                          {course.author}
+                        </Text>
+                        <Text
+                          style={{
+                            marginTop: 2,
+                            fontSize: 12,
+                            fontWeight: "400",
+                            color: "#6B7280",
+                          }}
+                        >
+                          {course.statsLine}
+                        </Text>
+                        {course.tags.length > 0 ? (
+                          <View className="mt-1.5 flex-row flex-wrap gap-1">
+                            {course.tags.slice(0, 2).map((tag) => {
+                              const tagStyle = getTagStyle(tag);
+                              return (
+                                <View
+                                  key={`${course.id}-${tag}`}
+                                  style={{
+                                    backgroundColor: tagStyle.bg,
+                                    paddingHorizontal: 8,
+                                    paddingVertical: 2,
+                                    borderRadius: 999,
+                                  }}
+                                >
+                                  <Text
+                                    style={{
+                                      color: tagStyle.color,
+                                      fontSize: 11,
+                                      fontWeight: "500",
+                                    }}
+                                  >
+                                    {tag}
+                                  </Text>
+                                </View>
+                              );
+                            })}
+                          </View>
+                        ) : null}
+                      </View>
+                    </Pressable>
+                    <View className="items-end pl-1">
+                      <Pressable
+                        className="rounded-full p-1.5"
+                        hitSlop={10}
+                        disabled={bookmarked || bookmarkBusy}
+                        onPress={() => void handlePopularBookmark(fid)}
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          bookmarked ? "내 루트에 있음" : "내 루트에 저장"
+                        }
+                        style={
+                          bookmarked
+                            ? {
+                                backgroundColor: "rgba(124,58,237,0.15)",
+                              }
+                            : undefined
+                        }
+                      >
+                        {bookmarkBusy ? (
+                          <ActivityIndicator
+                            size="small"
+                            color={POPULAR_SAVED_COLOR}
+                          />
+                        ) : (
+                          <Ionicons
+                            name={bookmarked ? "bookmark" : "bookmark-outline"}
+                            size={18}
+                            color={bookmarked ? POPULAR_SAVED_COLOR : "#6B7280"}
+                          />
+                        )}
+                      </Pressable>
+                      <View
+                        style={{
+                          marginTop: 4,
+                          backgroundColor: bookmarked
+                            ? "rgba(124,58,237,0.12)"
+                            : "#EFF6FF",
+                          borderRadius: 6,
+                          paddingVertical: 2,
+                          paddingHorizontal: 8,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: bookmarked ? POPULAR_SAVED_COLOR : "#2563EB",
+                            fontSize: 11,
+                            fontWeight: "500",
+                          }}
+                        >
+                          {bookmarked ? "저장됨" : "인기"}
+                        </Text>
+                      </View>
+                      <View className="flex-row items-center mt-1">
+                        <Ionicons
+                          name={bookmarked ? "bookmark" : "bookmark-outline"}
+                          size={12}
+                          color={bookmarked ? POPULAR_SAVED_COLOR : "#6B7280"}
+                        />
+                        <Text
+                          style={{
+                            marginLeft: 3,
+                            fontSize: 12,
+                            fontWeight: bookmarked ? "600" : "400",
+                            color: bookmarked ? POPULAR_SAVED_COLOR : "#6B7280",
+                          }}
+                        >
+                          {bookmarked
+                            ? "내 루트에 있음"
+                            : `저장 ${course.saveCount}`}
+                        </Text>
+                      </View>
                     </View>
                   </View>
-                </View>
-              );
-            })}
+                );
+              })}
+            </View>
           </View>
-        </View>
 
-        <View className="mt-2">
-          <SectionHeader
-            title="친구 소식"
-            actionLabel="전체"
-            onPressAction={() =>
-              (navigation.getParent() as any)?.navigate("FollowingNews")
-            }
-          />
-          <View className="mt-3">
-            {followingNews.length > 0 ? (
-              followingNews.map((news) => (
-                <Pressable
-                  key={news.id}
-                  onPress={() =>
-                    (navigation.getParent() as any)?.navigate("FollowingNews")
-                  }
-                  className="mb-2.5 flex-row items-center gap-3 rounded-[16px] p-3"
-                  style={CARD_STYLE}
-                >
-                  <FollowingNewsAvatar
-                    displayName={news.user}
-                    profileImageUrl={news.profileImageUrl}
-                    size={40}
-                  />
-                  <View className="min-w-0 flex-1">
-                    <Text style={{ fontSize: 13, fontWeight: "400", color: "#1A1A2E" }} numberOfLines={1}>
-                      <Text style={{ fontWeight: "600" }}>{news.user}</Text>님이 {news.action}
+          <View className="mt-2">
+            <SectionHeader
+              title="친구 소식"
+              actionLabel="전체"
+              onPressAction={() =>
+                (navigation.getParent() as any)?.navigate("FollowingNews")
+              }
+            />
+            <View className="mt-3">
+              {followingNews.length > 0 ? (
+                followingNews.map((news) => (
+                  <Pressable
+                    key={news.id}
+                    onPress={() =>
+                      (navigation.getParent() as any)?.navigate("FollowingNews")
+                    }
+                    className="mb-2.5 flex-row items-center gap-3 rounded-[16px] p-3"
+                    style={CARD_STYLE}
+                  >
+                    <FollowingNewsAvatar
+                      displayName={news.user}
+                      profileImageUrl={news.profileImageUrl}
+                      size={40}
+                    />
+                    <View className="min-w-0 flex-1">
+                      <Text
+                        style={{
+                          fontSize: 13,
+                          fontWeight: "400",
+                          color: "#1A1A2E",
+                        }}
+                        numberOfLines={1}
+                      >
+                        <Text style={{ fontWeight: "600" }}>{news.user}</Text>
+                        님이 {news.action}
+                      </Text>
+                      <Text
+                        style={{
+                          marginTop: 2,
+                          fontSize: 12,
+                          fontWeight: "400",
+                          color: "#6B7280",
+                        }}
+                        numberOfLines={1}
+                      >
+                        {news.courseName}
+                      </Text>
+                    </View>
+                    <Text
+                      style={{
+                        marginLeft: 8,
+                        fontSize: 12,
+                        fontWeight: "400",
+                        color: "#6B7280",
+                      }}
+                    >
+                      {news.ago}
                     </Text>
-                    <Text style={{ marginTop: 2, fontSize: 12, fontWeight: "400", color: "#6B7280" }} numberOfLines={1}>
-                      {news.courseName}
+                  </Pressable>
+                ))
+              ) : (
+                <View className="mb-2.5 rounded-[16px] p-4" style={CARD_STYLE}>
+                  <Text className="text-sm leading-5 text-gray-600">
+                    아직 친구 소식이 없어요. 친구를 맺으면 코스 활동이 여기에
+                    모여요.
+                  </Text>
+                  <Pressable
+                    onPress={() => navigation.navigate("Chat")}
+                    className="self-start mt-3 active:opacity-80"
+                    accessibilityRole="link"
+                    accessibilityLabel="친구 추가하기, 채팅 탭으로 이동"
+                  >
+                    <Text className="text-sm font-semibold text-blue-600 underline">
+                      친구 추가하기
                     </Text>
-                  </View>
-                  <Text style={{ marginLeft: 8, fontSize: 12, fontWeight: "400", color: "#6B7280" }}>{news.ago}</Text>
-                </Pressable>
-              ))
-            ) : (
-              <View className="mb-2.5 rounded-[16px] p-4" style={CARD_STYLE}>
-                <Text className="text-sm leading-5 text-gray-600">
-                  아직 친구 소식이 없어요. 친구를 맺으면 코스 활동이 여기에 모여요.
-                </Text>
-                <Pressable
-                  onPress={() => navigation.navigate("Chat")}
-                  className="self-start mt-3 active:opacity-80"
-                  accessibilityRole="link"
-                  accessibilityLabel="친구 추가하기, 채팅 탭으로 이동"
-                >
-                  <Text className="text-sm font-semibold text-blue-600 underline">친구 추가하기</Text>
-                </Pressable>
-              </View>
-            )}
+                  </Pressable>
+                </View>
+              )}
+            </View>
           </View>
-        </View>
         </Animated.ScrollView>
       </View>
 
@@ -1825,7 +2185,13 @@ export default function HomeScreen(): React.JSX.Element {
               style={{ maxHeight: SCREEN_WIDTH * 1.35 }}
               contentContainerStyle={{ paddingBottom: 4 }}
             >
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
                   <View
                     style={{
@@ -1838,9 +2204,19 @@ export default function HomeScreen(): React.JSX.Element {
                       marginRight: 8,
                     }}
                   >
-                    <Ionicons name="calendar-outline" size={16} color="#2563EB" />
+                    <Ionicons
+                      name="calendar-outline"
+                      size={16}
+                      color="#2563EB"
+                    />
                   </View>
-                  <Text style={{ fontSize: 17, fontWeight: "700", color: "#1A1A2E" }}>
+                  <Text
+                    style={{
+                      fontSize: 17,
+                      fontWeight: "700",
+                      color: "#1A1A2E",
+                    }}
+                  >
                     코스 약속 잡기
                   </Text>
                 </View>
@@ -1861,7 +2237,15 @@ export default function HomeScreen(): React.JSX.Element {
                   <Ionicons name="close" size={16} color="#475569" />
                 </Pressable>
               </View>
-              <Text style={{ marginTop: 12, marginBottom: 6, fontSize: 12, color: "#475569", fontWeight: "600" }}>
+              <Text
+                style={{
+                  marginTop: 12,
+                  marginBottom: 6,
+                  fontSize: 12,
+                  color: "#475569",
+                  fontWeight: "600",
+                }}
+              >
                 날짜 선택
               </Text>
               <View
@@ -1914,7 +2298,13 @@ export default function HomeScreen(): React.JSX.Element {
               >
                 {schedulesOnSelectedDate.length > 0 ? (
                   <>
-                    <Text style={{ color: "#1E3A8A", fontSize: 12, fontWeight: "600" }}>
+                    <Text
+                      style={{
+                        color: "#1E3A8A",
+                        fontSize: 12,
+                        fontWeight: "600",
+                      }}
+                    >
                       약속
                     </Text>
                     {schedulesOnSelectedDate.map((item, index) => (
@@ -1923,19 +2313,38 @@ export default function HomeScreen(): React.JSX.Element {
                         style={{
                           marginTop: index === 0 ? 6 : 8,
                           paddingTop: index === 0 ? 0 : 8,
-                          borderTopWidth: index === 0 ? 0 : StyleSheet.hairlineWidth,
+                          borderTopWidth:
+                            index === 0 ? 0 : StyleSheet.hairlineWidth,
                           borderTopColor: "rgba(37,99,235,0.18)",
                         }}
                       >
-                        <Text style={{ color: "#1E3A8A", fontSize: 14, fontWeight: "700" }}>
+                        <Text
+                          style={{
+                            color: "#1E3A8A",
+                            fontSize: 14,
+                            fontWeight: "700",
+                          }}
+                        >
                           {item.title}
                         </Text>
-                        <Text style={{ color: "#2563EB", fontSize: 12, marginTop: 2 }}>
+                        <Text
+                          style={{
+                            color: "#2563EB",
+                            fontSize: 12,
+                            marginTop: 2,
+                          }}
+                        >
                           {KO_TIME_ONLY_FORMATTER.format(item.date)}
                           {item.chatRoomName ? ` · ${item.chatRoomName}` : ""}
                         </Text>
                         {item.participants.length > 0 ? (
-                          <Text style={{ color: "#64748B", fontSize: 11, marginTop: 2 }}>
+                          <Text
+                            style={{
+                              color: "#64748B",
+                              fontSize: 11,
+                              marginTop: 2,
+                            }}
+                          >
                             {item.participants.slice(0, 4).join(", ")}
                             {item.participants.length > 4
                               ? ` 외 ${item.participants.length - 4}명`
@@ -1947,10 +2356,18 @@ export default function HomeScreen(): React.JSX.Element {
                   </>
                 ) : (
                   <>
-                    <Text style={{ color: "#1E3A8A", fontSize: 12, fontWeight: "600" }}>
+                    <Text
+                      style={{
+                        color: "#1E3A8A",
+                        fontSize: 12,
+                        fontWeight: "600",
+                      }}
+                    >
                       선택한 날짜
                     </Text>
-                    <Text style={{ color: "#1E3A8A", fontSize: 13, marginTop: 2 }}>
+                    <Text
+                      style={{ color: "#1E3A8A", fontSize: 13, marginTop: 2 }}
+                    >
                       {KO_DATE_ONLY_FORMATTER.format(scheduleDraftDate)}
                     </Text>
                   </>
@@ -1976,7 +2393,15 @@ export default function HomeScreen(): React.JSX.Element {
                 </View>
               ) : (
                 <>
-                  <Text style={{ marginTop: 14, marginBottom: 6, fontSize: 12, color: "#475569", fontWeight: "600" }}>
+                  <Text
+                    style={{
+                      marginTop: 14,
+                      marginBottom: 6,
+                      fontSize: 12,
+                      color: "#475569",
+                      fontWeight: "600",
+                    }}
+                  >
                     약속 이름
                   </Text>
                   <TextInput
@@ -1995,11 +2420,21 @@ export default function HomeScreen(): React.JSX.Element {
                       backgroundColor: "#F8FAFF",
                     }}
                   />
-                  <Text style={{ marginTop: 10, marginBottom: 6, fontSize: 12, color: "#475569", fontWeight: "600" }}>
+                  <Text
+                    style={{
+                      marginTop: 10,
+                      marginBottom: 6,
+                      fontSize: 12,
+                      color: "#475569",
+                      fontWeight: "600",
+                    }}
+                  >
                     기준 채팅방
                   </Text>
                   {scheduleChatRoomsLoading ? (
-                    <Text style={{ fontSize: 12, color: "#64748B" }}>채팅방 목록 불러오는 중...</Text>
+                    <Text style={{ fontSize: 12, color: "#64748B" }}>
+                      채팅방 목록 불러오는 중...
+                    </Text>
                   ) : scheduleChatRooms.length > 0 ? (
                     <ScrollView
                       horizontal
@@ -2008,11 +2443,14 @@ export default function HomeScreen(): React.JSX.Element {
                       contentContainerStyle={{ paddingRight: 6 }}
                     >
                       {scheduleChatRooms.slice(0, 12).map((room) => {
-                        const selected = selectedScheduleChatRoomUuid === room.uuid;
+                        const selected =
+                          selectedScheduleChatRoomUuid === room.uuid;
                         return (
                           <Pressable
                             key={room.uuid}
-                            onPress={() => setSelectedScheduleChatRoomUuid(room.uuid)}
+                            onPress={() =>
+                              setSelectedScheduleChatRoomUuid(room.uuid)
+                            }
                             accessibilityRole="button"
                             accessibilityLabel={`채팅방 ${room.name} 선택`}
                             style={{
@@ -2022,11 +2460,17 @@ export default function HomeScreen(): React.JSX.Element {
                               paddingHorizontal: 12,
                               paddingVertical: 8,
                               backgroundColor: selected ? "#DBEAFE" : "#F8FAFF",
-                              borderColor: selected ? "#3B82F6" : "rgba(37,99,235,0.2)",
+                              borderColor: selected
+                                ? "#3B82F6"
+                                : "rgba(37,99,235,0.2)",
                             }}
                           >
                             <Text
-                              style={{ color: selected ? "#1D4ED8" : "#334155", fontSize: 12, fontWeight: "600" }}
+                              style={{
+                                color: selected ? "#1D4ED8" : "#334155",
+                                fontSize: 12,
+                                fontWeight: "600",
+                              }}
                             >
                               {room.name}
                             </Text>
@@ -2039,7 +2483,15 @@ export default function HomeScreen(): React.JSX.Element {
                       선택 가능한 채팅방이 없어요.
                     </Text>
                   )}
-                  <Text style={{ marginTop: 12, marginBottom: 6, fontSize: 12, color: "#475569", fontWeight: "600" }}>
+                  <Text
+                    style={{
+                      marginTop: 12,
+                      marginBottom: 6,
+                      fontSize: 12,
+                      color: "#475569",
+                      fontWeight: "600",
+                    }}
+                  >
                     시간
                   </Text>
                   <View
@@ -2064,8 +2516,11 @@ export default function HomeScreen(): React.JSX.Element {
                       }}
                     />
                   </View>
-                  <Text style={{ marginTop: 6, fontSize: 12, color: "#1E3A8A" }}>
-                    선택한 시간: {KO_TIME_ONLY_FORMATTER.format(scheduleDraftTime)}
+                  <Text
+                    style={{ marginTop: 6, fontSize: 12, color: "#1E3A8A" }}
+                  >
+                    선택한 시간:{" "}
+                    {KO_TIME_ONLY_FORMATTER.format(scheduleDraftTime)}
                   </Text>
                 </>
               )}
@@ -2074,9 +2529,15 @@ export default function HomeScreen(): React.JSX.Element {
               <Pressable
                 onPress={handleScheduleCancel}
                 className="px-4 py-2 mr-2 border border-gray-300 rounded-xl"
-                style={{ minWidth: 74, alignItems: "center", justifyContent: "center" }}
+                style={{
+                  minWidth: 74,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
               >
-                <Text style={{ color: "#475569", fontWeight: "600" }}>취소</Text>
+                <Text style={{ color: "#475569", fontWeight: "600" }}>
+                  취소
+                </Text>
               </Pressable>
               <Pressable
                 onPress={saveCourseSchedule}
@@ -2098,7 +2559,9 @@ export default function HomeScreen(): React.JSX.Element {
                       : "#93C5FD",
                 }}
               >
-                <Text style={{ color: "#fff", fontWeight: "700" }}>약속 추가</Text>
+                <Text style={{ color: "#fff", fontWeight: "700" }}>
+                  약속 추가
+                </Text>
               </Pressable>
             </View>
           </View>

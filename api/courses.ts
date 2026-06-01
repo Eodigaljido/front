@@ -1,5 +1,11 @@
 // @ts-nocheck
 import { instance } from "./axios";
+import {
+  fetchMultipart,
+  fileNameFromUri,
+  mimeFromUri,
+  MultipartHttpError,
+} from "./multipartFetch";
 import type { CourseItem } from "../data/mockData";
 import {
   resolveCourseRegionLabel,
@@ -9,7 +15,10 @@ import { pickAuthorProfilePublicFromRaw } from "../utils/authorProfileVisibility
 import { pickCourseAuthorFromRaw } from "../utils/pickCourseAuthorFromRaw";
 import { pickForkChainFromRaw } from "../utils/pickForkChainFromRaw";
 import { findPersonalRouteIdForForkSource } from "../data/userSavedRoute";
-import { isLocalThumbnailUri, isRemoteThumbnailUri } from "../utils/courseThumbnailUri";
+import {
+  isLocalThumbnailUri,
+  isRemoteThumbnailUri,
+} from "../utils/courseThumbnailUri";
 import { sameCourseId } from "../utils/sameCourseId";
 import { getFriends } from "./friend/friends";
 import { bustProfileImageUri } from "../utils/profileImageUri";
@@ -954,7 +963,10 @@ function extractMyCourseUuidFromResponse(data: any): string | null {
 }
 
 /** API 전송용 — 과도하게 긴 길안내 문자열 제거(요청 실패 방지) */
-function trimLegTextForApi(value: string | undefined, max = 4000): string | undefined {
+function trimLegTextForApi(
+  value: string | undefined,
+  max = 4000,
+): string | undefined {
   const s = String(value ?? "").trim();
   if (!s) return undefined;
   return s.length > max ? `${s.slice(0, max)}…` : s;
@@ -976,9 +988,7 @@ export function sanitizeUpsertMyRoutePayload(
       ? { lat: Number(s.lat), lng: Number(s.lng) }
       : {}),
   }));
-  const hasCoords = stops.some(
-    (s) => s.lat != null && s.lng != null,
-  );
+  const hasCoords = stops.some((s) => s.lat != null && s.lng != null);
   const legs = hasCoords
     ? payload.legs.map((l) => ({
         id: l.id,
@@ -1192,7 +1202,9 @@ function pickFollowingNewsUserLabel(raw: Record<string, unknown>): string {
   ).trim();
 }
 
-function pickFollowingNewsUserUuid(raw: Record<string, unknown>): string | null {
+function pickFollowingNewsUserUuid(
+  raw: Record<string, unknown>,
+): string | null {
   const nested = raw.user ?? raw.actor ?? raw.author ?? raw.fromUser;
   if (nested && typeof nested === "object") {
     const u = nested as Record<string, unknown>;
@@ -1249,7 +1261,9 @@ export async function fetchFollowingNews(
       const url = String(f.profileImageUrl ?? "").trim();
       if (!url || f.isDefaultImage) continue;
       if (f.uuid) profileByUuid.set(String(f.uuid), url);
-      const nick = String(f.nickname ?? "").trim().toLowerCase();
+      const nick = String(f.nickname ?? "")
+        .trim()
+        .toLowerCase();
       if (nick) profileByNickname.set(nick, url);
     }
 
@@ -1303,47 +1317,29 @@ function pickThumbnailUrlFromUploadResponse(data: unknown): string | null {
       ? (d.data as Record<string, unknown>)
       : d;
   const raw =
-    inner.thumbnail ??
-    inner.imageUrl ??
-    inner.url ??
-    inner.profileImageUrl;
+    inner.thumbnail ?? inner.imageUrl ?? inner.url ?? inner.profileImageUrl;
   const s = String(raw ?? "").trim();
   return isRemoteThumbnailUri(s) ? s : null;
 }
 
-function buildCourseImageFormData(
-  asset: { uri: string; name?: string; type?: string },
-  fieldName: "image" | "file",
-): FormData {
-  const form = new FormData();
-  const rawType = String(asset.type ?? "image/jpeg");
+function courseImageFilePart(asset: {
+  uri: string;
+  name?: string;
+  type?: string;
+}): { name: string; type: string } {
+  const rawType = String(asset.type ?? mimeFromUri(asset.uri));
   const mime =
     rawType === "image/heic" || rawType === "image/heif"
       ? "image/jpeg"
       : rawType.startsWith("image/")
         ? rawType
         : "image/jpeg";
-  let fileName = asset.name ?? "cover.jpg";
+  let fileName = asset.name ?? fileNameFromUri(asset.uri, "cover.jpg");
   if (!/\.(jpe?g|png|webp)$/i.test(fileName)) {
     fileName = "cover.jpg";
   }
-  form.append(fieldName, {
-    uri: asset.uri,
-    name: fileName,
-    type: mime,
-  } as any);
-  return form;
+  return { name: fileName, type: mime };
 }
-
-const multipartHeaders = {
-  transformRequest: (data: unknown, headers?: Record<string, unknown>) => {
-    if (headers) {
-      delete headers["Content-Type"];
-      delete headers["content-type"];
-    }
-    return data;
-  },
-};
 
 type ThumbnailUploadAttempt = {
   method: "patch" | "post";
@@ -1365,22 +1361,37 @@ async function uploadMultipartThumbnail(
   attempt: ThumbnailUploadAttempt,
   asset: { uri: string; name?: string; type?: string },
 ): Promise<string | null> {
+  const fileMeta = courseImageFilePart(asset);
+  const path = attempt.path.replace(/^\/+/, "");
   for (const field of ["image", "file"] as const) {
-    const form = buildCourseImageFormData(asset, field);
     try {
-      const res =
-        attempt.method === "post"
-          ? await instance.post(attempt.path, form, multipartHeaders)
-          : await instance.patch(attempt.path, form, multipartHeaders);
-      const url = pickThumbnailUrlFromUploadResponse(res.data);
+      const { data, status } = await fetchMultipart(
+        path,
+        attempt.method === "post" ? "POST" : "PATCH",
+        [
+          {
+            field,
+            file: {
+              uri: asset.uri,
+              name: fileMeta.name,
+              type: fileMeta.type,
+            },
+          },
+        ],
+        { silent: true },
+      );
+      const url = pickThumbnailUrlFromUploadResponse(data);
       if (url) return url;
-      if (res.status >= 200 && res.status < 300) {
+      if (status >= 200 && status < 300) {
         const detail = await fetchMyCourseDetail(courseId);
         const fromDetail = String(detail?.thumbnail ?? "").trim();
         if (isRemoteThumbnailUri(fromDetail)) return fromDetail;
       }
-    } catch (e: any) {
-      const status = e?.response?.status;
+    } catch (e: unknown) {
+      const status =
+        e instanceof MultipartHttpError
+          ? e.status
+          : (e as { response?: { status?: number } })?.response?.status;
       if (status === 404 || status === 405) return null;
       if (status === 400 && field === "image") continue;
       if (__DEV__) {
@@ -1390,7 +1401,7 @@ async function uploadMultipartThumbnail(
           attempt.path,
           field,
           status,
-          e?.response?.data,
+          e,
         );
       }
     }

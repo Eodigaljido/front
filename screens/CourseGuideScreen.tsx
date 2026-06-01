@@ -3,7 +3,13 @@
  * 코스 「안내」 — 지도 중심, 턴바이턴·음성 없음.
  * 코스 입구 안내: 내 위치 ↔ 코스 출발점 도보 경로 + 사용자 방향 기준 지도 회전.
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   View,
   Text,
@@ -36,6 +42,8 @@ import { useMockData } from "../context/MockDataContext";
 import {
   fetchGoogleDirectionsLeg,
   fetchMergedDirectionsPolyline,
+  looksLikeStraightStopConnectorPath,
+  resolveCoursePreviewDirectionsMode,
 } from "../data/googleDirectionsApi";
 import {
   computeMapRouteFit,
@@ -166,20 +174,33 @@ export default function CourseGuideScreen(): React.JSX.Element {
     const ac = new AbortController();
     setPathLoading(true);
     setRoutePath(null);
-    fetchMergedDirectionsPolyline({
-      points: stopPoints,
-      mode: "transit",
-      signal: ac.signal,
-    })
-      .then((path) => {
-        if (!ac.signal.aborted && path.length >= 2) setRoutePath(path);
+    const directionsMode = resolveCoursePreviewDirectionsMode(
+      course?.routeLegs,
+    );
+    const loadMergedPath = (mode: typeof directionsMode) =>
+      fetchMergedDirectionsPolyline({
+        points: stopPoints,
+        mode,
+        signal: ac.signal,
+      });
+    loadMergedPath(directionsMode)
+      .then(async (path) => {
+        if (ac.signal.aborted) return;
+        let final = path;
+        if (
+          looksLikeStraightStopConnectorPath(path, stopPoints.length) &&
+          directionsMode === "transit"
+        ) {
+          final = await loadMergedPath("driving");
+        }
+        if (!ac.signal.aborted && final.length >= 2) setRoutePath(final);
       })
       .catch(() => {})
       .finally(() => {
         if (!ac.signal.aborted) setPathLoading(false);
       });
     return () => ac.abort();
-  }, [stopPoints]);
+  }, [stopPoints, course?.routeLegs]);
 
   const polylinePath = useMemo(
     () =>
@@ -199,7 +220,11 @@ export default function CourseGuideScreen(): React.JSX.Element {
     const dist = metersBetween(userLocation, courseStart);
     if (dist < 12) {
       setApproachPath([userLocation, courseStart]);
-      setApproachMeta({ minutes: 1, distanceM: Math.round(dist), summary: "도착" });
+      setApproachMeta({
+        minutes: 1,
+        distanceM: Math.round(dist),
+        summary: "도착",
+      });
       setApproachLoading(false);
       return;
     }
@@ -276,7 +301,12 @@ export default function CourseGuideScreen(): React.JSX.Element {
       stopPoints.length >= 1
         ? buildMapMarkersFromPathPoints(stopPoints).map((m, i) =>
             i === 0
-              ? { ...m, label: "출발", kind: "start" as const, color: "#2563eb" }
+              ? {
+                  ...m,
+                  label: "출발",
+                  kind: "start" as const,
+                  color: "#2563eb",
+                }
               : m,
           )
         : [];
@@ -299,8 +329,10 @@ export default function CourseGuideScreen(): React.JSX.Element {
 
   const fitCameraToRoute = useCallback(() => {
     const fitPoints: LatLng[] = [];
-    if (approachPath && approachPath.length >= 2) fitPoints.push(...approachPath);
-    if (polylinePath && polylinePath.length >= 2) fitPoints.push(...polylinePath);
+    if (approachPath && approachPath.length >= 2)
+      fitPoints.push(...approachPath);
+    if (polylinePath && polylinePath.length >= 2)
+      fitPoints.push(...polylinePath);
     else if (stopPoints.length >= 1) fitPoints.push(...stopPoints);
     if (userLocation) fitPoints.push(userLocation);
 
@@ -318,16 +350,15 @@ export default function CourseGuideScreen(): React.JSX.Element {
       });
       return;
     }
-    const center = ur
-      ? userRouteMapCenter(ur)
-      : getCourseMapCenter(courseId);
+    const center = ur ? userRouteMapCenter(ur) : getCourseMapCenter(courseId);
     setCamera({ lat: center.lat, lng: center.lng, fitToRoute: true });
   }, [approachPath, polylinePath, stopPoints, userLocation, ur, courseId]);
 
   /** 자동 카메라 맞춤: 코스 경로 중심(내 위치 변화로 재실행되지 않음) */
   const fitCameraToCourse = useCallback(() => {
     const fitPoints: LatLng[] = [];
-    if (polylinePath && polylinePath.length >= 2) fitPoints.push(...polylinePath);
+    if (polylinePath && polylinePath.length >= 2)
+      fitPoints.push(...polylinePath);
     else if (stopPoints.length >= 1) fitPoints.push(...stopPoints);
 
     const fit = computeMapRouteFit(fitPoints, {
@@ -344,9 +375,7 @@ export default function CourseGuideScreen(): React.JSX.Element {
       });
       return;
     }
-    const center = ur
-      ? userRouteMapCenter(ur)
-      : getCourseMapCenter(courseId);
+    const center = ur ? userRouteMapCenter(ur) : getCourseMapCenter(courseId);
     setCamera({ lat: center.lat, lng: center.lng, fitToRoute: true });
   }, [polylinePath, stopPoints, ur, courseId]);
 
@@ -460,8 +489,7 @@ export default function CourseGuideScreen(): React.JSX.Element {
   const mapLat = camera?.lat ?? 37.5665;
   const mapLng = camera?.lng ?? 126.978;
   const mapZoom = camera?.zoom;
-  const mapFitToRoute =
-    !entranceNavActive && (camera?.fitToRoute ?? true);
+  const mapFitToRoute = !entranceNavActive && (camera?.fitToRoute ?? true);
 
   const approachLabel = useMemo(() => {
     if (!approachMeta) return null;
@@ -520,12 +548,7 @@ export default function CourseGuideScreen(): React.JSX.Element {
           </View>
         </View>
 
-        <View
-          style={[
-            styles.fabColumn,
-            { top: insets.top + 4 + 54 + 20 },
-          ]}
-        >
+        <View style={[styles.fabColumn, { top: insets.top + 4 + 54 + 20 }]}>
           <Pressable
             onPress={fitCameraToRoute}
             style={styles.fab}
@@ -567,9 +590,19 @@ export default function CourseGuideScreen(): React.JSX.Element {
 
               {entranceNavActive && userLocation && courseStart ? (
                 <View style={styles.legendRow}>
-                  <View style={[styles.legendDot, { backgroundColor: APPROACH_LINE_COLOR }]} />
+                  <View
+                    style={[
+                      styles.legendDot,
+                      { backgroundColor: APPROACH_LINE_COLOR },
+                    ]}
+                  />
                   <Text style={styles.legendText}>내 위치 → 코스 출발</Text>
-                  <View style={[styles.legendDot, { backgroundColor: COURSE_LINE_COLOR, marginLeft: 12 }]} />
+                  <View
+                    style={[
+                      styles.legendDot,
+                      { backgroundColor: COURSE_LINE_COLOR, marginLeft: 12 },
+                    ]}
+                  />
                   <Text style={styles.legendText}>코스 경로</Text>
                 </View>
               ) : null}
@@ -676,7 +709,12 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   topTitle: { fontSize: 16, fontWeight: "700", color: "#0f172a" },
-  topSubtitle: { fontSize: 11, fontWeight: "600", color: "#64748b", marginTop: 2 },
+  topSubtitle: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#64748b",
+    marginTop: 2,
+  },
   fabColumn: {
     position: "absolute",
     right: 14,

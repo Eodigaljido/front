@@ -1,5 +1,8 @@
-import type { NavigationContainerRef, NavigationProp } from '@react-navigation/native';
-import type { ParsedSharePath } from './parseSharePath';
+import type {
+  NavigationContainerRef,
+  NavigationProp,
+} from "@react-navigation/native";
+import type { ParsedSharePath } from "./parseSharePath";
 
 let pending: ParsedSharePath | null = null;
 
@@ -17,7 +20,7 @@ export function clearPendingShareLink(): void {
 
 /** 로그인·온보딩 완료 후 Tabs로 이동 + 공유/친구 화면으로 연결 */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ResetNavigation = Pick<NavigationProp<any>, 'reset'>;
+type ResetNavigation = Pick<NavigationProp<any>, "reset">;
 
 export function consumePendingShareNavigation(
   navigation: NavigationContainerRef<Record<string, unknown>> | ResetNavigation,
@@ -26,12 +29,12 @@ export function consumePendingShareNavigation(
   if (!link) return false;
   clearPendingShareLink();
 
-  if (link.type === 'collab') {
+  if (link.type === "collab") {
     navigation.reset({
       index: 0,
       routes: [
         {
-          name: 'RouteCreate',
+          name: "RouteCreate",
           params: { editRouteId: link.routeId, collaborative: true },
         },
       ],
@@ -39,20 +42,22 @@ export function consumePendingShareNavigation(
     return true;
   }
 
-  if (link.type === 'course') {
+  if (link.type === "course") {
     navigation.reset({
       index: 0,
       routes: [
         {
-          name: 'Tabs',
+          name: "Tabs",
           state: {
             index: 1,
             routes: [
-              { name: 'Home' },
-              { name: 'SharedRoute', params: { viewCourseId: link.courseId } },
-              { name: 'MyRoute' },
-              { name: 'Chat' },
-              { name: 'All' },
+              { name: "Home" },
+              {
+                name: "Route",
+                params: { section: "shared", viewCourseId: link.courseId },
+              },
+              { name: "Chat" },
+              { name: "All" },
             ],
           },
         },
@@ -65,15 +70,14 @@ export function consumePendingShareNavigation(
     index: 0,
     routes: [
       {
-        name: 'Tabs',
+        name: "Tabs",
         state: {
-          index: 4,
+          index: 3,
           routes: [
-            { name: 'Home' },
-            { name: 'SharedRoute' },
-            { name: 'MyRoute' },
-            { name: 'Chat' },
-            { name: 'All', params: { friendCode: link.friendCode } },
+            { name: "Home" },
+            { name: "Route" },
+            { name: "Chat" },
+            { name: "All", params: { friendCode: link.friendCode } },
           ],
         },
       },
@@ -85,5 +89,5 @@ export function consumePendingShareNavigation(
 /** 로그인·온보딩 후 메인 진입 (보류 중인 공유 링크가 있으면 해당 탭으로) */
 export function resetToMainAfterAuth(navigation: ResetNavigation): void {
   if (consumePendingShareNavigation(navigation)) return;
-  navigation.reset({ index: 0, routes: [{ name: 'Tabs' }] });
+  navigation.reset({ index: 0, routes: [{ name: "Tabs" }] });
 }

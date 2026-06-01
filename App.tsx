@@ -9,7 +9,10 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StatusBar } from "expo-status-bar";
 import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
 import { useAuthStore } from "./store/authStore";
-import { NavigationContainer } from "@react-navigation/native";
+import {
+  NavigationContainer,
+  NavigatorScreenParams,
+} from "@react-navigation/native";
 import { navigationRef } from "./navigation/rootNavigation";
 import {
   BottomTabBar,
@@ -59,9 +62,11 @@ import MeetHomeScreen from "./screens/meet/MeetHomeScreen";
 import MeetDetailScreen from "./screens/meet/MeetDetailScreen";
 import MeetCreateScreen from "./screens/meet/MeetCreateScreen";
 import MeetManageScreen from "./screens/meet/MeetManageScreen";
+import RouteScreen, { RouteTabParams } from "./screens/RouteScreen";
 
 export type RootTabParamList = {
   Home: undefined;
+  Route: RouteTabParams | undefined;
   SharedRoute:
     | { openFilter?: boolean; openAsPopular?: boolean; viewCourseId?: string }
     | undefined;
@@ -91,11 +96,8 @@ export type RootTabParamList = {
 };
 
 export type RootStackParamList = {
-  Tabs: undefined;
-  SharedRouteStack:
-    | { openFilter?: boolean; openAsPopular?: boolean; viewCourseId?: string }
-    | undefined;
-  MyRouteStack: undefined;
+  Tabs: NavigatorScreenParams<RootTabParamList>;
+  RouteStack: RouteTabParams | undefined;
   RouteCreate:
     | {
         editRouteId?: string;
@@ -129,12 +131,6 @@ export type RootStackParamList = {
   ChatRouteHistory: undefined;
   ChatRoomInfoScreen: { roomUuid: string; roomName: string };
 
-  // 모임 관련
-  MeetHome: undefined;
-  MeetDetail: { groupUuid: string; groupName: string };
-  MeetCreate: undefined;
-  MeetManage: { groupUuid: string; groupName: string };
-
   FollowingNews: undefined;
   NotificationCenter: undefined;
   /** 내 코스 카드 「안내」 — 지도 중심, 턴바이턴 없음 (방향성.md) */
@@ -144,6 +140,12 @@ export type RootStackParamList = {
     routeId: string;
     routeTitle?: string;
   };
+
+  // 모임 관련
+  MeetHome: undefined;
+  MeetDetail: { groupUuid: string; groupName: string };
+  MeetCreate: undefined;
+  MeetManage: { groupUuid: string; groupName: string };
 };
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
@@ -152,8 +154,7 @@ const AllStack = createNativeStackNavigator();
 
 const TAB_ORDER = [
   "Home",
-  "SharedRoute",
-  "MyRoute",
+  "Route",
   "Chat",
   "Meet",
   "All",
@@ -191,12 +192,11 @@ const TAB_GLASS_BORDER = "rgba(148, 163, 184, 0.35)";
 type IonIconName = NonNullable<ComponentProps<typeof Ionicons>["name"]>;
 
 const TAB_ICONS: Record<
-  "Home" | "SharedRoute" | "MyRoute" | "Chat" | "Meet" | "All",
+  "Home" | "Route" | "Chat" | "Meet" | "All",
   IonIconName
 > = {
   Home: "home",
-  SharedRoute: "paper-plane",
-  MyRoute: "map",
+  Route: "map",
   Chat: "chatbubble",
   Meet: "people",
   All: "menu",
@@ -265,8 +265,7 @@ function TabNavigator() {
                 TAB_ICONS[
                   route.name as
                     | "Home"
-                    | "SharedRoute"
-                    | "MyRoute"
+                    | "Route"
                     | "Chat"
                     | "Meet"
                     | "All"
@@ -329,14 +328,9 @@ function TabNavigator() {
         options={{ headerShown: false, tabBarLabel: "홈" }}
       />
       <Tab.Screen
-        name="SharedRoute"
-        component={SharedRouteScreen}
-        options={{ headerShown: false, tabBarLabel: "공유 루트" }}
-      />
-      <Tab.Screen
-        name="MyRoute"
-        component={MyRouteScreen}
-        options={{ headerShown: false, tabBarLabel: "내 루트" }}
+        name="Route"
+        component={RouteScreen}
+        options={{ headerShown: false, tabBarLabel: "루트" }}
       />
       <Tab.Screen
         name="Chat"
@@ -389,10 +383,9 @@ export default function App(): React.JSX.Element {
                   <Stack.Screen name="Signup" component={SignupScreen} />
                   <Stack.Screen name="Tabs" component={TabNavigator} />
                   <Stack.Screen
-                    name="SharedRouteStack"
-                    component={SharedRouteScreen}
+                    name="RouteStack"
+                    component={RouteScreen}
                   />
-                  <Stack.Screen name="MyRouteStack" component={MyRouteScreen} />
                   <Stack.Screen
                     name="RouteCreate"
                     component={RouteCreateScreen}

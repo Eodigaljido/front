@@ -1,4 +1,9 @@
 import { instance } from "../axios";
+import {
+  fetchMultipart,
+  fileNameFromUri,
+  mimeFromUri,
+} from "../multipartFetch";
 
 export type ChatMemberSummary = {
   uuid: string;
@@ -207,30 +212,15 @@ export async function sendImageMessage(
   roomUuid: string,
   imageUri: string,
 ): Promise<ChatMessage> {
-  const form = new FormData();
-  const filename = imageUri.split("/").pop() ?? "image.jpg";
-  const ext = filename.split(".").pop()?.toLowerCase() ?? "jpg";
-  const mime =
-    ext === "png"
-      ? "image/png"
-      : ext === "gif"
-        ? "image/gif"
-        : ext === "webp"
-          ? "image/webp"
-          : "image/jpeg";
-  form.append("image", { uri: imageUri, name: filename, type: mime } as any);
-  const res = await instance.post<ChatMessage>(
-    `/chats/${roomUuid}/images`,
-    form,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "multipart/form-data",
-      },
-      transformRequest: (data) => data,
-    },
+  const filename = fileNameFromUri(imageUri, "image.jpg");
+  const mime = mimeFromUri(imageUri);
+  const { data } = await fetchMultipart(
+    `chats/${roomUuid}/images`,
+    "POST",
+    [{ field: "image", file: { uri: imageUri, name: filename, type: mime } }],
+    { accessToken },
   );
-  return res.data;
+  return data as ChatMessage;
 }
 
 /** PATCH /chats/{roomUuid}/image — 채팅방 프로필 이미지 업로드 */
@@ -239,29 +229,14 @@ export async function updateChatRoomImage(
   roomUuid: string,
   imageUri: string,
 ): Promise<void> {
-  const form = new FormData();
-  const filename = imageUri.split("/").pop() ?? "image.png";
-  const ext = filename.split(".").pop()?.toLowerCase() ?? "png";
-  const mime =
-    ext === "png"
-      ? "image/png"
-      : ext === "gif"
-        ? "image/gif"
-        : ext === "webp"
-          ? "image/webp"
-          : "image/jpeg";
-  form.append("image", {
-    uri: imageUri,
-    name: filename,
-    type: mime,
-  } as unknown as Blob);
-  await instance.patch(`/chats/${roomUuid}/profile-image`, form, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "multipart/form-data",
-    },
-    transformRequest: (data) => data,
-  });
+  const filename = fileNameFromUri(imageUri, "image.png");
+  const mime = mimeFromUri(imageUri);
+  await fetchMultipart(
+    `chats/${roomUuid}/profile-image`,
+    "PATCH",
+    [{ field: "image", file: { uri: imageUri, name: filename, type: mime } }],
+    { accessToken },
+  );
 }
 
 /** Swagger: POST /chats/{roomUuid}/route — 루트 공유 메시지(ROUTE 타입) */

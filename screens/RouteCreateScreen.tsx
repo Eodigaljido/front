@@ -74,6 +74,11 @@ import {
   type TransitRouteCandidate,
 } from "../data/googleDirectionsApi";
 import {
+  ROUTE_USER_MESSAGES,
+  sanitizeRouteDisplayText,
+  toUserFacingErrorMessage,
+} from "../utils/routeCopy";
+import {
   buildUpsertPayloadFromUserRoute,
   createMyRoute,
   fetchMyRouteCollaborativeFlag,
@@ -863,7 +868,9 @@ export default function RouteCreateScreen(): React.JSX.Element {
           sheetPanStartRef.current = sheetHeightRef.current;
         },
         onPanResponderMove: (_, g) => {
-          setRouteSheetHeightPx(clampRouteSheetHeight(sheetPanStartRef.current - g.dy));
+          setRouteSheetHeightPx(
+            clampRouteSheetHeight(sheetPanStartRef.current - g.dy),
+          );
         },
         onPanResponderRelease: async (_, g) => {
           const next = clampRouteSheetHeight(sheetPanStartRef.current - g.dy);
@@ -953,10 +960,11 @@ export default function RouteCreateScreen(): React.JSX.Element {
         forkSourceAuthorUuid:
           fromRef.forkSourceAuthorUuid ?? prev?.forkSourceAuthorUuid ?? null,
         forkSourceAuthorUserId:
-          fromRef.forkSourceAuthorUserId ?? prev?.forkSourceAuthorUserId ?? null,
+          fromRef.forkSourceAuthorUserId ??
+          prev?.forkSourceAuthorUserId ??
+          null,
         rootForkSourceCourseId: rootCourseId,
-        forkModifierAuthorUuid:
-          myUuid || prev?.forkModifierAuthorUuid || null,
+        forkModifierAuthorUuid: myUuid || prev?.forkModifierAuthorUuid || null,
         forkModifierAuthorUserId:
           myUserId || prev?.forkModifierAuthorUserId || null,
       };
@@ -1178,8 +1186,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
 
   /** 루트 수정 + 공개(공유 탭) 또는 공동 루트 — 상단 공유 버튼 아래 채팅 */
   const showHeaderChatBelowShare = useMemo(
-    () =>
-      isEditingMyRoute && (isCollaborative || publishToPublic),
+    () => isEditingMyRoute && (isCollaborative || publishToPublic),
     [isEditingMyRoute, isCollaborative, publishToPublic],
   );
 
@@ -1244,17 +1251,18 @@ export default function RouteCreateScreen(): React.JSX.Element {
             forkId: opts.forkFromId,
             authorUuid: origin.forkSourceAuthorUuid ?? undefined,
             authorUserId: origin.forkSourceAuthorUserId ?? undefined,
-            rootCourseId:
-              origin.rootForkSourceCourseId ?? opts.forkFromId,
+            rootCourseId: origin.rootForkSourceCourseId ?? opts.forkFromId,
           };
-          void resolveForkOriginForSave(opts.forkFromId, course).then((root) => {
-            forkOriginAuthorRef.current = {
-              forkId: opts.forkFromId!,
-              authorUuid: root.forkSourceAuthorUuid ?? undefined,
-              authorUserId: root.forkSourceAuthorUserId ?? undefined,
-              rootCourseId: root.rootForkSourceCourseId ?? opts.forkFromId!,
-            };
-          });
+          void resolveForkOriginForSave(opts.forkFromId, course).then(
+            (root) => {
+              forkOriginAuthorRef.current = {
+                forkId: opts.forkFromId!,
+                authorUuid: root.forkSourceAuthorUuid ?? undefined,
+                authorUserId: root.forkSourceAuthorUserId ?? undefined,
+                rootCourseId: root.rootForkSourceCourseId ?? opts.forkFromId!,
+              };
+            },
+          );
         } else {
           forkOriginAuthorRef.current = null;
         }
@@ -1281,7 +1289,8 @@ export default function RouteCreateScreen(): React.JSX.Element {
         if (fork) {
           forkOriginAuthorRef.current = {
             forkId: fork,
-            authorUuid: String(r.forkSourceAuthorUuid ?? "").trim() || undefined,
+            authorUuid:
+              String(r.forkSourceAuthorUuid ?? "").trim() || undefined,
             authorUserId:
               String(r.forkSourceAuthorUserId ?? "").trim() || undefined,
             rootCourseId:
@@ -1675,7 +1684,12 @@ export default function RouteCreateScreen(): React.JSX.Element {
       } catch (e: any) {
         if (controller.signal.aborted) return;
         setSearchResults([]);
-        setSearchError(e?.message ?? "장소 검색 중 오류가 발생했습니다.");
+        setSearchError(
+          toUserFacingErrorMessage(
+            e?.message,
+            ROUTE_USER_MESSAGES.placeSearchFailed,
+          ),
+        );
       } finally {
         if (!controller.signal.aborted) setSearchLoading(false);
       }
@@ -2553,7 +2567,10 @@ export default function RouteCreateScreen(): React.JSX.Element {
       setRouteCoverImageUri(localUri);
       const serverId = pickServerBackedRouteId();
       if (serverId) {
-        const uploaded = await syncMyCourseThumbnailToServer(serverId, localUri);
+        const uploaded = await syncMyCourseThumbnailToServer(
+          serverId,
+          localUri,
+        );
         if (uploaded) {
           setRouteCoverImageUri(uploaded);
           const saved = getUserRoute(serverId);
@@ -2563,11 +2580,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
         }
       }
     }
-  }, [
-    pickServerBackedRouteId,
-    getUserRoute,
-    upsertUserRoute,
-  ]);
+  }, [pickServerBackedRouteId, getUserRoute, upsertUserRoute]);
 
   const patchRouteChatRoom = useCallback(
     (
@@ -2621,80 +2634,131 @@ export default function RouteCreateScreen(): React.JSX.Element {
         routeId: string | null;
       }> => {
         try {
-        const title = routeTitle.trim() || "새 루트";
-        const now = new Date().toISOString();
-        const serverId = pickServerBackedRouteId();
-        const localId = getOrCreateDraftLocalRouteId();
-        const prev =
-          getUserRoute(localId) ??
-          getUserRoute(persistedRouteIdRef.current ?? "") ??
-          getUserRoute(persistedRouteId ?? "");
-        const wantPublic = publishToPublic && !isCollab;
-        const tagsForSave = selectedTags
-          .map((t) => String(t).trim())
-          .filter(Boolean)
-          .slice(0, MAX_ROUTE_TAGS);
-        const routePayload = buildUpsertPayloadFromUserRoute({
-          title,
-          collaborative: isCollab,
-          tags: tagsForSave,
-          stops: stops.map((s) => ({
-            id: s.id,
-            kind: s.kind,
-            title: s.title,
-            timeLine: s.timeLine,
-            lat: s.lat,
-            lng: s.lng,
-          })),
-          legs: legs.map((l) => ({
-            id: l.id,
-            mode: l.mode,
-            minutes: l.minutes,
-            transitType: l.transitType,
-            directionsSummary: l.directionsSummary,
-            directionsDetail: l.directionsDetail,
-            distanceMeters: l.distanceMeters,
-          })),
-        });
+          const title = routeTitle.trim() || "새 루트";
+          const now = new Date().toISOString();
+          const serverId = pickServerBackedRouteId();
+          const localId = getOrCreateDraftLocalRouteId();
+          const prev =
+            getUserRoute(localId) ??
+            getUserRoute(persistedRouteIdRef.current ?? "") ??
+            getUserRoute(persistedRouteId ?? "");
+          const wantPublic = publishToPublic && !isCollab;
+          const tagsForSave = selectedTags
+            .map((t) => String(t).trim())
+            .filter(Boolean)
+            .slice(0, MAX_ROUTE_TAGS);
+          const routePayload = buildUpsertPayloadFromUserRoute({
+            title,
+            collaborative: isCollab,
+            tags: tagsForSave,
+            stops: stops.map((s) => ({
+              id: s.id,
+              kind: s.kind,
+              title: s.title,
+              timeLine: s.timeLine,
+              lat: s.lat,
+              lng: s.lng,
+            })),
+            legs: legs.map((l) => ({
+              id: l.id,
+              mode: l.mode,
+              minutes: l.minutes,
+              transitType: l.transitType,
+              directionsSummary: l.directionsSummary,
+              directionsDetail: l.directionsDetail,
+              distanceMeters: l.distanceMeters,
+            })),
+          });
 
-        upsertUserRoute({
-          id: localId,
-          title,
-          createdAt: prev?.createdAt ?? now,
-          updatedAt: now,
-          collaborative: isCollab,
-          tags: tagsForSave,
-          stops: routePayload.stops,
-          legs: routePayload.legs,
-          publishedToPublic: wantPublic,
-          coverImageUri: routeCoverImageUri,
-          chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
-        });
+          upsertUserRoute({
+            id: localId,
+            title,
+            createdAt: prev?.createdAt ?? now,
+            updatedAt: now,
+            collaborative: isCollab,
+            tags: tagsForSave,
+            stops: routePayload.stops,
+            legs: routePayload.legs,
+            publishedToPublic: wantPublic,
+            coverImageUri: routeCoverImageUri,
+            chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
+          });
 
-        let apiSaved = false;
-        let effectiveId = localId;
-        let savedAsPersonalFork = false;
-        const forkId = String(forkSourceCourseId ?? "").trim();
-        const forkMeta =
-          forkId ||
-          (prev?.forkedFromSharedId
-            ? String(prev.forkedFromSharedId).trim()
-            : "");
-        if (forkId) {
-          const personalId = await resolvePersonalRouteIdForForkSave(
-            forkId,
-            userSavedRoutes,
-            serverId,
-          );
-          const isOwnCourseUpdate =
-            Boolean(personalId) && sameCourseId(personalId, forkId);
-          if (personalId) {
-            apiSaved = await updateMyRoute(personalId, routePayload);
+          let apiSaved = false;
+          let effectiveId = localId;
+          let savedAsPersonalFork = false;
+          const forkId = String(forkSourceCourseId ?? "").trim();
+          const forkMeta =
+            forkId ||
+            (prev?.forkedFromSharedId
+              ? String(prev.forkedFromSharedId).trim()
+              : "");
+          if (forkId) {
+            const personalId = await resolvePersonalRouteIdForForkSave(
+              forkId,
+              userSavedRoutes,
+              serverId,
+            );
+            const isOwnCourseUpdate =
+              Boolean(personalId) && sameCourseId(personalId, forkId);
+            if (personalId) {
+              apiSaved = await updateMyRoute(personalId, routePayload);
+              if (apiSaved) {
+                effectiveId = personalId;
+                if (personalId !== localId) deleteUserRoute(localId);
+                upsertUserRoute({
+                  id: personalId,
+                  title,
+                  createdAt: prev?.createdAt ?? now,
+                  updatedAt: now,
+                  collaborative: isCollab,
+                  tags: tagsForSave,
+                  stops: routePayload.stops,
+                  legs: routePayload.legs,
+                  publishedToPublic: wantPublic,
+                  coverImageUri: routeCoverImageUri,
+                  chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
+                  ...(isOwnCourseUpdate
+                    ? {}
+                    : pickForkAuthorExtras(forkId, prev)),
+                });
+                setForkSourceCourseId(null);
+                forkOriginAuthorRef.current = null;
+              }
+            } else {
+              const newPersonalId = await forkSharedCourseToPersonalRoute(
+                forkId,
+                routePayload,
+              );
+              apiSaved = Boolean(newPersonalId);
+              if (newPersonalId) {
+                savedAsPersonalFork = true;
+                effectiveId = newPersonalId;
+                if (newPersonalId !== localId) deleteUserRoute(localId);
+                upsertUserRoute({
+                  id: newPersonalId,
+                  title,
+                  createdAt: prev?.createdAt ?? now,
+                  updatedAt: now,
+                  collaborative: isCollab,
+                  tags: tagsForSave,
+                  stops: routePayload.stops,
+                  legs: routePayload.legs,
+                  publishedToPublic: wantPublic,
+                  coverImageUri: routeCoverImageUri,
+                  chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
+                  ...pickForkAuthorExtras(forkId, prev),
+                });
+                setForkSourceCourseId(null);
+                forkOriginAuthorRef.current = null;
+              }
+            }
+          } else if (serverId) {
+            apiSaved = await updateMyRoute(serverId, routePayload);
+            effectiveId = serverId;
             if (apiSaved) {
-              effectiveId = personalId;
-              if (personalId !== localId) deleteUserRoute(localId);
               upsertUserRoute({
-                id: personalId,
+                id: serverId,
                 title,
                 createdAt: prev?.createdAt ?? now,
                 updatedAt: now,
@@ -2705,23 +2769,17 @@ export default function RouteCreateScreen(): React.JSX.Element {
                 publishedToPublic: wantPublic,
                 coverImageUri: routeCoverImageUri,
                 chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
-                ...(isOwnCourseUpdate ? {} : pickForkAuthorExtras(forkId, prev)),
+                ...(forkMeta ? pickForkAuthorExtras(forkMeta, prev) : {}),
               });
-              setForkSourceCourseId(null);
-              forkOriginAuthorRef.current = null;
             }
           } else {
-            const newPersonalId = await forkSharedCourseToPersonalRoute(
-              forkId,
-              routePayload,
-            );
-            apiSaved = Boolean(newPersonalId);
-            if (newPersonalId) {
-              savedAsPersonalFork = true;
-              effectiveId = newPersonalId;
-              if (newPersonalId !== localId) deleteUserRoute(localId);
+            const createdId = await createMyRoute(routePayload);
+            apiSaved = Boolean(createdId);
+            if (createdId) {
+              effectiveId = createdId;
+              if (createdId !== localId) deleteUserRoute(localId);
               upsertUserRoute({
-                id: newPersonalId,
+                id: createdId,
                 title,
                 createdAt: prev?.createdAt ?? now,
                 updatedAt: now,
@@ -2732,137 +2790,94 @@ export default function RouteCreateScreen(): React.JSX.Element {
                 publishedToPublic: wantPublic,
                 coverImageUri: routeCoverImageUri,
                 chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
-                ...pickForkAuthorExtras(forkId, prev),
+                ...(forkMeta ? pickForkAuthorExtras(forkMeta, prev) : {}),
               });
-              setForkSourceCourseId(null);
-              forkOriginAuthorRef.current = null;
             }
           }
-        } else if (serverId) {
-          apiSaved = await updateMyRoute(serverId, routePayload);
-          effectiveId = serverId;
-          if (apiSaved) {
-            upsertUserRoute({
-              id: serverId,
-              title,
-              createdAt: prev?.createdAt ?? now,
-              updatedAt: now,
-              collaborative: isCollab,
-              tags: tagsForSave,
-              stops: routePayload.stops,
-              legs: routePayload.legs,
-              publishedToPublic: wantPublic,
-              coverImageUri: routeCoverImageUri,
-              chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
-              ...(forkMeta ? pickForkAuthorExtras(forkMeta, prev) : {}),
-            });
-          }
-        } else {
-          const createdId = await createMyRoute(routePayload);
-          apiSaved = Boolean(createdId);
-          if (createdId) {
-            effectiveId = createdId;
-            if (createdId !== localId) deleteUserRoute(localId);
-            upsertUserRoute({
-              id: createdId,
-              title,
-              createdAt: prev?.createdAt ?? now,
-              updatedAt: now,
-              collaborative: isCollab,
-              tags: tagsForSave,
-              stops: routePayload.stops,
-              legs: routePayload.legs,
-              publishedToPublic: wantPublic,
-              coverImageUri: routeCoverImageUri,
-              chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
-              ...(forkMeta ? pickForkAuthorExtras(forkMeta, prev) : {}),
-            });
-          }
-        }
 
-        if (
-          apiSaved &&
-          effectiveId &&
-          !String(effectiveId).startsWith("ur-") &&
-          !isCollab
-        ) {
-          await setMyCoursePublic(String(effectiveId), wantPublic);
-        }
+          if (
+            apiSaved &&
+            effectiveId &&
+            !String(effectiveId).startsWith("ur-") &&
+            !isCollab
+          ) {
+            await setMyCoursePublic(String(effectiveId), wantPublic);
+          }
 
-        let thumbnailSynced = true;
-        if (
-          apiSaved &&
-          effectiveId &&
-          !String(effectiveId).startsWith("ur-") &&
-          routeCoverImageUri
-        ) {
-          const uploaded = await syncMyCourseThumbnailToServer(
-            String(effectiveId),
-            routeCoverImageUri,
-          );
-          if (uploaded) {
-            const saved = getUserRoute(effectiveId);
-            if (saved) {
-              upsertUserRoute({ ...saved, coverImageUri: uploaded });
+          let thumbnailSynced = true;
+          if (
+            apiSaved &&
+            effectiveId &&
+            !String(effectiveId).startsWith("ur-") &&
+            routeCoverImageUri
+          ) {
+            const uploaded = await syncMyCourseThumbnailToServer(
+              String(effectiveId),
+              routeCoverImageUri,
+            );
+            if (uploaded) {
+              const saved = getUserRoute(effectiveId);
+              if (saved) {
+                upsertUserRoute({ ...saved, coverImageUri: uploaded });
+              }
+              setRouteCoverImageUri(uploaded);
+            } else if (isLocalThumbnailUri(routeCoverImageUri)) {
+              thumbnailSynced = false;
             }
-            setRouteCoverImageUri(uploaded);
-          } else if (isLocalThumbnailUri(routeCoverImageUri)) {
-            thumbnailSynced = false;
           }
-        }
 
-        if (!opts?.silent && apiSaved && !thumbnailSynced) {
-          showToast("코스는 저장됐지만 대표 이미지 업로드에 실패했어요");
-        }
+          if (!opts?.silent && apiSaved && !thumbnailSynced) {
+            showToast("코스는 저장됐지만 대표 이미지 업로드에 실패했어요");
+          }
 
-        commitPersistedRouteId(effectiveId);
+          commitPersistedRouteId(effectiveId);
 
-        if (isCollab && accessToken && authUser?.uuid && apiSaved) {
-          const ensured = await linkRouteToGroupChat({
-            accessToken,
-            myUuid: authUser.uuid,
-            routeId: effectiveId,
-            routeTitle: title,
-            existingChatRoomUuid:
-              routeChatRoomUuid ?? prev?.chatRoomUuid ?? null,
-          });
-          if (ensured) {
-            patchRouteChatRoom(effectiveId, ensured, {
-              ...(getUserRoute(effectiveId) ?? {
-                id: effectiveId,
-                title,
-                createdAt: prev?.createdAt ?? now,
-                updatedAt: now,
-                collaborative: true,
-                tags: tagsForSave,
-                stops: routePayload.stops,
-                legs: routePayload.legs,
-                publishedToPublic: wantPublic,
-              }),
-              chatRoomUuid: ensured,
+          if (isCollab && accessToken && authUser?.uuid && apiSaved) {
+            const ensured = await linkRouteToGroupChat({
+              accessToken,
+              myUuid: authUser.uuid,
+              routeId: effectiveId,
+              routeTitle: title,
+              existingChatRoomUuid:
+                routeChatRoomUuid ?? prev?.chatRoomUuid ?? null,
             });
+            if (ensured) {
+              patchRouteChatRoom(effectiveId, ensured, {
+                ...(getUserRoute(effectiveId) ?? {
+                  id: effectiveId,
+                  title,
+                  createdAt: prev?.createdAt ?? now,
+                  updatedAt: now,
+                  collaborative: true,
+                  tags: tagsForSave,
+                  stops: routePayload.stops,
+                  legs: routePayload.legs,
+                  publishedToPublic: wantPublic,
+                }),
+                chatRoomUuid: ensured,
+              });
+            }
           }
-        }
 
-        if (!opts?.silent) {
-          showToast(
-            apiSaved
-              ? savedAsPersonalFork
-                ? "개인 루트로 저장했어요"
-                : isCollab
-                  ? "저장 완료 · 채팅 탭에 단체 채팅이 생겼어요"
-                  : "저장 완료"
-              : "저장하지 못했어요",
-          );
-        }
+          if (!opts?.silent) {
+            showToast(
+              apiSaved
+                ? savedAsPersonalFork
+                  ? "개인 루트로 저장했어요"
+                  : isCollab
+                    ? "저장 완료 · 채팅 탭에 단체 채팅이 생겼어요"
+                    : "저장 완료"
+                : "저장하지 못했어요",
+            );
+          }
 
-        if (opts?.navigateBack && apiSaved) safeGoBack(navigation);
+          if (opts?.navigateBack && apiSaved) safeGoBack(navigation);
 
-        const savedRouteId =
-          apiSaved && effectiveId && !String(effectiveId).startsWith("ur-")
-            ? String(effectiveId)
-            : null;
-        return { ok: apiSaved, routeId: savedRouteId };
+          const savedRouteId =
+            apiSaved && effectiveId && !String(effectiveId).startsWith("ur-")
+              ? String(effectiveId)
+              : null;
+          return { ok: apiSaved, routeId: savedRouteId };
         } catch {
           return { ok: false, routeId: null };
         }
@@ -3094,8 +3109,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
 
   const handleInviteFriendsToRoute = async (friendUuids: string[]) => {
     const rid =
-      (await ensureCollaborativeRoutePersisted()) ??
-      getServerBackedRouteId();
+      (await ensureCollaborativeRoutePersisted()) ?? getServerBackedRouteId();
     if (!rid) {
       Alert.alert("", "공동 루트를 저장한 뒤 친구에게 공유할 수 있어요.");
       return;
@@ -3532,7 +3546,9 @@ export default function RouteCreateScreen(): React.JSX.Element {
             <ScrollView
               ref={itineraryScrollRef}
               className="flex-1 px-3"
-              scrollEnabled={viaDrag?.phase !== "lift" && viaDrag?.phase !== "drag"}
+              scrollEnabled={
+                viaDrag?.phase !== "lift" && viaDrag?.phase !== "drag"
+              }
               showsVerticalScrollIndicator={false}
               scrollEventThrottle={16}
               onScroll={(e) => {
@@ -3703,14 +3719,20 @@ export default function RouteCreateScreen(): React.JSX.Element {
                             style={{ marginLeft: 4 }}
                           />
                         </View>
-                        {legs[index].directionsSummary ? (
-                          <Text
-                            className="mt-0.5 pl-7 text-[11px] leading-4 text-slate-600"
-                            numberOfLines={2}
-                          >
-                            {legs[index].directionsSummary}
-                          </Text>
-                        ) : null}
+                        {(() => {
+                          const legSummary = sanitizeRouteDisplayText(
+                            legs[index].directionsSummary,
+                          );
+                          if (!legSummary) return null;
+                          return (
+                            <Text
+                              className="mt-0.5 pl-7 text-[11px] leading-4 text-slate-600"
+                              numberOfLines={2}
+                            >
+                              {legSummary}
+                            </Text>
+                          );
+                        })()}
                       </Pressable>
                     )}
                     {index < stops.length - 1 &&
@@ -3990,8 +4012,8 @@ export default function RouteCreateScreen(): React.JSX.Element {
                     ))}
                   </View>
                   <Text className="mt-1 text-[10px] text-gray-500">
-                    30km 이상/무제한은 카카오 API 특성상 넓은 범위 정확도
-                    기반으로 결과가 반환될 수 있어요.
+                    30km 이상·무제한 검색은 넓은 범위 기준으로 결과가 달라질 수
+                    있어요.
                   </Text>
                 </View>
               ) : null}
@@ -4169,14 +4191,15 @@ export default function RouteCreateScreen(): React.JSX.Element {
             </Text>
             {(() => {
               const leg = legs.find((l) => l.id === editingLegId);
-              if (!leg?.directionsDetail) return null;
+              const legDetail = sanitizeRouteDisplayText(leg?.directionsDetail);
+              if (!legDetail) return null;
               return (
                 <ScrollView
                   className="mb-3 max-h-40 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2"
                   nestedScrollEnabled
                 >
                   <Text className="text-xs leading-5 text-slate-700">
-                    {leg.directionsDetail}
+                    {legDetail}
                   </Text>
                 </ScrollView>
               );

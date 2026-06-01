@@ -20,6 +20,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import React from "react";
 
 const RESEND_INTERVAL_MS = 2000;
 const DEBOUNCE_MS = 2000;
@@ -141,9 +142,19 @@ export const MessageInput = ({
 
   const pickImageAsync = async () => {
     Keyboard.dismiss();
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      const { Alert } = await import("react-native");
+      Alert.alert(
+        "권한 필요",
+        "갤러리에서 사진을 선택하려면 사진 접근을 허용해 주세요.",
+      );
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
       allowsEditing: false,
-      quality: 1,
+      quality: 0.85,
     });
 
     if (!result.canceled) {
