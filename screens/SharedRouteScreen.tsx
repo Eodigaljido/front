@@ -76,8 +76,10 @@ import { mergeLocalThumbnailsIntoCourses } from "../utils/mergeCourseThumbnails"
 import { enrichCoursesWithForkOriginAuthors, enrichCourseWithForkOriginAuthor } from "../utils/enrichForkOriginAuthor";
 import { mergeCourseAuthorCredits } from "../utils/courseAuthorCredits";
 import { rootNavigate } from "../navigation/rootNavigation";
+import { useRouteSection } from "../context/RouteScreenContext";
 
 type SharedRouteParams = {
+  section?: "shared" | "my";
   openFilter?: boolean;
   openAsPopular?: boolean;
   viewCourseId?: string;
@@ -205,7 +207,13 @@ function CourseCard({
   );
 }
 
-export default function SharedRouteScreen(): React.JSX.Element {
+type SharedRouteScreenProps = {
+  embedded?: boolean;
+};
+
+export default function SharedRouteScreen({
+  embedded = false,
+}: SharedRouteScreenProps = {}): React.JSX.Element {
   const route = useRoute();
   const navigation = useNavigation<any>();
   const params = (route.params || {}) as SharedRouteParams;
@@ -217,6 +225,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
     userSavedRoutes,
   } = useMockData();
   const { showToast } = useToast();
+  const routeSection = useRouteSection();
   const authUser = useAuthStore((s) => s.user);
   const authorCtx = useMemo(
     () => ({
@@ -389,11 +398,13 @@ export default function SharedRouteScreen(): React.JSX.Element {
   };
 
   useEffect(() => {
+    if (params?.section === "my") return;
     if (params?.openFilter) setFilterVisible(true);
     if (params?.openAsPopular) setSelectedSort("인기순");
     if (params?.viewCourseId) setViewingCourseId(params.viewCourseId);
     if (typeof params?.initialQuery === "string") setSearchQuery(params.initialQuery);
   }, [
+    params?.section,
     params?.openFilter,
     params?.openAsPopular,
     params?.viewCourseId,
@@ -557,21 +568,13 @@ export default function SharedRouteScreen(): React.JSX.Element {
     setSelectedSort((prev) => (prev === opt ? null : opt));
   };
 
-  return (
-    <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={["top"]}>
-      {/* 헤더 배너 - 이미지 배경 + 내부 흐림(오버레이) */}
-      <View className="px-4 pt-2 pb-2">
-        <View
-          className="rounded-2xl px-4 py-4"
-          style={{ backgroundColor: "#2563EB" }}
-        >
-          <Text className="text-xl font-semibold text-white">공유 코스</Text>
-          <Text className="mt-1 text-xs text-blue-100">
-            다른 유저의 경로를 탐색하고 저장해 보세요
-          </Text>
-        </View>
-      </View>
+  const ScreenRoot = embedded ? View : SafeAreaView;
+  const screenRootProps = embedded
+    ? { className: "flex-1 bg-[#F0F5FF]" }
+    : { className: "flex-1 bg-[#F0F5FF]", edges: ["top"] as const };
 
+  return (
+    <ScreenRoot {...screenRootProps}>
       {/* 검색 + 필터 — 배경과 분리된 카드형 검색바 */}
       <View className="flex-row items-center gap-2.5 px-4 py-3">
         <View
@@ -964,9 +967,19 @@ export default function SharedRouteScreen(): React.JSX.Element {
                               <Pressable
                                 onPress={() => {
                                   closeCourseDetail();
-                                  navigation.navigate("MyRoute", {
-                                    viewCourseId: String(course.id),
-                                  });
+                                  const courseId = String(course.id);
+                                  if (routeSection) {
+                                    routeSection.setSection("my");
+                                    navigation.setParams({
+                                      section: "my",
+                                      viewCourseId: courseId,
+                                    });
+                                  } else {
+                                    navigation.navigate("Route", {
+                                      section: "my",
+                                      viewCourseId: courseId,
+                                    });
+                                  }
                                 }}
                                 className="flex-row items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 active:opacity-90"
                               >
@@ -1425,6 +1438,6 @@ export default function SharedRouteScreen(): React.JSX.Element {
           ) : null}
         </View>
       </Modal>
-    </SafeAreaView>
+    </ScreenRoot>
   );
 }

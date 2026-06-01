@@ -125,19 +125,15 @@ function CourseCard({
     isLocalOwnRoute?: boolean;
   };
 }) {
-  const cardPressedStyle = ({ pressed }: { pressed: boolean }) =>
-    pressed ? { opacity: 0.96 } : undefined;
-
   return (
     <View
-      className="mx-4 mb-3 overflow-hidden bg-white rounded-2xl"
+      className="mx-4 mb-3 overflow-hidden rounded-2xl bg-white"
       style={CARD_STYLE}
     >
-      {/* 상단: 카드 탭(상세) / 수정·삭제는 별도 터치 영역 */}
       <View className="flex-row border-b border-gray-100 p-3.5">
         <Pressable
           onPress={onPressCard}
-          style={({ pressed }) => [{ flex: 1, flexDirection: "row" }, cardPressedStyle({ pressed })]}
+          className="min-w-0 flex-1 flex-row active:opacity-95"
           accessibilityRole="button"
           accessibilityLabel={`${item.title} 코스 상세`}
         >
@@ -145,29 +141,33 @@ function CourseCard({
             {item.thumbnail ? (
               <Image
                 source={{ uri: item.thumbnail }}
-                className="w-full h-full"
+                className="h-full w-full"
                 resizeMode="cover"
               />
             ) : (
-              <View className="items-center justify-center w-full h-full bg-blue-50">
+              <View className="h-full w-full items-center justify-center bg-blue-50">
                 <Ionicons name="image-outline" size={24} color="#60a5fa" />
               </View>
             )}
           </View>
-          <View className="justify-center flex-1 min-w-0 ml-3">
-            <View className="flex-row items-start gap-1 flex-wrap">
+          <View className="ml-3 min-w-0 flex-1 justify-center">
+            <View className="flex-row flex-wrap items-start gap-1">
               {isCollaborative ? (
-                <View className="rounded-md bg-orange-100 px-1.5 py-0.5 mr-1">
+                <View className="mr-1 rounded-md bg-orange-100 px-1.5 py-0.5">
                   <Text className="text-[10px] font-bold text-orange-700">공동</Text>
                 </View>
               ) : null}
               {isFavorite ? (
-                <Ionicons name="bookmark" size={15} color="#2563EB" style={{ marginTop: 2 }} />
+                <Ionicons
+                  name="bookmark"
+                  size={15}
+                  color="#2563EB"
+                  style={{ marginTop: 2 }}
+                />
               ) : null}
               <Text
-                className="text-[15px] font-semibold leading-snug text-gray-900"
+                className="flex-1 text-[15px] font-semibold leading-snug text-gray-900"
                 numberOfLines={2}
-                style={{ flex: 1 }}
               >
                 {item.title}
               </Text>
@@ -178,69 +178,61 @@ function CourseCard({
             </Text>
           </View>
         </Pressable>
-        <View className="flex-row items-center">
-          <TouchableOpacity
-            onPress={onEdit}
-            className="justify-center pl-1"
+        <View className="ml-1 shrink-0 items-center justify-center pl-1">
+          <View className="flex-row items-center">
+            <TouchableOpacity onPress={onEdit} hitSlop={8} accessibilityLabel="수정">
+              <Ionicons name="create-outline" size={20} color="#3b82f6" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={onRemove}
+              className="ml-2"
+              hitSlop={8}
+              accessibilityLabel="삭제"
+            >
+              <Ionicons name="trash-outline" size={20} color="#ef4444" />
+            </TouchableOpacity>
+          </View>
+          <Pressable
+            onPress={onPressCard}
+            className="mt-2 active:opacity-70"
             hitSlop={8}
+            accessibilityLabel="상세 보기"
           >
-            <Ionicons name="create-outline" size={22} color="#3b82f6" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={onRemove}
-            className="justify-center pl-2"
-            hitSlop={8}
-          >
-            <Ionicons name="trash-outline" size={22} color="#ef4444" />
-          </TouchableOpacity>
+            <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
+          </Pressable>
         </View>
       </View>
 
       <Pressable
         onPress={onPressCard}
-        style={({ pressed }) => [
-          { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 10 },
-          cardPressedStyle({ pressed }),
-        ]}
+        className="flex-row items-center px-3.5 py-2.5 active:opacity-95"
         accessibilityRole="button"
         accessibilityLabel="출발·도착 보기"
       >
-        <View className="px-2 py-1 bg-blue-600 rounded-md">
+        <View className="rounded-md bg-blue-600 px-2 py-1">
           <Text className="text-[11px] font-semibold text-white">출발</Text>
         </View>
-        <Text className="ml-2 text-[13px] text-gray-900" numberOfLines={1}>
+        <Text className="ml-2 min-w-0 flex-1 text-[13px] text-gray-900" numberOfLines={1}>
           {item.departure}
         </Text>
-        <View className="w-px h-3 mx-2 bg-gray-300" />
-        <View className="px-2 py-1 bg-slate-500 rounded-md">
+        <View className="mx-2 h-3 w-px bg-gray-300" />
+        <View className="rounded-md bg-slate-500 px-2 py-1">
           <Text className="text-[11px] font-semibold text-white">도착</Text>
         </View>
-        <Text className="ml-2 flex-1 text-[13px] text-gray-900" numberOfLines={1}>
+        <Text className="ml-2 min-w-0 flex-1 text-[13px] text-gray-900" numberOfLines={1}>
           {item.arrival}
         </Text>
       </Pressable>
 
-      <View
-        className="border-t border-gray-100 px-3.5 py-2.5"
-        style={{ zIndex: 2, elevation: 2 }}
-      >
+      <View className="flex-row justify-end border-t border-gray-100 px-3.5 py-2">
         <Pressable
           onPress={onGuide}
-          style={({ pressed }) => ({
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 8,
-            borderRadius: 12,
-            backgroundColor: "#eff6ff",
-            paddingVertical: 10,
-            opacity: pressed ? 0.85 : 1,
-          })}
+          className="flex-row items-center rounded-lg bg-blue-50 px-3 py-1.5 active:opacity-85"
           accessibilityRole="button"
           accessibilityLabel="지도 안내"
         >
-          <Ionicons name="map-outline" size={18} color="#2563eb" />
-          <Text className="text-sm font-semibold text-blue-600">안내</Text>
+          <Ionicons name="map-outline" size={16} color="#2563eb" />
+          <Text className="ml-1.5 text-xs font-semibold text-blue-600">안내</Text>
         </Pressable>
       </View>
     </View>
@@ -267,9 +259,16 @@ function clampMyRouteDetailSheetHeight(px: number): number {
   return Math.min(Math.max(Math.round(px), minH), maxH);
 }
 
-type MyRouteParams = { viewCourseId?: string };
+type MyRouteParams = { viewCourseId?: string; section?: string };
 
-export default function MyRouteScreen(): React.JSX.Element {
+type MyRouteScreenProps = {
+  /** RouteScreen 탭 내부 — 상단 배너·SafeArea는 부모가 담당 */
+  embedded?: boolean;
+};
+
+export default function MyRouteScreen({
+  embedded = false,
+}: MyRouteScreenProps = {}): React.JSX.Element {
   const route = useRoute();
   const myRouteParams = (route.params || {}) as MyRouteParams;
   const authUser = useAuthStore((s) => s.user);
@@ -491,6 +490,7 @@ export default function MyRouteScreen(): React.JSX.Element {
   );
 
   useEffect(() => {
+    if (myRouteParams?.section === "shared") return;
     const vid = String(myRouteParams?.viewCourseId ?? "").trim();
     if (!vid) return;
     const fromUser = userSavedRoutes.find((r) => sameCourseId(r.id, vid));
@@ -500,7 +500,7 @@ export default function MyRouteScreen(): React.JSX.Element {
       : fromApi ?? null;
     if (snap) setViewingCourseSnapshot(snap);
     setViewingCourseId(vid);
-  }, [myRouteParams?.viewCourseId, userSavedRoutes, apiMyCourses]);
+  }, [myRouteParams?.section, myRouteParams?.viewCourseId, userSavedRoutes, apiMyCourses]);
 
   useEffect(() => {
     if (viewingCourseId) setDetailModalMounted(true);
@@ -857,29 +857,13 @@ export default function MyRouteScreen(): React.JSX.Element {
     rootNavigate("RouteCreate", { seedSharedCourseId: sharedCourseId });
   };
 
-  return (
-    <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={["top"]}>
-      {/* 헤더 배너 */}
-      <View className="px-4 pt-2 pb-2">
-        <View className="rounded-2xl px-4 py-4" style={{ backgroundColor: "#2563EB" }}>
-          <View className="flex-row items-center justify-between">
-            <View className="flex-1 pr-3">
-              <Text className="text-xl font-semibold text-white">내 코스</Text>
-              <Text className="mt-1 text-xs text-blue-100">
-                저장한 코스와 내가 만든 코스를 관리해요
-              </Text>
-            </View>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => rootNavigate("RouteCreate")}
-              className="px-3 py-2 rounded-lg bg-white/20 active:opacity-90"
-            >
-              <Text className="text-xs font-semibold text-white">루트 제작</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
+  const ScreenRoot = embedded ? View : SafeAreaView;
+  const screenRootProps = embedded
+    ? { className: "flex-1 bg-[#F0F5FF]" }
+    : { className: "flex-1 bg-[#F0F5FF]", edges: ["top"] as const };
 
+  return (
+    <ScreenRoot {...screenRootProps}>
       {/* 검색 + 필터 — 배경과 분리된 카드형 검색바 */}
       <View className="flex-row items-center gap-2.5 px-4 py-3">
         <View
@@ -1614,6 +1598,6 @@ export default function MyRouteScreen(): React.JSX.Element {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </ScreenRoot>
   );
 }

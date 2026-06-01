@@ -49,8 +49,10 @@ export function consumePendingShareNavigation(
             index: 1,
             routes: [
               { name: 'Home' },
-              { name: 'SharedRoute', params: { viewCourseId: link.courseId } },
-              { name: 'MyRoute' },
+              {
+                name: 'Route',
+                params: { section: 'shared', viewCourseId: link.courseId },
+              },
               { name: 'Chat' },
               { name: 'All' },
             ],
@@ -67,11 +69,10 @@ export function consumePendingShareNavigation(
       {
         name: 'Tabs',
         state: {
-          index: 4,
+          index: 3,
           routes: [
             { name: 'Home' },
-            { name: 'SharedRoute' },
-            { name: 'MyRoute' },
+            { name: 'Route' },
             { name: 'Chat' },
             { name: 'All', params: { friendCode: link.friendCode } },
           ],

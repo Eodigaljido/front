@@ -871,7 +871,7 @@ export default function HomeScreen(): React.JSX.Element {
     (courseId: string) => {
       const id = String(courseId ?? "").trim();
       if (!id) return;
-      navigation.navigate("SharedRoute", { viewCourseId: id });
+      navigation.navigate("Route", { section: "shared", viewCourseId: id });
       try {
         void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       } catch {}
@@ -968,7 +968,10 @@ export default function HomeScreen(): React.JSX.Element {
   ]);
   const executeRouteSearch = useCallback(() => {
     const q = homeSearchQuery.trim();
-    navigation.navigate("SharedRoute", q ? { initialQuery: q } : undefined);
+    navigation.navigate(
+      "Route",
+      q ? { section: "shared", initialQuery: q } : { section: "shared" },
+    );
     setSearchExpanded(false);
     setHomeSearchQuery("");
   }, [homeSearchQuery, navigation]);
@@ -1447,7 +1450,7 @@ export default function HomeScreen(): React.JSX.Element {
 
         <View style={{ marginTop: 20 }}>
           <View style={{ marginBottom: 12 }}>
-            <SectionHeader title="내 최근 코스" actionLabel="전체 보기" onPressAction={() => navigation.navigate("MyRoute")} />
+            <SectionHeader title="내 최근 코스" actionLabel="전체 보기" onPressAction={() => navigation.navigate("Route", { section: "my" })} />
           </View>
           <ScrollView
             horizontal
@@ -1459,7 +1462,12 @@ export default function HomeScreen(): React.JSX.Element {
             {recentCourses.map((course) => (
               <Pressable
                 key={course.id}
-                onPress={() => navigation.navigate("MyRoute")}
+                onPress={() =>
+                  navigation.navigate("Route", {
+                    section: "my",
+                    viewCourseId: String(course.id),
+                  })
+                }
                 className="mr-3 rounded-[16px] p-3 active:opacity-95"
                 style={{ width: RECENT_CARD_WIDTH, ...CARD_STYLE }}
               >
@@ -1586,7 +1594,7 @@ export default function HomeScreen(): React.JSX.Element {
               title="지금 인기 코스"
               actionLabel="더 보기"
               onPressAction={() =>
-                navigation.navigate("SharedRoute", { openAsPopular: true })
+                navigation.navigate("Route", { section: "shared", openAsPopular: true })
               }
             />
           </View>
@@ -1613,7 +1621,8 @@ export default function HomeScreen(): React.JSX.Element {
                   <Pressable
                     className="flex-row items-center flex-1 min-w-0 active:opacity-95"
                     onPress={() =>
-                      navigation.navigate("SharedRoute", {
+                      navigation.navigate("Route", {
+                        section: "shared",
                         viewCourseId: fid,
                       })
                     }

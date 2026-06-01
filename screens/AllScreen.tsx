@@ -72,8 +72,8 @@ export default function AllScreen(): React.JSX.Element {
       iconColor: '#ea580c',
       iconBg: '#ffedd5',
       onPress: () => {
-        setForcedActiveTab('SharedRoute');
-        navigation.navigate('AllSharedRoute');
+        setForcedActiveTab('Route');
+        navigation.navigate('AllRoute', { section: 'shared' });
       },
     },
     {
@@ -83,8 +83,8 @@ export default function AllScreen(): React.JSX.Element {
       iconColor: '#16a34a',
       iconBg: '#dcfce7',
       onPress: () => {
-        setForcedActiveTab('MyRoute');
-        navigation.navigate('AllMyRoute');
+        setForcedActiveTab('Route');
+        navigation.navigate('AllRoute', { section: 'my' });
       },
     },
     {
@@ -94,8 +94,8 @@ export default function AllScreen(): React.JSX.Element {
       iconColor: '#9333ea',
       iconBg: '#f3e8ff',
       onPress: () => {
-        setForcedActiveTab('SharedRoute');
-        navigation.navigate('AllSharedRoute', { openAsPopular: true });
+        setForcedActiveTab('Route');
+        navigation.navigate('AllRoute', { section: 'shared', openAsPopular: true });
       },
     },
   ];

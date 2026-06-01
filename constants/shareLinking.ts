@@ -24,8 +24,13 @@ const linkingConfig = {
     },
     Tabs: {
       screens: {
-        SharedRoute: {
+        Route: {
           path: 'courses/public/:viewCourseId',
+          parse: {
+            viewCourseId: (id: string) =>
+              decodeURIComponent(String(id ?? '').trim()),
+            section: () => 'shared' as const,
+          },
         },
         /** https://eodigaljido.uk/friends/add/{friendCode} */
         All: {
