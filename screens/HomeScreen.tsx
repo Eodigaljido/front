@@ -1303,7 +1303,7 @@ export default function HomeScreen(): React.JSX.Element {
           }}
         >
           <View className="flex-row justify-between">
-            <View className="flex-1 pr-3">
+            <View className="min-w-0 flex-1 pr-3">
               <Text className="text-sm font-semibold text-blue-100">
                 {authUser?.nickname ? `${authUser.nickname}님, 반가워요` : "반가워요"}
               </Text>
@@ -1311,69 +1311,6 @@ export default function HomeScreen(): React.JSX.Element {
                 오늘은 어디를 걸어볼까요?
               </Text>
               <Text style={{ marginTop: 4, fontSize: 13, fontWeight: "400", color: "#dbeafe" }}>{weatherMoodMessage}</Text>
-              {nearestSchedule ? (
-                <View
-                  style={{
-                    marginTop: 10,
-                    backgroundColor: "rgba(255,255,255,0.16)",
-                    borderWidth: 1,
-                    borderColor: "rgba(219,234,254,0.32)",
-                    borderRadius: 12,
-                    paddingHorizontal: 10,
-                    paddingVertical: 8,
-                  }}
-                >
-                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", flex: 1, marginRight: 8 }}>
-                      <View
-                        style={{
-                          backgroundColor: "rgba(255,255,255,0.2)",
-                          borderRadius: 999,
-                          paddingHorizontal: 8,
-                          paddingVertical: 3,
-                          marginRight: 6,
-                        }}
-                      >
-                        <Text style={{ color: "#FFFFFF", fontSize: 11, fontWeight: "700" }}>
-                          {nearestScheduleDdayLabel}
-                        </Text>
-                      </View>
-                      <Text numberOfLines={1} style={{ color: "#EFF6FF", fontSize: 12, fontWeight: "600", flex: 1 }}>
-                        {nearestSchedule.title}
-                      </Text>
-                    </View>
-                    <Pressable
-                      onPress={openScheduleModal}
-                      accessibilityRole="button"
-                      accessibilityLabel="약속 전체보기"
-                      style={{
-                        backgroundColor: "rgba(255,255,255,0.24)",
-                        borderRadius: 999,
-                        paddingHorizontal: 9,
-                        paddingVertical: 4,
-                      }}
-                    >
-                      <Text style={{ color: "#FFFFFF", fontSize: 11, fontWeight: "700" }}>전체보기</Text>
-                    </Pressable>
-                  </View>
-                  <Text style={{ marginTop: 4, color: "#DBEAFE", fontSize: 11 }}>
-                    {KO_DATE_TIME_FORMATTER.format(nearestSchedule.date)}
-                    {nearestSchedule.chatRoomName ? ` · ${nearestSchedule.chatRoomName}` : ""}
-                  </Text>
-                </View>
-              ) : null}
-              <Pressable
-                onPress={openRouteCreate}
-                className="self-start mt-4 active:opacity-90"
-                style={{
-                  backgroundColor: "#2563EB",
-                  borderRadius: 10,
-                  paddingVertical: 9,
-                  paddingHorizontal: 18,
-                }}
-              >
-                <Text style={{ color: "#ffffff", fontSize: 13, fontWeight: "600" }}>새 코스 만들기</Text>
-              </Pressable>
             </View>
             <View
               style={{
@@ -1407,6 +1344,83 @@ export default function HomeScreen(): React.JSX.Element {
                 })()}
               </View>
             </View>
+          </View>
+          <View style={{ flexDirection: "row", marginTop: 12, gap: 8, width: "100%" }}>
+            <Pressable
+              onPress={openScheduleModal}
+              accessibilityRole="button"
+              accessibilityLabel={nearestSchedule ? "다가오는 일정 보기" : "일정 보기"}
+              className="active:opacity-90"
+              style={{
+                flex: 2,
+                minWidth: 0,
+                backgroundColor: "rgba(255,255,255,0.16)",
+                borderWidth: 1,
+                borderColor: "rgba(219,234,254,0.32)",
+                borderRadius: 12,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                justifyContent: "center",
+              }}
+            >
+              {nearestSchedule ? (
+                <>
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <View
+                      style={{
+                        backgroundColor: "rgba(255,255,255,0.2)",
+                        borderRadius: 999,
+                        paddingHorizontal: 8,
+                        paddingVertical: 3,
+                        marginRight: 6,
+                      }}
+                    >
+                      <Text style={{ color: "#FFFFFF", fontSize: 11, fontWeight: "700" }}>
+                        {nearestScheduleDdayLabel}
+                      </Text>
+                    </View>
+                    <Text
+                      numberOfLines={1}
+                      style={{ color: "#EFF6FF", fontSize: 13, fontWeight: "600", flex: 1 }}
+                    >
+                      {nearestSchedule.title}
+                    </Text>
+                  </View>
+                  <Text numberOfLines={1} style={{ marginTop: 4, color: "#DBEAFE", fontSize: 11 }}>
+                    {KO_DATE_TIME_FORMATTER.format(nearestSchedule.date)}
+                    {nearestSchedule.chatRoomName ? ` · ${nearestSchedule.chatRoomName}` : ""}
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text style={{ color: "#FFFFFF", fontSize: 14, fontWeight: "600" }}>일정</Text>
+                  <Text style={{ marginTop: 2, color: "#DBEAFE", fontSize: 12 }}>약속 보기</Text>
+                </>
+              )}
+            </Pressable>
+            <Pressable
+              onPress={openRouteCreate}
+              accessibilityRole="button"
+              accessibilityLabel="새 코스 만들기"
+              className="active:opacity-90"
+              style={{
+                flex: 1,
+                minWidth: 0,
+                backgroundColor: "#FFFFFF",
+                borderRadius: 12,
+                paddingVertical: 10,
+                paddingHorizontal: 8,
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <Text
+                numberOfLines={2}
+                style={{ color: "#2563EB", fontSize: 13, fontWeight: "700", textAlign: "center" }}
+              >
+                새 코스 만들기
+              </Text>
+            </Pressable>
           </View>
         </LinearGradient>
 
