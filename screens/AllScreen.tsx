@@ -27,6 +27,7 @@ export default function AllScreen(): React.JSX.Element {
   const route = useRoute();
   const authUser = useAuthStore(s => s.user);
   const profileImageCacheBust = useAuthStore(s => s.profileImageCacheBust);
+  const refreshProfile = useAuthStore(s => s.refreshProfile);
   const setForcedActiveTab = useTabStore(s => s.setForcedActiveTab);
   const [friendCount, setFriendCount] = useState<number>(0);
   const [pendingRequestCount, setPendingRequestCount] = useState<number>(0);
@@ -41,13 +42,14 @@ export default function AllScreen(): React.JSX.Element {
       const [friends, reqs] = await Promise.all([
         getFriends().catch(() => []),
         getFriendRequests().catch(() => []),
+        refreshProfile(),
       ]);
       setFriendCount(friends.length);
       setPendingRequestCount(reqs.filter(r => r.direction === 'RECEIVED').length);
     } catch {
       // 무시
     }
-  }, []);
+  }, [refreshProfile]);
 
   useFocusEffect(
     useCallback(() => {
