@@ -1,21 +1,41 @@
-import { instance } from '../axios';
+import { instance } from "../axios";
 import type {
   Group,
   CreateGroupRequest,
   UpdateGroupRequest,
   JoinStatus,
   PageResponse,
-} from './types';
+} from "./types";
 
 /** GET /api/groups — 공개 모임 목록 (인증 없이 접근 가능) */
 export async function getPublicGroups(
   page = 0,
   size = 20,
 ): Promise<PageResponse<Group>> {
-  const res = await instance.get<PageResponse<Group>>('/api/groups', {
+  const res = await instance.get<PageResponse<Group>>("/api/groups", {
     params: { page, size },
   });
   return res.data;
+}
+
+/** GET /api/groups/my — 내가 가입한 모임 목록 (비공개 포함) */
+export async function getMyGroups(
+  accessToken: string,
+  page = 0,
+  size = 50,
+): Promise<Group[]> {
+  const res = await instance.get<Group[] | PageResponse<Group>>(
+    "/api/groups/me",
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      params: { page, size },
+    },
+  );
+  if (Array.isArray(res.data)) return res.data;
+  if (res.data && Array.isArray((res.data as PageResponse<Group>).content)) {
+    return (res.data as PageResponse<Group>).content;
+  }
+  return [];
 }
 
 /** POST /api/groups — 모임 생성 */
@@ -23,7 +43,7 @@ export async function createGroup(
   accessToken: string,
   data: CreateGroupRequest,
 ): Promise<Group> {
-  const res = await instance.post<Group>('/api/groups', data, {
+  const res = await instance.post<Group>("/api/groups", data, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   return res.data;
