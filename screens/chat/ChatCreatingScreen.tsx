@@ -8,7 +8,6 @@ import {
   Image,
   Dimensions,
   ActivityIndicator,
-  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NavigationProp, useNavigation } from "@react-navigation/native";
@@ -29,6 +28,7 @@ import { useAuthStore } from "@/store/authStore";
 import { getFriends, getFriendsRecent } from "@/api/friend/friends";
 import { createChatRoom, updateChatRoomImage } from "@/api/chat/chat";
 import { CHAT_PRESET_IMAGES } from "@/constants/chatPresetAvatars";
+import { useToast } from "@/context/ToastContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -63,6 +63,7 @@ export default function ChatCreatingScreen(): React.JSX.Element {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const accessToken = useAuthStore((s) => s.accessToken);
   const myUuid = useAuthStore((s) => s.user?.uuid);
+  const { showToast } = useToast();
 
   const [step, setStep] = useState<"invite" | "setup">("invite");
 
@@ -145,7 +146,7 @@ export default function ChatCreatingScreen(): React.JSX.Element {
     if (!accessToken) return;
     const trimedName = roomName.trim();
     if (trimedName.length === 0) {
-      Alert.alert("알림", "채팅방 이름을 입력해주세요.");
+      showToast("채팅방 이름을 입력해주세요.");
       return;
     }
     const allKnownFriends = [...recentFriends, ...allFriends];
@@ -184,7 +185,7 @@ export default function ChatCreatingScreen(): React.JSX.Element {
 
       navigation.goBack();
     } catch {
-      Alert.alert("오류", "채팅방 생성에 실패했습니다.");
+      showToast("채팅방 생성에 실패했습니다.");
     } finally {
       setIsCreating(false);
     }
