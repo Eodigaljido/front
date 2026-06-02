@@ -8,7 +8,7 @@ export const ChatCreatingButton = () => {
     <TouchableOpacity
       className="p-2 rounded-full"
       activeOpacity={0.7}
-      onPress={() => rootNavigate("MeetHome")}
+      onPress={() => rootNavigate("ChatCreatingScreen")}
     >
       <Plus color="#6C6C6C" strokeWidth={2} />
     </TouchableOpacity>
