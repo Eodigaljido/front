@@ -20,26 +20,6 @@ import {
   Platform,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  ScrollView,
-  TouchableOpacity,
-  Pressable,
-  Modal,
-  Image,
-  FlatList,
-  ImageBackground,
-  StyleSheet,
-  Alert,
-  ActivityIndicator,
-  Animated,
-  Dimensions,
-  PanResponder,
-} from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import {
