@@ -296,6 +296,8 @@ export default function SharedRouteScreen(): React.JSX.Element {
   const [reviewAnonymous, setReviewAnonymous] = useState(false);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewBody, setReviewBody] = useState("");
+  const routeSection = useRouteSection();
+  const embedded = false;
   const [savingMyRoute, setSavingMyRoute] = useState(false);
   const [detailModalMounted, setDetailModalMounted] = useState(false);
   const detailBackdropOpacity = useRef(new Animated.Value(0)).current;
