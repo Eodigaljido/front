@@ -20,7 +20,7 @@
     },
     "android": {
       "package": "com.eodigaljido.app",
-      "versionCode": 10,
+      "versionCode": 13,
       "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "foregroundImage": "./assets/Eodigaljido.png",

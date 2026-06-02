@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Client } from "@stomp/stompjs";
 import SockJS from "sockjs-client";
 import { useAuthStore } from "@/store/authStore";
@@ -26,6 +26,7 @@ export function useChatSocket(
   onTypingEvent?: (event: TypingEvent) => void,
 ) {
   const clientRef = useRef<Client | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
   const accessToken = useAuthStore((s) => s.accessToken);
   const onEventRef = useRef(onEvent);
   const onTypingEventRef = useRef(onTypingEvent);
@@ -52,6 +53,7 @@ export function useChatSocket(
       connectHeaders: { Authorization: `Bearer ${accessToken}` },
       reconnectDelay: 5000,
       onConnect: () => {
+        setIsConnected(true);
         uuids.forEach((uuid) => {
           console.log("[STOMP] 연결됨 →", `/topic/chat/${uuid}`);
           client.subscribe(`/topic/chat/${uuid}`, (frame) => {
@@ -87,6 +89,7 @@ export function useChatSocket(
     clientRef.current = client;
 
     return () => {
+      setIsConnected(false);
       client.deactivate();
       clientRef.current = null;
     };
@@ -96,7 +99,7 @@ export function useChatSocket(
   const singleRoomUuid = Array.isArray(roomUuid) ? "" : roomUuid;
 
   const sendMessage = useCallback(
-    async (content: string): Promise<void> => {
+    async (content: string): Promise<ChatMessage | null> => {
       if (!singleRoomUuid) {
         throw new Error(
           "메시지를 전송할 수 없습니다: 채팅방이 지정되지 않았습니다.",
@@ -107,11 +110,12 @@ export function useChatSocket(
           destination: `/app/chat/${singleRoomUuid}`,
           body: JSON.stringify({ content, mentionedUserUuids: [] }),
         });
-      } else if (accessToken) {
-        await sendMessageHttp(accessToken, singleRoomUuid, content);
-      } else {
-        throw new Error("메시지를 전송할 수 없습니다: 연결이 끊어졌습니다.");
+        return null;
       }
+      if (accessToken) {
+        return sendMessageHttp(accessToken, singleRoomUuid, content);
+      }
+      throw new Error("메시지를 전송할 수 없습니다: 연결이 끊어졌습니다.");
     },
     [accessToken, singleRoomUuid],
   );
@@ -127,5 +131,5 @@ export function useChatSocket(
     [singleRoomUuid],
   );
 
-  return { sendMessage, sendTyping };
+  return { sendMessage, sendTyping, isConnected };
 }

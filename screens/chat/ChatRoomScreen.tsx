@@ -63,12 +63,14 @@ export const ChatRoomScreen = () => {
     (event: ChatSocketEvent) => {
       if (event.eventType === "MESSAGE_CREATED") {
         if (event.payload.senderUuid === userUuid) {
-          // 내가 보낸 메시지 에코: pending 메시지를 서버 응답(실제 UUID)으로 교체
           setMessages((prev) => {
             const pendingIdx = prev.findIndex((m) =>
               m.uuid.startsWith("pending-"),
             );
-            if (pendingIdx === -1) return prev;
+            if (pendingIdx === -1) {
+              if (prev.some((m) => m.uuid === event.payload.uuid)) return prev;
+              return [...prev, event.payload];
+            }
             if (scrollOnImageLoadRef.current?.startsWith("pending-")) {
               scrollOnImageLoadRef.current = event.payload.uuid;
             }
@@ -76,7 +78,10 @@ export const ChatRoomScreen = () => {
           });
           return;
         }
-        setMessages((prev) => [...prev, event.payload]);
+        setMessages((prev) => {
+          if (prev.some((m) => m.uuid === event.payload.uuid)) return prev;
+          return [...prev, event.payload];
+        });
         setTimeout(
           () => scrollViewRef.current?.scrollToEnd({ animated: true }),
           50,
@@ -182,7 +187,17 @@ export const ChatRoomScreen = () => {
       50,
     );
     try {
-      await socketSend(text);
+      const saved = await socketSend(text);
+      if (saved) {
+        setMessages((prev) => {
+          const pendingIdx = prev.findIndex((m) => m.uuid === pendingUuid);
+          if (pendingIdx === -1) {
+            if (prev.some((m) => m.uuid === saved.uuid)) return prev;
+            return [...prev, saved];
+          }
+          return prev.map((m, i) => (i === pendingIdx ? saved : m));
+        });
+      }
     } catch (err) {
       console.error("[Chat] 메시지 전송 실패:", err);
       setMessages((prev) => prev.filter((m) => m.uuid !== pendingUuid));

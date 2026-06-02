@@ -227,6 +227,7 @@ export default function SharedRouteScreen({
   const { showToast } = useToast();
   const routeSection = useRouteSection();
   const authUser = useAuthStore((s) => s.user);
+  const accessToken = useAuthStore((s) => s.accessToken);
   const authorCtx = useMemo(
     () => ({
       myUuid: authUser?.uuid,
@@ -956,6 +957,8 @@ export default function SharedRouteScreen({
                                 void sharePublicCourse({
                                   courseId: course.id,
                                   title: course.title,
+                                  accessToken,
+                                  myUuid: authUser?.uuid,
                                 })
                               }
                               className="flex-row items-center rounded-lg border border-gray-300 bg-white px-3 py-2 active:opacity-90"

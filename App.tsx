@@ -71,6 +71,7 @@ export type RootStackParamList = {
         editRouteId?: string;
         collaborative?: boolean;
         seedSharedCourseId?: string;
+        contributorSummary?: string;
       }
     | undefined;
   ProfileSettings: undefined;

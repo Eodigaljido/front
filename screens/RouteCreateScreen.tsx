@@ -46,6 +46,7 @@ import {
   type MockPlace,
   estimateMinutes,
 } from "../data/routeCreateMocks";
+import { getChatRooms } from "../api/chat/chat";
 import {
   getRouteMembers,
   hasCollaboratorPeers,
@@ -58,7 +59,10 @@ import { presentCollaborativeShareOptions } from "../utils/shareCollaborativeRou
 import { useAuthStore } from "../store/authStore";
 import {
   linkRouteToGroupChat,
+  linkCourseChatRoomForShare,
   inviteFriendsToRouteChat,
+  buildRouteGroupChatName,
+  promptCreateCourseChatRoom,
 } from "../data/routeCollaborativeChat";
 import {
   searchKakaoPlacesByKeyword,
@@ -838,6 +842,9 @@ export default function RouteCreateScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const { height: windowH } = useWindowDimensions();
   const editRouteIdParam = route.params?.editRouteId as string | undefined;
+  const contributorSummaryParam = String(
+    route.params?.contributorSummary ?? "",
+  ).trim();
   const isEditingMyRoute = Boolean(editRouteIdParam);
   const clampRouteSheetHeight = useCallback(
     (px: number) => {
@@ -911,6 +918,26 @@ export default function RouteCreateScreen(): React.JSX.Element {
   }, [windowH, clampRouteSheetHeight]);
   const { upsertUserRoute, getUserRoute, deleteUserRoute, userSavedRoutes } =
     useMockData();
+  const userSavedRoutesRef = useRef(userSavedRoutes);
+  userSavedRoutesRef.current = userSavedRoutes;
+
+  const routeSessionKey = useMemo(() => {
+    const editId = String(route.params?.editRouteId ?? "");
+    const seedId = String(route.params?.seedSharedCourseId ?? "");
+    const collab = route.params?.collaborative === true ? "1" : "0";
+    return `${editId}|${seedId}|${collab}`;
+  }, [
+    route.params?.editRouteId,
+    route.params?.seedSharedCourseId,
+    route.params?.collaborative,
+  ]);
+  const routeSessionHydratedRef = useRef<string | null>(null);
+  const createRouteInFlightRef = useRef<Promise<string | null> | null>(null);
+  const collabAutoSaveAttemptedRef = useRef(false);
+  const collabAutoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const initialDraftPersistTriedRef = useRef(false);
 
   const [stops, setStops] = useState<RouteStop[]>(() =>
     ROUTE_CREATE_EMPTY_STOPS.map((s) => ({ ...s })),
@@ -1108,15 +1135,11 @@ export default function RouteCreateScreen(): React.JSX.Element {
   const initialMapCenterFetchedRef = useRef(false);
 
   const [chatOpen, setChatOpen] = useState(false);
-  const [chatMessages, setChatMessages] = useState<
-    {
-      id: string;
-      from: "me" | "other";
-      name: string;
-      text: string;
-      at: number;
-    }[]
-  >([]);
+  const [activeChatRoomMeta, setActiveChatRoomMeta] = useState<{
+    name: string;
+    memberCount: number;
+  } | null>(null);
+  const [chatLinking, setChatLinking] = useState(false);
   const [routeChatRoomUuid, setRouteChatRoomUuid] = useState<string | null>(
     null,
   );
@@ -1134,6 +1157,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [editingLegId, setEditingLegId] = useState<string | null>(null);
   const [publishToPublic, setPublishToPublic] = useState(false);
+  const [wantsCourseChatRoom, setWantsCourseChatRoom] = useState(false);
 
   const syncPublishToPublicFromRoute = useCallback(
     async (routeId: string, localPublished?: boolean) => {
@@ -1188,10 +1212,6 @@ export default function RouteCreateScreen(): React.JSX.Element {
     [isEditingMyRoute, isCollaborative, publishToPublic],
   );
 
-  const openRouteChat = useCallback(() => {
-    setChatOpen(true);
-  }, []);
-
   useEffect(() => {
     if (route.params?.collaborative === true) setCollaborativeDraft(true);
     const eid = route.params?.editRouteId as string | undefined;
@@ -1205,9 +1225,28 @@ export default function RouteCreateScreen(): React.JSX.Element {
     if (collaborativeModeLocked) setCollaborativeDraft(true);
   }, [collaborativeModeLocked]);
 
+  useEffect(() => {
+    const resetSession = () => {
+      routeSessionHydratedRef.current = null;
+      initialDraftPersistTriedRef.current = false;
+      collabAutoSaveAttemptedRef.current = false;
+      draftLocalRouteIdRef.current = null;
+    };
+    const unsubRemove = navigation.addListener("beforeRemove", resetSession);
+    return () => {
+      unsubRemove();
+    };
+  }, [navigation]);
+
   useFocusEffect(
     useCallback(() => {
+      if (routeSessionHydratedRef.current === routeSessionKey) {
+        return undefined;
+      }
+      routeSessionHydratedRef.current = routeSessionKey;
+
       let cancelled = false;
+      const savedRoutes = userSavedRoutesRef.current;
 
       const editId = route.params?.editRouteId as string | undefined;
       const seedId = route.params?.seedSharedCourseId as string | undefined;
@@ -1215,7 +1254,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
         route.params?.collaborative === true ||
         (editId
           ? Boolean(
-              userSavedRoutes.find((x) => String(x.id) === String(editId))
+              savedRoutes.find((x) => String(x.id) === String(editId))
                 ?.collaborative,
             )
           : false);
@@ -1230,7 +1269,6 @@ export default function RouteCreateScreen(): React.JSX.Element {
         setPublishToPublic(false);
         setStops(ROUTE_CREATE_EMPTY_STOPS.map((s) => ({ ...s })));
         setLegs([]);
-        setChatMessages([]);
         setRouteChatRoomUuid(null);
         setRouteCoverImageUri(null);
       };
@@ -1274,7 +1312,6 @@ export default function RouteCreateScreen(): React.JSX.Element {
         );
         setStops(nextStops);
         setLegs(nextLegs);
-        setChatMessages([]);
         setRouteCoverImageUri(
           resolveCourseThumbnailForDisplay(course.thumbnail, null),
         );
@@ -1323,13 +1360,13 @@ export default function RouteCreateScreen(): React.JSX.Element {
             distanceMeters: l.distanceMeters,
           })),
         );
-        setChatMessages([]);
         setRouteChatRoomUuid(r.chatRoomUuid ?? null);
+        setWantsCourseChatRoom(Boolean(String(r.chatRoomUuid ?? "").trim()));
         void syncPublishToPublicFromRoute(r.id, r.publishedToPublic);
       };
 
       if (editId) {
-        const r = userSavedRoutes.find((x) => sameCourseId(x.id, editId));
+        const r = savedRoutes.find((x) => sameCourseId(x.id, editId));
         if (r) {
           applyLocalSavedRoute(r);
           return () => {
@@ -1346,7 +1383,8 @@ export default function RouteCreateScreen(): React.JSX.Element {
             if (cancelled) return;
             if (collabFromApi) setCollaborativeDraft(true);
             if (detail) {
-              const localR = userSavedRoutes.find(
+              const routesNow = userSavedRoutesRef.current;
+              const localR = routesNow.find(
                 (x) => String(x.id) === String(editId),
               );
               const detailTagList = Array.isArray(detail.tags)
@@ -1363,14 +1401,14 @@ export default function RouteCreateScreen(): React.JSX.Element {
                 : [];
               if (source === "shared") {
                 const personalId =
-                  findPersonalRouteIdForForkSource(editId, userSavedRoutes) ||
+                  findPersonalRouteIdForForkSource(editId, routesNow) ||
                   (await resolvePersonalRouteIdForForkSave(
                     editId,
-                    userSavedRoutes,
+                    routesNow,
                     null,
                   ));
                 const localPersonal = personalId
-                  ? userSavedRoutes.find((x) => sameCourseId(x.id, personalId))
+                  ? routesNow.find((x) => sameCourseId(x.id, personalId))
                   : undefined;
                 if (localPersonal) {
                   applyLocalSavedRoute(localPersonal);
@@ -1402,11 +1440,9 @@ export default function RouteCreateScreen(): React.JSX.Element {
               return;
             }
             applyEmptyRoute();
-            setChatMessages([]);
           } catch {
             if (!cancelled) {
               applyEmptyRoute();
-              setChatMessages([]);
             }
           }
         })();
@@ -1418,10 +1454,10 @@ export default function RouteCreateScreen(): React.JSX.Element {
       if (seedId) {
         const personalId = findPersonalRouteIdForForkSource(
           seedId,
-          userSavedRoutes,
+          savedRoutes,
         );
         const localPersonal = personalId
-          ? userSavedRoutes.find((x) => sameCourseId(x.id, personalId))
+          ? savedRoutes.find((x) => sameCourseId(x.id, personalId))
           : undefined;
         if (localPersonal) {
           applyLocalSavedRoute(localPersonal);
@@ -1444,7 +1480,6 @@ export default function RouteCreateScreen(): React.JSX.Element {
             if (cancelled) return;
             if (!c || !hasMeaningfulRouteSteps(c)) {
               applyEmptyRoute();
-              setChatMessages([]);
               return;
             }
             applyCourseToEditor(c, {
@@ -1454,7 +1489,6 @@ export default function RouteCreateScreen(): React.JSX.Element {
           } catch {
             if (!cancelled) {
               applyEmptyRoute();
-              setChatMessages([]);
             }
           }
         })();
@@ -1469,10 +1503,10 @@ export default function RouteCreateScreen(): React.JSX.Element {
         cancelled = true;
       };
     }, [
+      routeSessionKey,
       route.params?.collaborative,
       route.params?.editRouteId,
       route.params?.seedSharedCourseId,
-      userSavedRoutes,
       syncPublishToPublicFromRoute,
       commitPersistedRouteId,
     ]),
@@ -2530,22 +2564,6 @@ export default function RouteCreateScreen(): React.JSX.Element {
     setEditingStop(null);
   };
 
-  const sendChatFallback = (text: string) => {
-    if (!isCollaborative) return;
-    const t = text.trim();
-    if (!t) return;
-    setChatMessages((m) => [
-      ...m,
-      {
-        id: uid(),
-        from: "me",
-        name: authUser?.nickname ?? "나",
-        text: t,
-        at: Date.now(),
-      },
-    ]);
-  };
-
   const pickRouteCoverImage = useCallback(async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
@@ -2768,25 +2786,58 @@ export default function RouteCreateScreen(): React.JSX.Element {
             });
           }
         } else {
-          const createdId = await createMyRoute(routePayload);
-          apiSaved = Boolean(createdId);
-          if (createdId) {
-            effectiveId = createdId;
-            if (createdId !== localId) deleteUserRoute(localId);
-            upsertUserRoute({
-              id: createdId,
-              title,
-              createdAt: prev?.createdAt ?? now,
-              updatedAt: now,
-              collaborative: isCollab,
-              tags: tagsForSave,
-              stops: routePayload.stops,
-              legs: routePayload.legs,
-              publishedToPublic: wantPublic,
-              coverImageUri: routeCoverImageUri,
-              chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
-              ...(forkMeta ? pickForkAuthorExtras(forkMeta, prev) : {}),
-            });
+          const racedServerId = pickServerBackedRouteId();
+          if (racedServerId) {
+            apiSaved = await updateMyRoute(racedServerId, routePayload);
+            effectiveId = racedServerId;
+            if (apiSaved) {
+              upsertUserRoute({
+                id: racedServerId,
+                title,
+                createdAt: prev?.createdAt ?? now,
+                updatedAt: now,
+                collaborative: isCollab,
+                tags: tagsForSave,
+                stops: routePayload.stops,
+                legs: routePayload.legs,
+                publishedToPublic: wantPublic,
+                coverImageUri: routeCoverImageUri,
+                chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
+                ...(forkMeta ? pickForkAuthorExtras(forkMeta, prev) : {}),
+              });
+            }
+          } else {
+            let createdId: string | null = null;
+            if (createRouteInFlightRef.current) {
+              createdId = await createRouteInFlightRef.current;
+            } else {
+              const createTask = createMyRoute(routePayload);
+              createRouteInFlightRef.current = createTask;
+              try {
+                createdId = await createTask;
+              } finally {
+                createRouteInFlightRef.current = null;
+              }
+            }
+            apiSaved = Boolean(createdId);
+            if (createdId) {
+              effectiveId = createdId;
+              if (createdId !== localId) deleteUserRoute(localId);
+              upsertUserRoute({
+                id: createdId,
+                title,
+                createdAt: prev?.createdAt ?? now,
+                updatedAt: now,
+                collaborative: isCollab,
+                tags: tagsForSave,
+                stops: routePayload.stops,
+                legs: routePayload.legs,
+                publishedToPublic: wantPublic,
+                coverImageUri: routeCoverImageUri,
+                chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
+                ...(forkMeta ? pickForkAuthorExtras(forkMeta, prev) : {}),
+              });
+            }
           }
         }
 
@@ -2827,7 +2878,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
 
         commitPersistedRouteId(effectiveId);
 
-        if (isCollab && accessToken && authUser?.uuid && apiSaved) {
+        if ((isCollab || (wantPublic && wantsCourseChatRoom)) && accessToken && authUser?.uuid && apiSaved) {
           const ensured = await linkRouteToGroupChat({
             accessToken,
             myUuid: authUser.uuid,
@@ -2859,8 +2910,8 @@ export default function RouteCreateScreen(): React.JSX.Element {
             apiSaved
               ? savedAsPersonalFork
                 ? "개인 루트로 저장했어요"
-                : isCollab
-                  ? "저장 완료 · 채팅 탭에 단체 채팅이 생겼어요"
+                : isCollab || (wantPublic && wantsCourseChatRoom)
+                  ? "저장 완료 · 채팅 탭에 연동됐어요"
                   : "저장 완료"
               : "저장하지 못했어요",
           );
@@ -2896,6 +2947,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
       forkSourceCourseId,
       collaborativeDraft,
       publishToPublic,
+      wantsCourseChatRoom,
       selectedTags,
       routeCoverImageUri,
       routeChatRoomUuid,
@@ -2909,6 +2961,162 @@ export default function RouteCreateScreen(): React.JSX.Element {
       navigation,
     ],
   );
+
+  const openRouteChat = useCallback(async () => {
+    if (!accessToken || !authUser?.uuid) {
+      showToast("로그인 후 채팅을 사용할 수 있어요");
+      return;
+    }
+    setChatLinking(true);
+    try {
+      let routeId = pickServerBackedRouteId();
+      if (!routeId) {
+        const res = await persistRouteToServer({
+          silent: true,
+          requireCoords: false,
+          navigateBack: false,
+        });
+        routeId = res.routeId;
+      }
+      if (!routeId) {
+        showToast("루트를 먼저 저장한 뒤 채팅을 열 수 있어요");
+        return;
+      }
+      const prev = getUserRoute(routeId);
+      const ensured = await linkRouteToGroupChat({
+        accessToken,
+        myUuid: authUser.uuid,
+        routeId,
+        routeTitle: routeTitle.trim() || "루트",
+        existingChatRoomUuid:
+          routeChatRoomUuid ?? prev?.chatRoomUuid ?? null,
+      });
+      if (ensured) {
+        patchRouteChatRoom(routeId, ensured, prev ?? undefined);
+        setActiveChatRoomMeta({
+          name: buildRouteGroupChatName(routeTitle.trim() || "루트"),
+          memberCount: Math.max(2, collabMembers.length),
+        });
+      }
+      if (!ensured && !routeChatRoomUuid) {
+        showToast("채팅방 연결에 실패했어요. 잠시 후 다시 시도해 주세요");
+        return;
+      }
+      setChatOpen(true);
+    } finally {
+      setChatLinking(false);
+    }
+  }, [
+    accessToken,
+    authUser?.uuid,
+    pickServerBackedRouteId,
+    persistRouteToServer,
+    routeTitle,
+    routeChatRoomUuid,
+    getUserRoute,
+    patchRouteChatRoom,
+    showToast,
+    collabMembers.length,
+  ]);
+
+  const handleSelectRouteChatRoom = useCallback(
+    (room: { uuid: string; name: string; memberCount: number }) => {
+      setRouteChatRoomUuid(room.uuid);
+      setActiveChatRoomMeta({
+        name: room.name,
+        memberCount: room.memberCount,
+      });
+      const rid = pickServerBackedRouteId();
+      if (rid) {
+        patchRouteChatRoom(rid, room.uuid);
+      }
+      setChatOpen(true);
+    },
+    [pickServerBackedRouteId, patchRouteChatRoom],
+  );
+
+  const openRouteChatList = useCallback(async () => {
+    if (!accessToken) {
+      showToast("로그인 후 채팅 목록을 볼 수 있어요");
+      return;
+    }
+    try {
+      const rooms = await getChatRooms(accessToken);
+      const current = String(routeChatRoomUuid ?? "").trim();
+      const topRooms = rooms.slice(0, 8);
+
+      if (!rooms.length && !current) {
+        Alert.alert("", "참여 중인 채팅방이 없어요.");
+        return;
+      }
+
+      const currentRoom = current
+        ? rooms.find((r) => String(r.uuid ?? "").trim() === current)
+        : null;
+
+      const defaultRoomAction = current
+        ? {
+            text: `기본 채팅방 · ${
+              currentRoom?.name ||
+              activeChatRoomMeta?.name ||
+              buildRouteGroupChatName(routeTitle.trim() || "루트")
+            }`,
+            onPress: () =>
+              handleSelectRouteChatRoom({
+                uuid: current,
+                name:
+                  String(
+                    currentRoom?.name ||
+                      activeChatRoomMeta?.name ||
+                      buildRouteGroupChatName(routeTitle.trim() || "루트"),
+                  ).trim() || "채팅",
+                memberCount: Math.max(
+                  2,
+                  currentRoom?.memberCount ??
+                    activeChatRoomMeta?.memberCount ??
+                    collabMembers.length,
+                ),
+              }),
+          }
+        : null;
+
+      const roomActions = topRooms
+        .filter((room) => String(room.uuid ?? "").trim() !== current)
+        .map((room) => {
+          const id = String(room.uuid ?? "").trim();
+          return {
+            text: `${room.name || "채팅"}`,
+            onPress: () =>
+              handleSelectRouteChatRoom({
+                uuid: id,
+                name: String(room.name ?? "").trim() || "채팅",
+                memberCount: Math.max(2, room.memberCount ?? 2),
+              }),
+          };
+        });
+
+      Alert.alert(
+        "채팅방 선택",
+        "대화할 채팅방을 선택해 주세요.",
+        [
+          ...(defaultRoomAction ? [defaultRoomAction] : []),
+          ...roomActions,
+          { text: "닫기", style: "cancel" },
+        ],
+      );
+    } catch {
+      showToast("채팅 목록을 불러오지 못했어요");
+    }
+  }, [
+    accessToken,
+    routeChatRoomUuid,
+    activeChatRoomMeta?.name,
+    activeChatRoomMeta?.memberCount,
+    routeTitle,
+    collabMembers.length,
+    handleSelectRouteChatRoom,
+    showToast,
+  ]);
 
   const ensureCollaborativeRoutePersisted = useCallback(async (): Promise<
     string | null
@@ -3005,14 +3213,6 @@ export default function RouteCreateScreen(): React.JSX.Element {
     commitPersistedRouteId,
   ]);
 
-  /** 공동 루트 자동 저장 — 실패해도 재시도 폭주하지 않음 */
-  const collabAutoSaveAttemptedRef = useRef(false);
-  const collabAutoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-  /** 루트 제작 진입 직후 1회 초안 저장(공유 실패 방지용 routeId 확보) */
-  const initialDraftPersistTriedRef = useRef(false);
-
   const scheduleCollaborativeAutoSave = useCallback(() => {
     const wantsCollab =
       collaborativeDraft || route.params?.collaborative === true;
@@ -3047,12 +3247,13 @@ export default function RouteCreateScreen(): React.JSX.Element {
   useEffect(() => {
     const editId = route.params?.editRouteId as string | undefined;
     const seedId = route.params?.seedSharedCourseId as string | undefined;
+    if (route.params?.collaborative !== true) return;
     if (editId || seedId) return;
     if (initialDraftPersistTriedRef.current) return;
     if (pickServerBackedRouteId()) return;
     initialDraftPersistTriedRef.current = true;
 
-    // 공유 버튼 직후 "공동 루트 저장 실패"를 줄이기 위해 진입 시 1회 routeId 선확보
+    // 공동 루트 진입 시에만 1회 초안 저장(공유용 routeId 선확보)
     void persistRouteToServer({
       silent: true,
       requireCoords: false,
@@ -3062,6 +3263,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
   }, [
     route.params?.editRouteId,
     route.params?.seedSharedCourseId,
+    route.params?.collaborative,
     pickServerBackedRouteId,
     persistRouteToServer,
   ]);
@@ -3086,6 +3288,20 @@ export default function RouteCreateScreen(): React.JSX.Element {
     scheduleCollaborativeAutoSave,
   ]);
 
+  const handlePublishToPublicChange = useCallback(
+    async (next: boolean) => {
+      if (!next) {
+        setPublishToPublic(false);
+        setWantsCourseChatRoom(false);
+        return;
+      }
+      setPublishToPublic(true);
+      const yes = await promptCreateCourseChatRoom();
+      setWantsCourseChatRoom(yes);
+    },
+    [],
+  );
+
   /** 상단 공유 — 공동 모드 + 미저장이면 자동 저장 후 공유 */
   const handleTopSharePress = useCallback(async () => {
     setCollaborativeDraft(true);
@@ -3095,12 +3311,25 @@ export default function RouteCreateScreen(): React.JSX.Element {
       showToast("공동 루트 저장에 실패했어요. 잠시 후 다시 시도해 주세요");
       return;
     }
+    if (!routeChatRoomUuid && accessToken && authUser?.uuid) {
+      const wantsChat = await promptCreateCourseChatRoom();
+      if (wantsChat) {
+        const ensured = await linkCourseChatRoomForShare({
+          accessToken,
+          myUuid: authUser.uuid,
+          routeId: rid,
+          routeTitle: routeTitle.trim() || "루트",
+          existingChatRoomUuid: routeChatRoomUuid,
+        });
+        if (ensured) patchRouteChatRoom(rid, ensured);
+      }
+    }
     presentCollaborativeShareOptions({
       routeId: rid,
       title: routeTitle.trim() || "루트",
       onInviteFriends: () => setFriendInviteOpen(true),
     });
-  }, [routeTitle, showToast, ensureCollaborativeRoutePersisted]);
+  }, [routeTitle, showToast, ensureCollaborativeRoutePersisted, accessToken, authUser?.uuid, routeChatRoomUuid, patchRouteChatRoom]);
 
   const handleInviteFriendsToRoute = async (friendUuids: string[]) => {
     const rid =
@@ -3279,6 +3508,16 @@ export default function RouteCreateScreen(): React.JSX.Element {
           paddingTop: insets.top + 8,
         }}
       >
+        {isCollaborative && contributorSummaryParam ? (
+          <View className="px-3 pb-1" pointerEvents="none">
+            <View className="self-start rounded-md bg-orange-50 px-2 py-1">
+              <Text className="text-[11px] font-semibold text-orange-700">
+                {contributorSummaryParam}
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
         <View
           className="flex-row gap-2 px-3"
           style={{
@@ -3340,7 +3579,8 @@ export default function RouteCreateScreen(): React.JSX.Element {
             </Pressable>
             {showHeaderChatBelowShare ? (
               <Pressable
-                onPress={openRouteChat}
+                onPress={() => void openRouteChat()}
+                disabled={chatLinking}
                 className="mt-1.5 h-10 w-11 items-center justify-center rounded-full bg-orange-500 shadow-md active:opacity-90"
                 style={{
                   shadowColor: "#000",
@@ -3491,12 +3731,15 @@ export default function RouteCreateScreen(): React.JSX.Element {
                 <View className="min-w-0 flex-1" />
               )}
               <View className="flex-row items-center gap-2 shrink-0">
-                {isCollaborative ? (
+                {isCollaborative || publishToPublic ? (
                   <Pressable
-                    onPress={() => setChatOpen(true)}
+                    onPress={() => void openRouteChat()}
+                    disabled={chatLinking}
                     className="rounded-xl bg-orange-500 px-3.5 py-2 active:opacity-90"
                   >
-                    <Text className="text-sm font-bold text-white">채팅</Text>
+                    <Text className="text-sm font-bold text-white">
+                      {chatLinking ? "연결…" : "채팅"}
+                    </Text>
                   </Pressable>
                 ) : null}
                 {!isCollaborative ? (
@@ -3511,7 +3754,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                     </Text>
                     <Switch
                       value={publishToPublic}
-                      onValueChange={setPublishToPublic}
+                      onValueChange={(v) => void handlePublishToPublicChange(v)}
                       trackColor={{ false: "#d1d5db", true: "#93c5fd" }}
                       thumbColor={publishToPublic ? "#2563eb" : "#f4f4f5"}
                       accessibilityLabel="공개 코스"
@@ -4157,8 +4400,15 @@ export default function RouteCreateScreen(): React.JSX.Element {
         myUuid={authUser?.uuid}
         chatRoomUuid={routeChatRoomUuid}
         routeTitle={routeTitle.trim() || "루트"}
-        fallbackMessages={chatMessages}
-        onFallbackSend={sendChatFallback}
+        roomName={
+          activeChatRoomMeta?.name ??
+          buildRouteGroupChatName(routeTitle.trim() || "루트")
+        }
+        memberCount={
+          activeChatRoomMeta?.memberCount ??
+          Math.max(2, collabMembers.length)
+        }
+        onOpenChatList={openRouteChatList}
       />
 
       <CollaborativeFriendInviteModal

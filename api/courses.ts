@@ -1033,8 +1033,8 @@ export async function createMyRoute(
     if (res.status >= 200 && res.status < 300) {
       const list = await fetchMyCourses();
       const title = String(body.title ?? "").trim();
-      const hit = list.find((c) => String(c.title ?? "").trim() === title);
-      return hit?.id ?? null;
+      const hits = list.filter((c) => String(c.title ?? "").trim() === title);
+      return hits[hits.length - 1]?.id ?? null;
     }
     return null;
   } catch (e: any) {

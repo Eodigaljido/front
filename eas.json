@@ -20,13 +20,15 @@
       }
     },
     "production": {
+      "environment": "production",
       "node": "22.11.0",
       "android": {
         "buildType": "app-bundle"
       },
       "autoIncrement": true,
       "env": {
-        "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
+        "NPM_CONFIG_LEGACY_PEER_DEPS": "true",
+        "EXPO_PUBLIC_TEST_LOGIN": "0"
       }
     }
   },

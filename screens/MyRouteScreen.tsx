@@ -78,6 +78,7 @@ import {
   applyMineAuthorToPersonalRoutes,
   dedupeMyCourseList,
   mergeApiAndLocalCourseLists,
+  collapseDuplicateEmptyDrafts,
 } from "../utils/mergeCourseThumbnails";
 import { rootNavigate } from "../navigation/rootNavigation";
 
@@ -100,6 +101,23 @@ const CARD_STYLE = {
   borderRadius: 16,
   backgroundColor: "#fff",
 };
+
+function buildContributorSummary(
+  course: CourseItem,
+  authorCtx: {
+    myUuid?: string | null;
+    myUserId?: string | null;
+    myNickname?: string | null;
+    isLocalOwnRoute?: boolean;
+  },
+): string {
+  const creator = getCourseAuthorLabel(course, authorCtx);
+  const modifier = getCourseModifierLabel(course, authorCtx);
+  if (modifier && modifier !== "수정자 미표시" && modifier !== creator) {
+    return `기여: ${creator}, ${modifier}`;
+  }
+  return `기여: ${creator}`;
+}
 
 function CourseCard({
   item,
@@ -151,6 +169,13 @@ function CourseCard({
             )}
           </View>
           <View className="ml-3 min-w-0 flex-1 justify-center">
+            {isCollaborative ? (
+              <View className="mb-1 self-start rounded-md bg-orange-50 px-2 py-0.5">
+                <Text className="text-[10px] font-semibold text-orange-700" numberOfLines={1}>
+                  {buildContributorSummary(item, authorCtx)}
+                </Text>
+              </View>
+            ) : null}
             <View className="flex-row flex-wrap items-start gap-1">
               {isCollaborative ? (
                 <View className="mr-1 rounded-md bg-orange-100 px-1.5 py-0.5">
@@ -381,7 +406,11 @@ export default function MyRouteScreen({
       return Boolean(k);
     });
     const deduped = dedupeMyCourseList(filtered, userSavedRoutes);
-    return applyMineAuthorToPersonalRoutes(deduped, userSavedRoutes, authorCtx);
+    return applyMineAuthorToPersonalRoutes(
+      collapseDuplicateEmptyDrafts(deduped),
+      userSavedRoutes,
+      authorCtx,
+    );
   }, [userSavedRoutes, apiMyCourses, authorCtx]);
 
   useEffect(() => {
@@ -846,10 +875,15 @@ export default function MyRouteScreen({
     );
   };
 
-  const openRouteCreateEdit = (routeId: string, collaborative: boolean) => {
+  const openRouteCreateEdit = (
+    routeId: string,
+    collaborative: boolean,
+    contributorSummary?: string,
+  ) => {
     rootNavigate("RouteCreate", {
       editRouteId: routeId,
       collaborative,
+      contributorSummary,
     });
   };
 
@@ -991,17 +1025,22 @@ export default function MyRouteScreen({
                 }}
                 onRemove={() => handleRemove(item)}
                 onEdit={() => {
+                  const contributorSummary = buildContributorSummary(
+                    item,
+                    cardAuthorCtx,
+                  );
                   if (isUserSavedRouteId(item.id)) {
                     openRouteCreateEdit(
                       item.id,
                       ur?.collaborative === true,
+                      contributorSummary,
                     );
                   } else if (
                     isServerBackedMyCourse(item.id) &&
                     canEditAsOwnMyCourse(item)
                   ) {
                     void fetchMyRouteCollaborativeFlag(item.id).then((collab) =>
-                      openRouteCreateEdit(item.id, collab),
+                      openRouteCreateEdit(item.id, collab, contributorSummary),
                     );
                   } else {
                     openRouteCreateFromSharedCourse(item.id);

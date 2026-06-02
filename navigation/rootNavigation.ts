@@ -1,4 +1,4 @@
-import { createNavigationContainerRef } from '@react-navigation/native';
+import { CommonActions, createNavigationContainerRef } from '@react-navigation/native';
 import type { RootStackParamList } from '../App';
 
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
@@ -15,6 +15,26 @@ export function rootNavigate<Name extends keyof RootStackParamList>(
     return;
   }
   navigationRef.navigate(name, params as never);
+}
+
+/** 하단 탭 · 채팅 목록(메세지 홈) */
+export function rootNavigateToChatTab(): void {
+  if (!navigationRef.isReady()) {
+    if (__DEV__) {
+      console.warn('[rootNavigateToChatTab] NavigationContainer not ready');
+    }
+    return;
+  }
+  navigationRef.dispatch(
+    CommonActions.navigate({
+      name: 'Tabs',
+      params: { screen: 'Chat' },
+    }),
+  );
+}
+
+export function rootNavigateToNotificationCenter(): void {
+  rootNavigate('NotificationCenter');
 }
 
 type NavLike = {

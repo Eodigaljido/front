@@ -2,6 +2,7 @@ import type { CourseItem } from "../data/mockData";
 import type { UserSavedRoute } from "../data/userSavedRoute";
 import { resolveCourseThumbnailForDisplay } from "./courseThumbnailUri";
 import { sameCourseId } from "./sameCourseId";
+import { hasMeaningfulRouteSteps } from "../api/courses";
 
 export type MineAuthorContext = {
   myUuid?: string | null;
@@ -116,6 +117,25 @@ export function dedupeMyCourseList(
   }
 
   return Array.from(byId.values());
+}
+
+/** 서버에 쌓인 빈 초안(「새 루트」) 중복 — 목록에는 1개만 표시 */
+export function collapseDuplicateEmptyDrafts(
+  courses: CourseItem[],
+): CourseItem[] {
+  const isEmptyDraft = (c: CourseItem) => {
+    const title = String(c.title ?? "").trim();
+    if (title !== "새 루트") return false;
+    return !hasMeaningfulRouteSteps(c);
+  };
+
+  const drafts = courses.filter(isEmptyDraft);
+  if (drafts.length <= 1) return courses;
+
+  const keepId = String(drafts[drafts.length - 1]?.id ?? "").trim();
+  if (!keepId) return courses;
+
+  return courses.filter((c) => !isEmptyDraft(c) || String(c.id) === keepId);
 }
 
 /** API·로컬 목록 병합 — 동일 id면 로컬 썸네일 우선 보강 */

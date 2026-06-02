@@ -124,13 +124,27 @@ export function MockDataProvider({ children }: { children: React.ReactNode }) {
 
   const upsertUserRoute = useCallback((route: UserSavedRoute) => {
     setUserSavedRoutes((prev) => {
-      const i = prev.findIndex((x) => String(x.id) === String(route.id));
+      const rid = String(route.id ?? "").trim();
+      const i = prev.findIndex((x) => String(x.id) === rid);
+      let next: UserSavedRoute[];
       if (i >= 0) {
-        const next = [...prev];
+        next = [...prev];
         next[i] = route;
-        return next;
+      } else {
+        next = [...prev, route];
       }
-      return [...prev, route];
+      if (rid && !rid.startsWith("ur-")) {
+        const title = String(route.title ?? "").trim();
+        next = next.filter(
+          (r) =>
+            String(r.id) === rid ||
+            !(
+              String(r.id).startsWith("ur-") &&
+              String(r.title ?? "").trim() === title
+            ),
+        );
+      }
+      return next;
     });
   }, []);
 
