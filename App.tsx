@@ -76,6 +76,7 @@ export type RootStackParamList = {
       }
     | undefined;
   ProfileSettings: undefined;
+  FriendRequests: undefined;
   UserProfile: {
     uuid?: string;
     userUuid?: string;
@@ -131,7 +132,6 @@ function AllStackNavigator() {
       <AllStack.Screen name="AllMain" component={AllScreen} />
       <AllStack.Screen name="AllRoute" component={RouteScreen} />
       <AllStack.Screen name="AllAppSettings" component={AppSettingsScreen} />
-      <AllStack.Screen name="AllFriendRequests" component={FriendRequestsScreen} />
       <AllStack.Screen name="AllGuide" component={GuideScreen} />
     </AllStack.Navigator>
   );
@@ -338,6 +338,7 @@ export default function App(): React.JSX.Element {
                   <Stack.Screen name="RouteCollaborators" component={RouteCollaboratorsScreen} />
                   <Stack.Screen name="CourseGuide" component={CourseGuideScreen} />
                   <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
+                  <Stack.Screen name="FriendRequests" component={FriendRequestsScreen} />
                   <Stack.Screen name="UserProfile" component={UserProfileScreen} />
                   <Stack.Screen name="OnBoardStart" component={OnBoardStart} />
                   <Stack.Screen name="AreaOnBoard" component={AreaOnBoard} />
