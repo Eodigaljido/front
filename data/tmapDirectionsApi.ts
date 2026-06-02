@@ -3,6 +3,8 @@ import {
   ROUTE_USER_MESSAGES,
 } from "../utils/routeCopy";
 
+declare const __DEV__: boolean;
+
 type LatLng = { latitude: number; longitude: number };
 
 /** googleDirectionsApi.DirectionsMode 와 동일 (순환 import 방지) */
