@@ -207,77 +207,6 @@ export default function AllScreen(): React.JSX.Element {
   const avatarUri = authUser?.profileImageUrl
     ? bustProfileImageUri(authUser.profileImageUrl, profileImageCacheBust)
     : 'https://i.pravatar.cc/100?img=5';
-  const loadMyFriendCode = useCallback(async () => {
-    if (friendCode) return friendCode;
-    setFriendCodeLoading(true);
-    try {
-      const code = await getMyFriendCode();
-      setFriendCode(code);
-      return code;
-    } catch (e: any) {
-      Alert.alert(
-        '오류',
-        e?.response?.data?.message ?? e?.message ?? '친구 코드를 불러오지 못했습니다.',
-      );
-      return null;
-    } finally {
-      setFriendCodeLoading(false);
-    }
-  }, [friendCode]);
-
-  const handleAddFriend = useCallback(async () => {
-    setFriendCodeVisible(true);
-    await loadMyFriendCode();
-  }, [loadMyFriendCode]);
-
-  const handleShareFriendLink = useCallback(async () => {
-    const code = friendCode ?? (await loadMyFriendCode());
-    if (!code) return;
-    void shareFriendInvite({
-      friendCode: code,
-      inviterName: authUser?.nickname,
-    });
-  }, [friendCode, loadMyFriendCode, authUser?.nickname]);
-
-  const confirmAddFriendFromLink = useCallback(
-    (code: string) => {
-      if (addFriendSubmitting) return;
-      Alert.alert('친구 추가', `친구 코드「${code}」로 추가할까요?`, [
-        { text: '취소', style: 'cancel' },
-        {
-          text: '추가',
-          onPress: async () => {
-            setAddFriendSubmitting(true);
-            try {
-              await addFriendByCode(code);
-              Alert.alert('', '친구가 추가되었습니다.');
-              navigation.navigate('Chat');
-            } catch (e: any) {
-              Alert.alert(
-                '오류',
-                e?.response?.data?.message ?? e?.message ?? '친구 추가에 실패했습니다.',
-              );
-            } finally {
-              setAddFriendSubmitting(false);
-            }
-          },
-        },
-      ]);
-    },
-    [addFriendSubmitting, navigation],
-  );
-
-  useEffect(() => {
-    const code = String((route.params as AllRouteParams | undefined)?.friendCode ?? '').trim();
-    if (!code || handledInviteCodeRef.current === code) return;
-    handledInviteCodeRef.current = code;
-    navigation.setParams({ friendCode: undefined });
-    confirmAddFriendFromLink(code);
-  }, [route.params, navigation, confirmAddFriendFromLink]);
-
-  const avatarUri = authUser?.profileImageUrl
-    ? bustProfileImageUri(authUser.profileImageUrl, profileImageCacheBust)
-    : 'https://i.pravatar.cc/100?img=5';
 
   return (
     <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={['top']}>
@@ -323,15 +252,6 @@ export default function AllScreen(): React.JSX.Element {
         <MenuSection label="친구" items={friendMenus} />
         <MenuSection label="설정" items={settingMenus} />
       </ScrollView>
-
-      <FriendCodeModal
-        visible={friendCodeVisible}
-        loading={friendCodeLoading}
-        friendCode={friendCode}
-        onClose={() => setFriendCodeVisible(false)}
-        onAddFriendByCode={addFriendByCode}
-        onShareLink={handleShareFriendLink}
-      />
 
       <FriendCodeModal
         visible={friendCodeVisible}
