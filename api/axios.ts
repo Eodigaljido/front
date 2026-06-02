@@ -75,10 +75,13 @@ instance.interceptors.response.use(
 
     const originalRequest = err.config;
 
-    // 401이 아니거나, 리프레시 요청 자체가 실패하면 즉시 reject
+    // 401/403이 아니거나, 리프레시 요청 자체가 실패하면 즉시 reject
+    // 일부 서버는 만료된 토큰에 403을 반환하므로 함께 처리
     const refreshPath = "auth/token/refresh";
+    const isAuthError =
+      err.response?.status === 401 || err.response?.status === 403;
     if (
-      err.response?.status !== 401 ||
+      !isAuthError ||
       originalRequest._retry ||
       originalRequest.url === refreshPath ||
       originalRequest.url === "auth/refresh"
