@@ -33,6 +33,7 @@ import ChatRoomInfoScreen from './screens/chat/ChatRoomInfoScreen';
 import RouteCreateScreen from './screens/RouteCreateScreen';
 import RouteCollaboratorsScreen from './screens/RouteCollaboratorsScreen';
 import ProfileSettingsScreen from './screens/ProfileSettingsScreen';
+import GuideScreen from './screens/GuideScreen';
 import FindAccountScreen from './screens/FindAccountScreen';
 import FollowingNewsScreen from './screens/FollowingNewsScreen';
 import NotificationCenterScreen from './screens/NotificationCenterScreen';
@@ -136,6 +137,7 @@ function AllStackNavigator() {
       <AllStack.Screen name="AllMyRoute" component={MyRouteScreen} />
       <AllStack.Screen name="AllAppSettings" component={AppSettingsScreen} />
       <AllStack.Screen name="AllFriendRequests" component={FriendRequestsScreen} />
+      <AllStack.Screen name="AllGuide" component={GuideScreen} />
     </AllStack.Navigator>
   );
 }
