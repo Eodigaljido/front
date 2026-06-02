@@ -105,7 +105,7 @@ export default function AllScreen(): React.JSX.Element {
       iconColor: '#2563eb',
       iconBg: '#dbeafe',
       badge: pendingRequestCount,
-      onPress: () => navigation.navigate('AllFriendRequests'),
+      onPress: () => navigation.getParent()?.navigate('FriendRequests'),
     },
   ];
 
