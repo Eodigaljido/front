@@ -1,5 +1,10 @@
-import { instance } from '../axios';
-import type { GroupMember, JoinRequest, JoinRequestAction } from './types';
+import { instance } from "../axios";
+import type {
+  GroupMember,
+  JoinRequest,
+  JoinRequestAction,
+  PageResponse,
+} from "./types";
 
 /** GET /api/groups/{groupUuid}/members — 모임 멤버 목록 (인증 없이 접근 가능) */
 export async function getGroupMembers(
@@ -19,7 +24,7 @@ export async function leaveGroup(
   accessToken: string,
   groupUuid: string,
 ): Promise<void> {
-  await instance.delete(`/groups/${groupUuid}/members/me`, {
+  await instance.delete(`/api/groups/${groupUuid}/members/me`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 }
@@ -31,14 +36,21 @@ export async function getJoinRequests(
   page = 0,
   size = 20,
 ): Promise<JoinRequest[]> {
-  const res = await instance.get<JoinRequest[]>(
+  const res = await instance.get<JoinRequest[] | PageResponse<JoinRequest>>(
     `/api/groups/${groupUuid}/join-requests`,
     {
       headers: { Authorization: `Bearer ${accessToken}` },
       params: { page, size },
     },
   );
-  return Array.isArray(res.data) ? res.data : [];
+  if (Array.isArray(res.data)) return res.data;
+  if (
+    res.data &&
+    Array.isArray((res.data as PageResponse<JoinRequest>).content)
+  ) {
+    return (res.data as PageResponse<JoinRequest>).content;
+  }
+  return [];
 }
 
 /** POST /api/groups/join-requests/{requestId} — 가입 요청 승인/거절 (방장만) */
