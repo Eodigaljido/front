@@ -1,5 +1,5 @@
 import { instance } from '../axios';
-import type { GroupPost, CreatePostRequest, UpdatePostRequest } from './types';
+import type { GroupPost, CreatePostRequest, UpdatePostRequest, PageResponse } from './types';
 
 /** GET /api/groups/{groupUuid}/posts — 모임 게시물 목록 (모임 멤버만) */
 export async function getGroupPosts(
@@ -8,11 +8,18 @@ export async function getGroupPosts(
   page = 0,
   size = 20,
 ): Promise<GroupPost[]> {
-  const res = await instance.get<GroupPost[]>(`/api/groups/${groupUuid}/posts`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-    params: { page, size },
-  });
-  return Array.isArray(res.data) ? res.data : [];
+  const res = await instance.get<GroupPost[] | PageResponse<GroupPost>>(
+    `/api/groups/${groupUuid}/posts`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      params: { page, size },
+    },
+  );
+  if (Array.isArray(res.data)) return res.data;
+  if (res.data && Array.isArray((res.data as PageResponse<GroupPost>).content)) {
+    return (res.data as PageResponse<GroupPost>).content;
+  }
+  return [];
 }
 
 /** POST /api/groups/{groupUuid}/posts — 모임 게시물 작성 (모임 멤버만) */
