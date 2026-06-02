@@ -119,11 +119,11 @@ export default function AllScreen(): React.JSX.Element {
     },
     {
       id: 'help',
-      title: '도움말',
+      title: '가이드',
       icon: 'help-circle-outline',
       iconColor: '#4b5563',
       iconBg: '#f3f4f6',
-      onPress: () => {},
+      onPress: () => navigation.navigate('AllGuide'),
     },
     {
       id: 'alarm',
