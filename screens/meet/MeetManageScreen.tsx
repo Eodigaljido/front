@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
-  FlatList,
   Image,
   Platform,
   ScrollView,
@@ -19,7 +18,7 @@ import {
   useNavigation,
   useRoute,
 } from '@react-navigation/native';
-import { Check, ChevronLeft, Trash2, Users, X } from 'lucide-react-native';
+import { Check, ChevronLeft, Lock, Trash2, Unlock, Users, X } from 'lucide-react-native';
 
 import { RootStackParamList } from '@/App';
 import { safeGoBack } from '@/navigation/rootNavigation';
@@ -124,7 +123,7 @@ export default function MeetManageScreen(): React.JSX.Element {
           onPress: async () => {
             try {
               await deleteGroup(accessToken, groupUuid);
-              navigation.navigate('Tabs');
+              navigation.navigate({ name: 'Tabs', params: { screen: 'Meet' } });
             } catch {
               Alert.alert('오류', '모임 삭제에 실패했습니다.');
             }
@@ -136,20 +135,66 @@ export default function MeetManageScreen(): React.JSX.Element {
 
   return (
     <SafeAreaView style={s.screen} edges={['top']}>
-      {/* 헤더 */}
       <View style={s.header}>
         <TouchableOpacity style={s.backBtn} onPress={() => safeGoBack(navigation)}>
-          <ChevronLeft color="#111827" size={22} />
+          <ChevronLeft color="#0F172A" size={22} />
         </TouchableOpacity>
         <Text style={s.headerTitle}>모임 관리</Text>
-        <View style={{ width: 40 }} />
+        <View style={{ width: 44 }} />
       </View>
 
       <ScrollView
         contentContainerStyle={{ padding: 16, paddingBottom: 60 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* 기본 정보 카드 */}
+        {/* 가입 신청 목록 */}
+        {joinRequests.length > 0 && (
+          <>
+            <View style={s.sectionHeader}>
+              <Text style={s.sectionLabel}>가입 신청</Text>
+              <View style={s.sectionBadge}>
+                <Text style={s.sectionBadgeText}>{joinRequests.length}</Text>
+              </View>
+            </View>
+            <View style={s.card}>
+              {joinRequests.map((req, i) => (
+                <View key={req.requestId}>
+                  {i > 0 && <View style={s.divider} />}
+                  <View style={s.reqRow}>
+                    <View style={s.reqAvatar}>
+                      {req.requesterProfileImageUrl ? (
+                        <Image
+                          source={{ uri: req.requesterProfileImageUrl }}
+                          style={{ width: 44, height: 44, borderRadius: 22 }}
+                        />
+                      ) : (
+                        <Users color="#94A3B8" size={20} />
+                      )}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.reqName}>{req.requesterNickname}</Text>
+                      <Text style={s.reqId}>@{req.requesterUserId}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={s.approveBtn}
+                      onPress={() => handleApprove(req)}
+                    >
+                      <Check color="#22C55E" size={17} strokeWidth={2.5} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={s.rejectBtn}
+                      onPress={() => handleReject(req)}
+                    >
+                      <X color="#EF4444" size={17} strokeWidth={2.5} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </>
+        )}
+
+        {/* 기본 정보 */}
         <Text style={s.sectionLabel}>기본 정보</Text>
         <View style={s.card}>
           <View style={s.fieldWrap}>
@@ -159,20 +204,20 @@ export default function MeetManageScreen(): React.JSX.Element {
               value={name}
               onChangeText={setName}
               placeholder="모임 이름"
-              placeholderTextColor="#C4C9D4"
+              placeholderTextColor="#CBD5E1"
               maxLength={50}
               selectionColor="#3B82F6"
             />
           </View>
 
           <View style={s.fieldWrap}>
-            <Text style={s.fieldLabel}>소개</Text>
+            <Text style={s.fieldLabel}>모임 소개</Text>
             <TextInput
               style={[s.input, s.textArea]}
               value={description}
               onChangeText={setDescription}
               placeholder="모임 소개"
-              placeholderTextColor="#C4C9D4"
+              placeholderTextColor="#CBD5E1"
               maxLength={200}
               multiline
               textAlignVertical="top"
@@ -187,6 +232,10 @@ export default function MeetManageScreen(): React.JSX.Element {
                 style={[s.typeBtn, groupType === 'PUBLIC' && s.typeBtnActive]}
                 onPress={() => setGroupType('PUBLIC')}
               >
+                <Unlock
+                  color={groupType === 'PUBLIC' ? '#3B82F6' : '#94A3B8'}
+                  size={15}
+                />
                 <Text style={[s.typeBtnText, groupType === 'PUBLIC' && s.typeBtnTextActive]}>
                   공개
                 </Text>
@@ -195,7 +244,13 @@ export default function MeetManageScreen(): React.JSX.Element {
                 style={[s.typeBtn, groupType === 'PRIVATE' && s.typeBtnActive]}
                 onPress={() => setGroupType('PRIVATE')}
               >
-                <Text style={[s.typeBtnText, groupType === 'PRIVATE' && s.typeBtnTextActive]}>
+                <Lock
+                  color={groupType === 'PRIVATE' ? '#3B82F6' : '#94A3B8'}
+                  size={15}
+                />
+                <Text
+                  style={[s.typeBtnText, groupType === 'PRIVATE' && s.typeBtnTextActive]}
+                >
                   비공개
                 </Text>
               </TouchableOpacity>
@@ -211,72 +266,33 @@ export default function MeetManageScreen(): React.JSX.Element {
               <Switch
                 value={requiresApproval}
                 onValueChange={setRequiresApproval}
-                trackColor={{ false: '#E5E7EB', true: '#93C5FD' }}
+                trackColor={{ false: '#E2E8F0', true: '#93C5FD' }}
                 thumbColor={requiresApproval ? '#3B82F6' : '#fff'}
               />
             </View>
           )}
 
           <TouchableOpacity
-            style={[s.saveBtn, { opacity: saving ? 0.6 : 1 }]}
+            style={[s.saveBtn, { opacity: saving ? 0.65 : 1 }]}
             onPress={handleSave}
             disabled={saving}
           >
-            <Text style={s.saveBtnText}>{saving ? '저장 중…' : '저장'}</Text>
+            <Text style={s.saveBtnText}>{saving ? '저장 중…' : '저장하기'}</Text>
           </TouchableOpacity>
         </View>
 
-        {/* 가입 신청 목록 */}
-        {joinRequests.length > 0 && (
-          <>
-            <Text style={s.sectionLabel}>가입 신청 ({joinRequests.length})</Text>
-            <View style={s.card}>
-              {joinRequests.map((req, i) => (
-                <View key={req.requestId}>
-                  {i > 0 && <View style={s.divider} />}
-                  <View style={s.reqRow}>
-                    <View style={s.reqAvatar}>
-                      {req.requesterProfileImageUrl ? (
-                        <Image
-                          source={{ uri: req.requesterProfileImageUrl }}
-                          style={{ width: 40, height: 40 }}
-                        />
-                      ) : (
-                        <Users color="#9CA3AF" size={20} />
-                      )}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.reqName}>{req.requesterNickname}</Text>
-                      <Text style={s.reqId}>@{req.requesterUserId}</Text>
-                    </View>
-                    <TouchableOpacity
-                      style={s.approveBtn}
-                      onPress={() => handleApprove(req)}
-                    >
-                      <Check color="#22C55E" size={18} strokeWidth={2.5} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={s.rejectBtn}
-                      onPress={() => handleReject(req)}
-                    >
-                      <X color="#EF4444" size={18} strokeWidth={2.5} />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))}
-            </View>
-          </>
-        )}
-
         {/* 위험 구역 */}
-        <Text style={[s.sectionLabel, { marginTop: 24 }]}>위험 구역</Text>
+        <Text style={[s.sectionLabel, { color: '#EF4444', marginTop: 28 }]}>위험 구역</Text>
         <TouchableOpacity style={s.dangerCard} onPress={handleDeleteGroup} activeOpacity={0.8}>
           <View style={s.dangerIconWrap}>
             <Trash2 color="#EF4444" size={18} />
           </View>
-          <Text style={s.dangerText}>모임 삭제</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={s.dangerText}>모임 삭제</Text>
+            <Text style={s.dangerHint}>삭제 후 복구가 불가능합니다</Text>
+          </View>
           <ChevronLeft
-            color="#D1D5DB"
+            color="#FCA5A5"
             size={18}
             style={{ transform: [{ rotate: '180deg' }] }}
           />
@@ -286,93 +302,172 @@ export default function MeetManageScreen(): React.JSX.Element {
   );
 }
 
-const shadow = Platform.select({
+const cardShadow = Platform.select({
   ios: {
+    shadowColor: '#1E3A8A',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.07,
-    shadowRadius: 8,
+    shadowRadius: 10,
   },
-  android: { elevation: 2 },
+  android: { elevation: 3 },
 });
 
 const s = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#F0F5FF' },
+  screen: { flex: 1, backgroundColor: '#F4F7FF' },
+
   header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 8, paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
   },
   backBtn: {
-    width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff',
-    alignItems: 'center', justifyContent: 'center', ...shadow,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#EEF2FF',
+    ...cardShadow,
   },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: '#111827', letterSpacing: -0.3 },
+  headerTitle: { fontSize: 17, fontWeight: '700', color: '#0F172A', letterSpacing: -0.3 },
 
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10, marginTop: 20 },
   sectionLabel: {
-    fontSize: 13, fontWeight: '700', color: '#6B7280',
-    letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 10, marginTop: 16,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#94A3B8',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    marginBottom: 10,
+    marginTop: 20,
   },
+  sectionBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+    backgroundColor: '#3B82F6',
+  },
+  sectionBadgeText: { fontSize: 12, fontWeight: '700', color: '#fff' },
 
   card: {
-    backgroundColor: '#fff', borderRadius: 20, padding: 20,
-    gap: 4, ...shadow,
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#EEF2FF',
+    ...cardShadow,
   },
+
   fieldWrap: { marginBottom: 16 },
-  fieldLabel: { fontSize: 13, fontWeight: '600', color: '#6B7280', marginBottom: 8 },
+  fieldLabel: { fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 8 },
   input: {
-    borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 12,
-    paddingHorizontal: 14, paddingVertical: 12, fontSize: 15,
-    color: '#111827', backgroundColor: '#FAFAFA',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: '#0F172A',
+    backgroundColor: '#F8FAFF',
   },
   textArea: { minHeight: 80, textAlignVertical: 'top' },
 
   typeRow: { flexDirection: 'row', gap: 10 },
   typeBtn: {
-    flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center',
-    backgroundColor: '#F3F4F6', borderWidth: 1.5, borderColor: '#E5E7EB',
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#F8FAFF',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
   },
-  typeBtnActive: { backgroundColor: '#3B82F6', borderColor: '#3B82F6' },
-  typeBtnText: { fontSize: 14, fontWeight: '600', color: '#9CA3AF' },
-  typeBtnTextActive: { color: '#fff' },
+  typeBtnActive: { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' },
+  typeBtnText: { fontSize: 14, fontWeight: '700', color: '#94A3B8' },
+  typeBtnTextActive: { color: '#1D4ED8' },
 
   switchRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingTop: 4, paddingBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
   },
-  switchLabel: { fontSize: 14, fontWeight: '600', color: '#111827', marginBottom: 2 },
-  switchHint: { fontSize: 12, color: '#9CA3AF' },
+  switchLabel: { fontSize: 14, fontWeight: '600', color: '#0F172A', marginBottom: 2 },
+  switchHint: { fontSize: 12, color: '#94A3B8' },
 
   saveBtn: {
-    backgroundColor: '#3B82F6', borderRadius: 12, paddingVertical: 13,
-    alignItems: 'center', marginTop: 8,
+    backgroundColor: '#3B82F6',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 16,
   },
   saveBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
 
-  divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#F3F4F6', marginVertical: 2 },
+  divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#F1F5F9', marginVertical: 2 },
   reqRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
   },
   reqAvatar: {
-    width: 40, height: 40, borderRadius: 20, backgroundColor: '#F3F4F6',
-    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
-  reqName: { fontSize: 14, fontWeight: '600', color: '#111827' },
-  reqId: { fontSize: 12, color: '#9CA3AF', marginTop: 1 },
+  reqName: { fontSize: 14, fontWeight: '700', color: '#0F172A' },
+  reqId: { fontSize: 12, color: '#94A3B8', marginTop: 2 },
   approveBtn: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: '#F0FDF4',
-    alignItems: 'center', justifyContent: 'center',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   rejectBtn: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: '#FEF2F2',
-    alignItems: 'center', justifyContent: 'center',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   dangerCard: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
-    borderRadius: 16, paddingHorizontal: 20, paddingVertical: 16, gap: 14, ...shadow,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    gap: 14,
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+    ...cardShadow,
   },
   dangerIconWrap: {
-    width: 36, height: 36, borderRadius: 10, backgroundColor: '#FEE2E2',
-    alignItems: 'center', justifyContent: 'center',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  dangerText: { flex: 1, fontSize: 15, fontWeight: '500', color: '#EF4444' },
+  dangerText: { fontSize: 15, fontWeight: '700', color: '#EF4444' },
+  dangerHint: { fontSize: 12, color: '#FCA5A5', marginTop: 2 },
 });
