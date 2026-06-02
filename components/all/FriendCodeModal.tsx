@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 // 백엔드 친구 코드 형식: 영문 대문자 + 숫자 조합 6자리 (예: A3K9B2)
 const FRIEND_CODE_REGEX = /^[A-Z0-9]{6}$/;
+// const FRIEND_CODE_REGEX = /^[A-Z0-9]{6}$/;
 
 interface Props {
   visible: boolean;
