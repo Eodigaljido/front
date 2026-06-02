@@ -165,7 +165,7 @@ export default function ChatRoomInfoScreen() {
       await renameChatRoom(accessToken, roomUuid, trimmed);
       setRoomName(trimmed);
       setNameModalVisible(false);
-      navigation.navigate("ChatRoomScreen", { roomUuid, roomName: trimmed });
+      navigation.navigate({ name: "ChatRoomScreen", params: { roomUuid, roomName: trimmed } });
     } catch (err) {
       console.error("채팅방 이름 변경 실패:", err);
       Alert.alert("오류", "채팅방 이름 변경에 실패했습니다.");
@@ -261,7 +261,7 @@ export default function ChatRoomInfoScreen() {
               return;
             }
             await leaveChatRoom(accessToken, roomUuid);
-            navigation.navigate("Tabs");
+            navigation.navigate({ name: "Tabs", params: { screen: "Chat" } });
           } catch (err) {
             console.error("채팅방 나가기 실패:", err);
             Alert.alert("오류", "채팅방 나가기에 실패했습니다.");
@@ -284,7 +284,7 @@ export default function ChatRoomInfoScreen() {
               return;
             }
             await deleteChatRoom(accessToken, roomUuid);
-            navigation.navigate("Tabs");
+            navigation.navigate({ name: "Tabs", params: { screen: "Chat" } });
           } catch (err) {
             console.error("채팅방 삭제 실패:", err);
             Alert.alert("오류", "채팅방 삭제에 실패했습니다.");
@@ -401,7 +401,7 @@ export default function ChatRoomInfoScreen() {
                 style={s.memberRow}
                 activeOpacity={0.7}
                 onPress={() =>
-                  navigation.navigate("UserProfile", { uuid: member.uuid })
+                  navigation.navigate({ name: "UserProfile", params: { uuid: member.uuid } })
                 }
               >
                 {member.profileImageUrl ? (
