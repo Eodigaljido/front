@@ -22,6 +22,7 @@ module.exports = ({ config }) => ({
   },
   plugins: [
     ...(config.plugins ?? []),
+    "expo-asset",
     "expo-secure-store",
     "@react-native-community/datetimepicker",
     [
