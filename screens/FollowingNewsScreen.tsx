@@ -5,6 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { fetchFollowingNews, type FollowingNewsItem } from "../api/courses";
 import { safeGoBack } from "../navigation/rootNavigation";
+import FollowingNewsAvatar from "../components/FollowingNewsAvatar";
 
 export default function FollowingNewsScreen(): React.JSX.Element {
   const navigation = useNavigation<any>();
@@ -24,8 +25,8 @@ export default function FollowingNewsScreen(): React.JSX.Element {
 
   return (
     <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={["top"]}>
-      <View className="px-4 py-3 flex-row items-center">
-        <Pressable onPress={() => safeGoBack(navigation)} className="mr-2 p-1">
+      <View className="flex-row items-center px-4 py-3">
+        <Pressable onPress={() => safeGoBack(navigation)} className="p-1 mr-2">
           <Ionicons name="chevron-back" size={24} color="#111827" />
         </Pressable>
         <Text className="text-lg font-semibold text-gray-900">친구 소식</Text>
@@ -37,18 +38,18 @@ export default function FollowingNewsScreen(): React.JSX.Element {
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
         renderItem={({ item }) => (
           <View
-            className="mb-2.5 flex-row items-center rounded-[16px] p-3 bg-white"
+            className="mb-2.5 flex-row items-center gap-3 rounded-[16px] p-3 bg-white"
             style={{
               borderWidth: 0.5,
               borderColor: "rgba(37,99,235,0.12)",
             }}
           >
-            <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-blue-100">
-              <Text style={{ fontSize: 13, fontWeight: "600", color: "#2563EB" }}>
-                {item.user.slice(0, 1)}
-              </Text>
-            </View>
-            <View className="min-w-0 flex-1">
+            <FollowingNewsAvatar
+              displayName={item.user}
+              profileImageUrl={item.profileImageUrl}
+              size={40}
+            />
+            <View className="flex-1 min-w-0">
               <Text style={{ fontSize: 13, fontWeight: "400", color: "#1A1A2E" }} numberOfLines={1}>
                 <Text style={{ fontWeight: "600" }}>{item.user}</Text>님이 {item.action}
               </Text>
@@ -62,8 +63,8 @@ export default function FollowingNewsScreen(): React.JSX.Element {
           </View>
         )}
         ListEmptyComponent={
-          <View className="mt-12 items-center px-4">
-            <Text className="text-center text-sm leading-5 text-gray-600">
+          <View className="items-center px-4 mt-12">
+            <Text className="text-sm leading-5 text-center text-gray-600">
               친구가 없어 표시할 소식이 없어요. 채팅 탭의 친구 목록에서 맺을 수 있어요.
             </Text>
             <Pressable

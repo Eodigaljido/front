@@ -10,7 +10,7 @@ export default function ChatHomeScreen(): React.JSX.Element {
   const [searchQuery, setSearchQuery] = useState("");
 
   return (
-    <SafeAreaView className="flex-1 bg-white" edges={["top"]}>
+    <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={["top"]}>
       <ScrollView
         className="flex-1"
         showsVerticalScrollIndicator={false}

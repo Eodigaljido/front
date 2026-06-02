@@ -20,13 +20,27 @@ module.exports = ({ config }) => ({
         .trim(),
     shareBaseUrl: String(process.env.EXPO_PUBLIC_SHARE_BASE_URL ?? '').trim(),
   },
-  plugins: [...(config.plugins ?? []), 'expo-secure-store', '@react-native-community/datetimepicker'],
+  plugins: [
+    ...(config.plugins ?? []),
+    'expo-secure-store',
+    '@react-native-community/datetimepicker',
+    [
+      'expo-build-properties',
+      {
+        android: {
+          usesCleartextTraffic: true,
+        },
+      },
+    ],
+  ],
   ios: {
     ...(config.ios ?? {}),
     associatedDomains: [`applinks:${shareHost}`],
   },
   android: {
     ...config.android,
+    /** EAS production API가 http:// 이므로 릴리스 APK/AAB에서도 요청 허용 */
+    usesCleartextTraffic: true,
     intentFilters: [
       {
         action: 'VIEW',

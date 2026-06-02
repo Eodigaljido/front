@@ -9,7 +9,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useFocusEffect, useNavigation, useNavigationState } from '@react-navigation/native';
 
-const TAB_ORDER = ['Home', 'SharedRoute', 'MyRoute', 'Chat', 'All'] as const;
+const TAB_ORDER = ['Home', 'Route', 'Chat', 'All'] as const;
 const SWIPE_MIN_DISTANCE = 60;
 const SWIPE_MIN_VELOCITY = 400;
 

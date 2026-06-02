@@ -74,6 +74,11 @@ import {
   type TransitRouteCandidate,
 } from "../data/googleDirectionsApi";
 import {
+  ROUTE_USER_MESSAGES,
+  sanitizeRouteDisplayText,
+  toUserFacingErrorMessage,
+} from "../utils/routeCopy";
+import {
   buildUpsertPayloadFromUserRoute,
   createMyRoute,
   fetchMyRouteCollaborativeFlag,
@@ -100,6 +105,10 @@ import {
 import { MAX_ROUTE_TAGS, ROUTE_TAG_PRESETS } from "../data/routeTags";
 import { getCourseStepMapPoint } from "../data/mockData";
 import { sameCourseId } from "../utils/sameCourseId";
+import {
+  forkOriginAuthorFromCourse,
+  resolveForkOriginForSave,
+} from "../utils/enrichForkOriginAuthor";
 
 type RouteStop = {
   id: string;
@@ -118,7 +127,7 @@ type RouteLeg = {
   directionsSummary?: string;
   directionsDetail?: string;
   distanceMeters?: number;
-  /** 도보 구간 — 보도 후보 2~3개 중 사용자 선택 */
+  /** 도보 구간 — 가장 가까운 도보 경로 1개 */
   walkCandidates?: WalkRouteCandidate[];
   selectedWalkCandidateId?: string;
   /** 대중교통 구간 — 노선·출발·도착 시각 후보 */
@@ -614,10 +623,11 @@ const SEARCH_RADIUS_OPTIONS: Array<{ meters: number | null; label: string }> = [
 ];
 
 const VIA_LIFT_MS = 420;
-const VIA_CANCEL_MOVE_BEFORE_LIFT_PX = 16;
-const VIA_DRAG_START_MOVE_PX = 6;
-const VIA_DRAG_EDGE_PX = 72;
-const VIA_DRAG_SCROLL_STEP = 16;
+const VIA_CANCEL_MOVE_BEFORE_LIFT_PX = 14;
+const VIA_DRAG_START_MOVE_PX = 12;
+const VIA_DRAG_EDGE_PX = 52;
+const VIA_DRAG_SCROLL_STEP = 8;
+const VIA_DRAG_SCROLL_INTERVAL_MS = 48;
 
 type StopLayoutRect = { top: number; bottom: number };
 
@@ -739,8 +749,9 @@ function ViaDragHandle({
   const pan = useMemo(
     () =>
       PanResponder.create({
-        onStartShouldSetPanResponderCapture: () => !disabled,
-        onPanResponderTerminationRequest: () => false,
+        onStartShouldSetPanResponder: () => !disabled,
+        onStartShouldSetPanResponderCapture: () => false,
+        onPanResponderTerminationRequest: () => phaseRef.current === "idle",
         onPanResponderGrant: () => {
           phaseRef.current = "idle";
           grantTRef.current = Date.now();
@@ -828,43 +839,41 @@ export default function RouteCreateScreen(): React.JSX.Element {
   const { height: windowH } = useWindowDimensions();
   const editRouteIdParam = route.params?.editRouteId as string | undefined;
   const isEditingMyRoute = Boolean(editRouteIdParam);
-  const clampRouteEditSheetHeight = useCallback(
+  const clampRouteSheetHeight = useCallback(
     (px: number) => {
-      const minH = Math.round(windowH * 0.45);
+      // 최소 높이는 루트 대표이미지/제목 영역이 보이는 수준으로 유지
+      const minH = Math.max(120, Math.round(windowH * 0.14));
       const maxH = Math.round(windowH * 0.94);
       return Math.min(Math.max(Math.round(px), minH), maxH);
     },
     [windowH],
   );
-  const [routeEditSheetHeightPx, setRouteEditSheetHeightPx] = useState(() => {
+  const [routeSheetHeightPx, setRouteSheetHeightPx] = useState(() => {
     const h = Dimensions.get("window").height;
-    const minH = Math.round(h * 0.45);
+    const minH = Math.max(120, Math.round(h * 0.14));
     const maxH = Math.round(h * 0.94);
-    const v = Math.round(h * 0.5);
+    const v = Math.round(h * (isEditingMyRoute ? 0.5 : 0.52));
     return Math.min(Math.max(v, minH), maxH);
   });
-  const sheetEditHeightRef = useRef(routeEditSheetHeightPx);
-  sheetEditHeightRef.current = routeEditSheetHeightPx;
-  const sheetEditPanStartRef = useRef(0);
-  const routeEditSheetPanResponder = useMemo(
+  const sheetHeightRef = useRef(routeSheetHeightPx);
+  sheetHeightRef.current = routeSheetHeightPx;
+  const sheetPanStartRef = useRef(0);
+  const routeSheetPanResponder = useMemo(
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => false,
         onMoveShouldSetPanResponder: (_, g) =>
           Math.abs(g.dy) > 6 && Math.abs(g.dy) > Math.abs(g.dx) * 0.55,
         onPanResponderGrant: () => {
-          sheetEditPanStartRef.current = sheetEditHeightRef.current;
+          sheetPanStartRef.current = sheetHeightRef.current;
         },
         onPanResponderMove: (_, g) => {
-          setRouteEditSheetHeightPx(
-            clampRouteEditSheetHeight(sheetEditPanStartRef.current - g.dy),
-          );
+          setRouteSheetHeightPx(clampRouteSheetHeight(sheetPanStartRef.current - g.dy));
         },
         onPanResponderRelease: async (_, g) => {
-          const next = clampRouteEditSheetHeight(
-            sheetEditPanStartRef.current - g.dy,
-          );
-          setRouteEditSheetHeightPx(next);
+          const next = clampRouteSheetHeight(sheetPanStartRef.current - g.dy);
+          setRouteSheetHeightPx(next);
+          if (!isEditingMyRoute) return;
           try {
             await AsyncStorage.setItem(
               ROUTE_EDIT_SHEET_HEIGHT_STORAGE_KEY,
@@ -875,7 +884,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
           }
         },
       }),
-    [clampRouteEditSheetHeight],
+    [clampRouteSheetHeight, isEditingMyRoute],
   );
   useEffect(() => {
     if (!isEditingMyRoute) return;
@@ -888,7 +897,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
         if (cancelled || raw == null) return;
         const n = Number(raw);
         if (!Number.isFinite(n)) return;
-        setRouteEditSheetHeightPx(clampRouteEditSheetHeight(n));
+        setRouteSheetHeightPx(clampRouteSheetHeight(n));
       } catch {
         /* ignore */
       }
@@ -896,11 +905,10 @@ export default function RouteCreateScreen(): React.JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [isEditingMyRoute, clampRouteEditSheetHeight]);
+  }, [isEditingMyRoute, clampRouteSheetHeight]);
   useEffect(() => {
-    if (!isEditingMyRoute) return;
-    setRouteEditSheetHeightPx((h) => clampRouteEditSheetHeight(h));
-  }, [windowH, isEditingMyRoute, clampRouteEditSheetHeight]);
+    setRouteSheetHeightPx((h) => clampRouteSheetHeight(h));
+  }, [windowH, clampRouteSheetHeight]);
   const { upsertUserRoute, getUserRoute, deleteUserRoute, userSavedRoutes } =
     useMockData();
 
@@ -914,6 +922,13 @@ export default function RouteCreateScreen(): React.JSX.Element {
   const [forkSourceCourseId, setForkSourceCourseId] = useState<string | null>(
     null,
   );
+  /** 포크 원본 제작자 — 재공유 목록에 원작자 표시 */
+  const forkOriginAuthorRef = useRef<{
+    forkId: string;
+    authorUuid?: string;
+    authorUserId?: string;
+    rootCourseId?: string;
+  } | null>(null);
   /** state 반영 전에도 동일 코스로 PATCH 하도록 (중복 POST 방지) */
   const persistedRouteIdRef = useRef<string | null>(null);
   const draftLocalRouteIdRef = useRef<string | null>(null);
@@ -921,6 +936,38 @@ export default function RouteCreateScreen(): React.JSX.Element {
   useEffect(() => {
     persistedRouteIdRef.current = persistedRouteId;
   }, [persistedRouteId]);
+
+  const pickForkAuthorExtras = useCallback(
+    (forkId: string, prev?: UserSavedRoute | null) => {
+      const fid = String(forkId ?? "").trim();
+      if (!fid) return {};
+      const ref = forkOriginAuthorRef.current;
+      const fromRef =
+        ref && ref.forkId === fid
+          ? {
+              forkSourceAuthorUuid: ref.authorUuid ?? null,
+              forkSourceAuthorUserId: ref.authorUserId ?? null,
+            }
+          : {};
+      const myUuid = String(authUser?.uuid ?? "").trim();
+      const myUserId = String(authUser?.userId ?? "").trim();
+      const rootCourseId =
+        ref?.rootCourseId ?? prev?.rootForkSourceCourseId ?? fid;
+      return {
+        forkedFromSharedId: fid,
+        forkSourceAuthorUuid:
+          fromRef.forkSourceAuthorUuid ?? prev?.forkSourceAuthorUuid ?? null,
+        forkSourceAuthorUserId:
+          fromRef.forkSourceAuthorUserId ?? prev?.forkSourceAuthorUserId ?? null,
+        rootForkSourceCourseId: rootCourseId,
+        forkModifierAuthorUuid:
+          myUuid || prev?.forkModifierAuthorUuid || null,
+        forkModifierAuthorUserId:
+          myUserId || prev?.forkModifierAuthorUserId || null,
+      };
+    },
+    [authUser?.uuid, authUser?.userId],
+  );
 
   const pickServerBackedRouteId = useCallback((): string | null => {
     const forkFrom = String(forkSourceCourseId ?? "").trim();
@@ -1022,6 +1069,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
   const liftMetaRef = useRef({ viaId: "", from: 0, title: "" });
   const dragMetricsRef = useRef({ grabX: 36, grabY: 32 });
   const viaDragCommitLockRef = useRef(false);
+  const viaAutoScrollAtRef = useRef(0);
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -1176,6 +1224,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
         draftLocalRouteIdRef.current = null;
         commitPersistedRouteId(null);
         setForkSourceCourseId(null);
+        forkOriginAuthorRef.current = null;
         setRouteTitle("새 루트");
         setSelectedTags([]);
         setPublishToPublic(false);
@@ -1194,6 +1243,26 @@ export default function RouteCreateScreen(): React.JSX.Element {
           courseItemToRouteStops(course);
         commitPersistedRouteId(opts.persistId ?? "");
         setForkSourceCourseId(opts.forkFromId);
+        if (opts.forkFromId) {
+          const origin = forkOriginAuthorFromCourse(course);
+          forkOriginAuthorRef.current = {
+            forkId: opts.forkFromId,
+            authorUuid: origin.forkSourceAuthorUuid ?? undefined,
+            authorUserId: origin.forkSourceAuthorUserId ?? undefined,
+            rootCourseId:
+              origin.rootForkSourceCourseId ?? opts.forkFromId,
+          };
+          void resolveForkOriginForSave(opts.forkFromId, course).then((root) => {
+            forkOriginAuthorRef.current = {
+              forkId: opts.forkFromId!,
+              authorUuid: root.forkSourceAuthorUuid ?? undefined,
+              authorUserId: root.forkSourceAuthorUserId ?? undefined,
+              rootCourseId: root.rootForkSourceCourseId ?? opts.forkFromId!,
+            };
+          });
+        } else {
+          forkOriginAuthorRef.current = null;
+        }
         setRouteTitle(course.title);
         setSelectedTags(
           Array.isArray(course.tags)
@@ -1212,7 +1281,20 @@ export default function RouteCreateScreen(): React.JSX.Element {
       };
 
       const applyLocalSavedRoute = (r: UserSavedRoute) => {
-        setForkSourceCourseId(null);
+        const fork = String(r.forkedFromSharedId ?? "").trim();
+        setForkSourceCourseId(fork || null);
+        if (fork) {
+          forkOriginAuthorRef.current = {
+            forkId: fork,
+            authorUuid: String(r.forkSourceAuthorUuid ?? "").trim() || undefined,
+            authorUserId:
+              String(r.forkSourceAuthorUserId ?? "").trim() || undefined,
+            rootCourseId:
+              String(r.rootForkSourceCourseId ?? fork).trim() || fork,
+          };
+        } else {
+          forkOriginAuthorRef.current = null;
+        }
         commitPersistedRouteId(r.id);
         setRouteTitle(r.title);
         setRouteCoverImageUri(
@@ -1598,7 +1680,12 @@ export default function RouteCreateScreen(): React.JSX.Element {
       } catch (e: any) {
         if (controller.signal.aborted) return;
         setSearchResults([]);
-        setSearchError(e?.message ?? "장소 검색 중 오류가 발생했습니다.");
+        setSearchError(
+          toUserFacingErrorMessage(
+            e?.message,
+            ROUTE_USER_MESSAGES.placeSearchFailed,
+          ),
+        );
       } finally {
         if (!controller.signal.aborted) setSearchLoading(false);
       }
@@ -1927,16 +2014,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                 .map((x) => String(x.lineLabel).trim());
               const summaryCore =
                 transitChain.length > 0 ? transitChain.join(" => ") : r.summary;
-              const providerPrefix =
-                r.source === "tmap"
-                  ? "Tmap · "
-                  : r.source === "kakao"
-                    ? "Kakao · "
-                    : "";
-              const summary =
-                providerPrefix && !summaryCore.startsWith(providerPrefix)
-                  ? `${providerPrefix}${summaryCore}`
-                  : summaryCore;
+              const summary = summaryCore;
               if (__DEV__) {
                 console.log(
                   `[Directions] leg ${i} OK mode=${leg.mode} provider=${r.source ?? "google"} pathPoints=${path.length} mapSegs=${segs.length}`,
@@ -2069,6 +2147,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
 
   const handleViaDragBegin = useCallback((pageX: number, pageY: number) => {
     viaDragCommitLockRef.current = false;
+    viaAutoScrollAtRef.current = 0;
     const { viaId } = liftMetaRef.current;
     const row = stopRowRefs.current[viaId];
     const winW = Dimensions.get("window").width;
@@ -2139,6 +2218,10 @@ export default function RouteCreateScreen(): React.JSX.Element {
   );
 
   const handleViaEdgeScroll = useCallback((pageY: number) => {
+    if (viaDragRef.current?.phase !== "drag") return;
+    const now = Date.now();
+    if (now - viaAutoScrollAtRef.current < VIA_DRAG_SCROLL_INTERVAL_MS) return;
+    viaAutoScrollAtRef.current = now;
     const scrollRef = itineraryScrollRef.current;
     if (!scrollRef) return;
     itineraryListViewportRef.current?.measureInWindow((_x, winY, _w, winH) => {
@@ -2186,6 +2269,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
     }
     requestAnimationFrame(() => {
       viaDragCommitLockRef.current = false;
+      viaAutoScrollAtRef.current = 0;
     });
   }, []);
 
@@ -2631,11 +2715,10 @@ export default function RouteCreateScreen(): React.JSX.Element {
                 publishedToPublic: wantPublic,
                 coverImageUri: routeCoverImageUri,
                 chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
-                ...(isOwnCourseUpdate
-                  ? {}
-                  : { forkedFromSharedId: forkId }),
+                ...(isOwnCourseUpdate ? {} : pickForkAuthorExtras(forkId, prev)),
               });
               setForkSourceCourseId(null);
+              forkOriginAuthorRef.current = null;
             }
           } else {
             const newPersonalId = await forkSharedCourseToPersonalRoute(
@@ -2659,9 +2742,10 @@ export default function RouteCreateScreen(): React.JSX.Element {
                 publishedToPublic: wantPublic,
                 coverImageUri: routeCoverImageUri,
                 chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
-                forkedFromSharedId: forkId,
+                ...pickForkAuthorExtras(forkId, prev),
               });
               setForkSourceCourseId(null);
+              forkOriginAuthorRef.current = null;
             }
           }
         } else if (serverId) {
@@ -2680,7 +2764,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
               publishedToPublic: wantPublic,
               coverImageUri: routeCoverImageUri,
               chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
-              ...(forkMeta ? { forkedFromSharedId: forkMeta } : {}),
+              ...(forkMeta ? pickForkAuthorExtras(forkMeta, prev) : {}),
             });
           }
         } else {
@@ -2701,7 +2785,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
               publishedToPublic: wantPublic,
               coverImageUri: routeCoverImageUri,
               chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
-              ...(forkMeta ? { forkedFromSharedId: forkMeta } : {}),
+              ...(forkMeta ? pickForkAuthorExtras(forkMeta, prev) : {}),
             });
           }
         }
@@ -2837,14 +2921,97 @@ export default function RouteCreateScreen(): React.JSX.Element {
       navigateBack: false,
       collaborativeOverride: true,
     });
-    return res.routeId;
-  }, [pickServerBackedRouteId, persistRouteToServer]);
+    if (res.routeId) return res.routeId;
+
+    // 백엔드가 좌표 없는 초안을 거부할 때 대비: 시작/도착에 임시 중심 좌표를 채워 1회 재시도
+    const fallbackLat =
+      currentSearchCenter?.latitude ??
+      initialMapCenter?.latitude ??
+      MAP_DEFAULT_LAT;
+    const fallbackLng =
+      currentSearchCenter?.longitude ??
+      initialMapCenter?.longitude ??
+      MAP_DEFAULT_LNG;
+    const patchedStops = stops.map((s) =>
+      s.kind === "start" || s.kind === "end"
+        ? {
+            ...s,
+            lat: s.lat ?? fallbackLat,
+            lng: s.lng ?? fallbackLng,
+          }
+        : s,
+    );
+    const patchedPayload = buildUpsertPayloadFromUserRoute({
+      title: routeTitle.trim() || "새 루트",
+      collaborative: true,
+      tags: selectedTags
+        .map((t) => String(t).trim())
+        .filter(Boolean)
+        .slice(0, MAX_ROUTE_TAGS),
+      stops: patchedStops.map((s) => ({
+        id: s.id,
+        kind: s.kind,
+        title: s.title,
+        timeLine: s.timeLine,
+        lat: s.lat,
+        lng: s.lng,
+      })),
+      legs: legs.map((l) => ({
+        id: l.id,
+        mode: l.mode,
+        minutes: l.minutes,
+        transitType: l.transitType,
+        directionsSummary: l.directionsSummary,
+        directionsDetail: l.directionsDetail,
+        distanceMeters: l.distanceMeters,
+      })),
+    });
+    const created = await createMyRoute(patchedPayload);
+    if (!created) return null;
+
+    const now = new Date().toISOString();
+    upsertUserRoute({
+      id: created,
+      title: routeTitle.trim() || "새 루트",
+      createdAt: now,
+      updatedAt: now,
+      collaborative: true,
+      tags: selectedTags
+        .map((t) => String(t).trim())
+        .filter(Boolean)
+        .slice(0, MAX_ROUTE_TAGS),
+      stops: patchedPayload.stops,
+      legs: patchedPayload.legs,
+      publishedToPublic: false,
+      coverImageUri: routeCoverImageUri,
+      chatRoomUuid: routeChatRoomUuid ?? undefined,
+    });
+    commitPersistedRouteId(created);
+    return created;
+  }, [
+    pickServerBackedRouteId,
+    persistRouteToServer,
+    currentSearchCenter?.latitude,
+    currentSearchCenter?.longitude,
+    initialMapCenter?.latitude,
+    initialMapCenter?.longitude,
+    stops,
+    legs,
+    routeTitle,
+    selectedTags,
+    routeCoverImageUri,
+    routeChatRoomUuid,
+    upsertUserRoute,
+    commitPersistedRouteId,
+  ]);
 
   /** 공동 루트 자동 저장 — 실패해도 재시도 폭주하지 않음 */
   const collabAutoSaveAttemptedRef = useRef(false);
   const collabAutoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  /** 루트 제작 진입 직후 1회 초안 저장(공유 실패 방지용 routeId 확보) */
+  const initialDraftPersistTriedRef = useRef(false);
 
   const scheduleCollaborativeAutoSave = useCallback(() => {
     const wantsCollab =
@@ -2877,6 +3044,28 @@ export default function RouteCreateScreen(): React.JSX.Element {
     };
   }, []);
 
+  useEffect(() => {
+    const editId = route.params?.editRouteId as string | undefined;
+    const seedId = route.params?.seedSharedCourseId as string | undefined;
+    if (editId || seedId) return;
+    if (initialDraftPersistTriedRef.current) return;
+    if (pickServerBackedRouteId()) return;
+    initialDraftPersistTriedRef.current = true;
+
+    // 공유 버튼 직후 "공동 루트 저장 실패"를 줄이기 위해 진입 시 1회 routeId 선확보
+    void persistRouteToServer({
+      silent: true,
+      requireCoords: false,
+      navigateBack: false,
+      collaborativeOverride: true,
+    });
+  }, [
+    route.params?.editRouteId,
+    route.params?.seedSharedCourseId,
+    pickServerBackedRouteId,
+    persistRouteToServer,
+  ]);
+
   /** 출발·도착 좌표가 잡히면 공동 루트 1회 자동 저장(공유용) */
   useEffect(() => {
     const wantsCollab =
@@ -2903,13 +3092,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
     collabAutoSaveAttemptedRef.current = false;
     const rid = await ensureCollaborativeRoutePersisted();
     if (!rid) {
-      const needsCoords =
-        stops[0]?.lat == null || stops[stops.length - 1]?.lat == null;
-      showToast(
-        needsCoords
-          ? "출발·도착을 설정한 뒤 공유해 주세요"
-          : "공동 루트 저장에 실패했어요. 잠시 후 다시 시도해 주세요",
-      );
+      showToast("공동 루트 저장에 실패했어요. 잠시 후 다시 시도해 주세요");
       return;
     }
     presentCollaborativeShareOptions({
@@ -2917,7 +3100,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
       title: routeTitle.trim() || "루트",
       onInviteFriends: () => setFriendInviteOpen(true),
     });
-  }, [routeTitle, showToast, ensureCollaborativeRoutePersisted, stops]);
+  }, [routeTitle, showToast, ensureCollaborativeRoutePersisted]);
 
   const handleInviteFriendsToRoute = async (friendUuids: string[]) => {
     const rid =
@@ -3033,19 +3216,19 @@ export default function RouteCreateScreen(): React.JSX.Element {
   const renderTimelineDot = (stop: RouteStop) => {
     if (stop.kind === "start")
       return (
-        <View className="h-8 w-8 items-center justify-center rounded-full bg-green-600">
+        <View className="items-center justify-center w-8 h-8 bg-green-600 rounded-full">
           <Text className="text-xs font-bold text-white">P</Text>
         </View>
       );
     if (stop.kind === "end")
       return (
-        <View className="h-8 w-8 items-center justify-center rounded-full bg-red-500">
+        <View className="items-center justify-center w-8 h-8 bg-red-500 rounded-full">
           <Text className="text-[10px] font-bold text-white">P</Text>
         </View>
       );
     const vn = viaStops.findIndex((v) => v.id === stop.id) + 1;
     return (
-      <View className="h-8 w-8 items-center justify-center rounded-full bg-gray-300">
+      <View className="items-center justify-center w-8 h-8 bg-gray-300 rounded-full">
         <Text className="text-xs font-semibold text-gray-700">{vn}</Text>
       </View>
     );
@@ -3067,11 +3250,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
 
   /** 하단 시트 둥근 모서리 뒤로 지도가 비치도록 살짝 겹침 (rounded-t-3xl ≈ 24px) */
   const ROUTE_SHEET_TOP_OVERLAP = 24;
-  /** 신규 루트: 패널 높이 고정(비율). 수정 모드: 드래그로 조절 가능한 높이 */
-  const createRouteSheetHeightPx = Math.max(260, Math.round(windowH * 0.52));
-  const bottomSheetPanelHeightPx = isEditingMyRoute
-    ? routeEditSheetHeightPx
-    : createRouteSheetHeightPx;
+  const bottomSheetPanelHeightPx = routeSheetHeightPx;
 
   return (
     <View className="flex-1" style={{ backgroundColor: "#4b5563" }}>
@@ -3101,12 +3280,15 @@ export default function RouteCreateScreen(): React.JSX.Element {
         }}
       >
         <View
-          className="flex-row items-start gap-2 px-3"
+          className="flex-row gap-2 px-3"
+          style={{
+            alignItems: showHeaderChatBelowShare ? "flex-start" : "center",
+          }}
           pointerEvents="box-none"
         >
           <Pressable
             onPress={() => safeGoBack(navigation)}
-            className="z-10 h-11 w-11 items-center justify-center rounded-full bg-white shadow-md active:opacity-90"
+            className="z-10 items-center justify-center w-12 h-12 bg-white rounded-full shadow-md active:opacity-90"
             style={{
               shadowColor: "#000",
               shadowOffset: { width: 0, height: 2 },
@@ -3120,14 +3302,14 @@ export default function RouteCreateScreen(): React.JSX.Element {
 
           <Pressable
             onPress={() => openSearch()}
-            className="flex-1 flex-row items-center rounded-2xl bg-white px-4 py-3 shadow-md active:opacity-95"
+            className="flex-row items-center flex-1 px-4 py-0 bg-white shadow-md rounded-2xl active:opacity-95"
             style={{
               shadowColor: "#000",
               shadowOffset: { width: 0, height: 2 },
               shadowOpacity: 0.1,
               shadowRadius: 8,
               elevation: 4,
-              minHeight: 50,
+              height: 48,
             }}
             hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
           >
@@ -3137,10 +3319,10 @@ export default function RouteCreateScreen(): React.JSX.Element {
             <Ionicons name="search-outline" size={22} color="#6b7280" />
           </Pressable>
 
-          <View className="shrink-0 items-center" pointerEvents="box-none">
+          <View className="items-center shrink-0" pointerEvents="box-none">
             <Pressable
               onPress={handleTopSharePress}
-              className="h-11 w-11 items-center justify-center rounded-full bg-white shadow-md active:opacity-90"
+              className="items-center justify-center w-12 h-12 bg-white rounded-full shadow-md active:opacity-90"
               style={{
                 shadowColor: "#000",
                 shadowOffset: { width: 0, height: 2 },
@@ -3176,7 +3358,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
         </View>
 
         {showCollabMemberBar ? (
-          <View className="mt-2 px-3" pointerEvents="box-none">
+          <View className="px-3 mt-2" pointerEvents="box-none">
             <CollaboratorAvatarStack
               members={collabMembers}
               onPress={() =>
@@ -3192,7 +3374,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
         <View style={{ flex: 1, minHeight: 0 }} pointerEvents="none" />
 
         <View
-          className="rounded-t-3xl border-t border-gray-200 bg-white"
+          className="bg-white border-t border-gray-200 rounded-t-3xl"
           style={{
             height: bottomSheetPanelHeightPx,
             flexShrink: 0,
@@ -3206,49 +3388,47 @@ export default function RouteCreateScreen(): React.JSX.Element {
             elevation: 20,
           }}
         >
-          {isEditingMyRoute ? (
+          <View
+            {...routeSheetPanResponder.panHandlers}
+            style={{
+              paddingVertical: 8,
+              paddingHorizontal: 16,
+              backgroundColor: "#f1f5f9",
+              borderBottomWidth: StyleSheet.hairlineWidth,
+              borderBottomColor: "#e2e8f0",
+            }}
+          >
             <View
-              {...routeEditSheetPanResponder.panHandlers}
               style={{
-                paddingVertical: 8,
-                paddingHorizontal: 16,
-                backgroundColor: "#f1f5f9",
-                borderBottomWidth: StyleSheet.hairlineWidth,
-                borderBottomColor: "#e2e8f0",
+                alignSelf: "center",
+                width: 40,
+                height: 5,
+                borderRadius: 3,
+                backgroundColor: "#94a3b8",
+                marginBottom: 6,
               }}
-            >
-              <View
-                style={{
-                  alignSelf: "center",
-                  width: 40,
-                  height: 5,
-                  borderRadius: 3,
-                  backgroundColor: "#94a3b8",
-                  marginBottom: 6,
-                }}
-              />
-            </View>
-          ) : null}
-          <View className="border-b border-gray-50 px-4 pt-3 pb-2">
+            />
+          </View>
+          <View className="px-4 pt-3 pb-2 border-b border-gray-50">
             <View className="flex-row items-center">
               <Pressable
                 onPress={() => void pickRouteCoverImage()}
-                className="mr-3 h-14 w-14 overflow-hidden rounded-xl bg-slate-100 active:opacity-90"
+                className="mr-3 overflow-hidden h-14 w-14 rounded-xl bg-slate-100 active:opacity-90"
                 accessibilityLabel="루트 대표 이미지 설정"
               >
                 {routeCoverImageUri ? (
                   <Image
                     source={{ uri: routeCoverImageUri }}
-                    className="h-full w-full"
+                    className="w-full h-full"
                     resizeMode="cover"
                   />
                 ) : (
-                  <View className="h-full w-full items-center justify-center">
+                  <View className="items-center justify-center w-full h-full">
                     <Ionicons name="camera-outline" size={22} color="#94a3b8" />
                   </View>
                 )}
               </Pressable>
-              <View className="min-w-0 flex-1 flex-row items-center">
+              <View className="flex-row items-center flex-1 min-w-0">
                 <TextInput
                   value={routeTitle}
                   onChangeText={setRouteTitle}
@@ -3267,7 +3447,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
             </Text>
           </View>
 
-          <View className="border-b border-gray-100 px-4 pb-3">
+          <View className="px-4 pb-3 border-b border-gray-100">
             <Text className="mb-1.5 text-[11px] font-semibold text-gray-700">
               태그 (최대 {MAX_ROUTE_TAGS}개)
             </Text>
@@ -3300,7 +3480,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
           <View className="border-b border-gray-100 px-3 py-2.5">
             <View className="flex-row items-center gap-2">
               {isCollaborative ? (
-                <View className="min-w-0 flex-1">
+                <View className="flex-1 min-w-0">
                   <Text className="text-xs font-medium text-gray-500">
                     {showCollabMemberBar
                       ? "멤버와 함께 편집 · 상단 공유로 초대"
@@ -3308,7 +3488,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                   </Text>
                 </View>
               ) : (
-                <View className="min-w-0 flex-1" />
+                <View className="flex-1 min-w-0" />
               )}
               <View className="flex-row items-center gap-2 shrink-0">
                 {isCollaborative ? (
@@ -3341,7 +3521,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                 <Pressable
                   onPress={() => void saveRoute()}
                   disabled={routeSaving}
-                  className="min-w-[72px] flex-row items-center justify-center rounded-xl bg-green-600 px-3.5 py-2 active:opacity-90"
+                  className="shrink-0 flex-row items-center justify-center rounded-xl bg-green-600 px-3.5 py-2 active:opacity-90"
                   style={{ opacity: routeSaving ? 0.85 : 1 }}
                 >
                   {routeSaving ? (
@@ -3362,6 +3542,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
             <ScrollView
               ref={itineraryScrollRef}
               className="flex-1 px-3"
+              scrollEnabled={viaDrag?.phase !== "lift" && viaDrag?.phase !== "drag"}
               showsVerticalScrollIndicator={false}
               scrollEventThrottle={16}
               onScroll={(e) => {
@@ -3402,7 +3583,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                     }}
                   >
                     <View className="flex-row">
-                      <View className="w-10 items-center">
+                      <View className="items-center w-10">
                         {index > 0 ? (
                           <View
                             style={{
@@ -3428,7 +3609,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                       </View>
 
                       <View
-                        className="mb-2 ml-2 flex-1 rounded-xl bg-gray-50/80 p-3"
+                        className="flex-1 p-3 mb-2 ml-2 rounded-xl bg-gray-50/80"
                         style={{
                           opacity: cardOpacity,
                           ...(isDragRow
@@ -3441,7 +3622,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                         }}
                       >
                         <View className="flex-row items-start justify-between">
-                          <View className="flex-1 flex-row flex-wrap items-center gap-2">
+                          <View className="flex-row flex-wrap items-center flex-1 gap-2">
                             {renderStopBadge(stop.kind)}
                             <Text
                               className="text-base font-bold text-gray-900"
@@ -3506,7 +3687,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                     {index < stops.length - 1 && legs[index] && (
                       <Pressable
                         onPress={() => setEditingLegId(legs[index].id)}
-                        className="ml-12 mb-2 py-1 pl-2 active:opacity-70"
+                        className="py-1 pl-2 mb-2 ml-12 active:opacity-70"
                         style={{
                           borderLeftWidth: 3,
                           borderLeftColor: "rgba(37, 99, 235, 0.35)",
@@ -3518,7 +3699,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                             size={18}
                             color="#2563eb"
                           />
-                          <Text className="ml-2 flex-1 text-xs font-medium text-blue-900/80">
+                          <Text className="flex-1 ml-2 text-xs font-medium text-blue-900/80">
                             {legTransportLabel(
                               legs[index].mode,
                               legs[index].transitType,
@@ -3532,14 +3713,20 @@ export default function RouteCreateScreen(): React.JSX.Element {
                             style={{ marginLeft: 4 }}
                           />
                         </View>
-                        {legs[index].directionsSummary ? (
-                          <Text
-                            className="mt-0.5 pl-7 text-[11px] leading-4 text-slate-600"
-                            numberOfLines={2}
-                          >
-                            {legs[index].directionsSummary}
-                          </Text>
-                        ) : null}
+                        {(() => {
+                          const legSummary = sanitizeRouteDisplayText(
+                            legs[index].directionsSummary,
+                          );
+                          if (!legSummary) return null;
+                          return (
+                            <Text
+                              className="mt-0.5 pl-7 text-[11px] leading-4 text-slate-600"
+                              numberOfLines={2}
+                            >
+                              {legSummary}
+                            </Text>
+                          );
+                        })()}
                       </Pressable>
                     )}
                     {index < stops.length - 1 &&
@@ -3586,7 +3773,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                     legs[index]?.mode === "transit" &&
                     legs[index].transitCandidates &&
                     legs[index].transitCandidates!.length > 0 ? (
-                      <View className="mb-2 ml-12 pl-2">
+                      <View className="pl-2 mb-2 ml-12">
                         <Text className="mb-1.5 text-[10px] font-semibold text-sky-800">
                           대중교통 경로 ({legs[index].transitCandidates!.length}
                           개)
@@ -3616,7 +3803,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                               >
                                 {c.summary}
                               </Text>
-                              <View className="mt-1 flex-row flex-wrap gap-2">
+                              <View className="flex-row flex-wrap gap-2 mt-1">
                                 {c.departureLabel ? (
                                   <Text className="text-[11px] font-semibold text-emerald-700">
                                     {c.departureLabel}
@@ -3731,7 +3918,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
             <View className="flex-row items-center gap-2 border-b border-gray-200 px-3 py-2.5">
               <Pressable
                 onPress={closeSearch}
-                className="h-10 w-10 items-center justify-center rounded-full bg-white active:opacity-80"
+                className="items-center justify-center w-10 h-10 bg-white rounded-full active:opacity-80"
               >
                 <Ionicons name="chevron-back" size={22} color="#f97316" />
               </Pressable>
@@ -3759,7 +3946,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
               <Text className="mb-1 text-[10px] font-semibold text-gray-600">
                 정렬
               </Text>
-              <View className="mb-2 flex-row gap-2">
+              <View className="flex-row gap-2 mb-2">
                 <Pressable
                   onPress={() => setSearchSort("accuracy")}
                   className={`rounded-lg border px-3 py-1.5 ${
@@ -3819,8 +4006,8 @@ export default function RouteCreateScreen(): React.JSX.Element {
                     ))}
                   </View>
                   <Text className="mt-1 text-[10px] text-gray-500">
-                    30km 이상/무제한은 카카오 API 특성상 넓은 범위 정확도
-                    기반으로 결과가 반환될 수 있어요.
+                    30km 이상·무제한 검색은 넓은 범위 기준으로 결과가 달라질 수
+                    있어요.
                   </Text>
                 </View>
               ) : null}
@@ -3874,19 +4061,19 @@ export default function RouteCreateScreen(): React.JSX.Element {
               keyboardShouldPersistTaps="handled"
             >
               <>
-                <Text className="mb-2 px-1 text-sm font-bold text-gray-800">
+                <Text className="px-1 mb-2 text-sm font-bold text-gray-800">
                   검색결과
                 </Text>
                 {searchLoading ? (
-                  <Text className="py-8 text-center text-sm text-gray-500">
+                  <Text className="py-8 text-sm text-center text-gray-500">
                     검색 중...
                   </Text>
                 ) : searchError ? (
-                  <Text className="py-8 text-center text-sm text-rose-500">
+                  <Text className="py-8 text-sm text-center text-rose-500">
                     {searchError}
                   </Text>
                 ) : searchResults.length === 0 ? (
-                  <Text className="py-8 text-center text-sm text-gray-500">
+                  <Text className="py-8 text-sm text-center text-gray-500">
                     {searchQuery.trim() === ""
                       ? "필터나 검색을 통해 찾아보세요!"
                       : "검색 결과가 없습니다. 필터나 다른 키워드로 찾아보세요!"}
@@ -3932,8 +4119,8 @@ export default function RouteCreateScreen(): React.JSX.Element {
                           />
                         </View>
                         {expanded && (
-                          <View className="border-t border-gray-100 bg-gray-50 px-3 py-3">
-                            <Text className="text-center text-sm text-gray-700">
+                          <View className="px-3 py-3 border-t border-gray-100 bg-gray-50">
+                            <Text className="text-sm text-center text-gray-700">
                               선택하신 {TRANSPORT_LABELS.transit}(으)로 이동 시
                               약 {estimateMinutes("transit", p.id)}분
                             </Text>
@@ -3983,7 +4170,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
       />
 
       <Modal visible={!!editingLegId} transparent animationType="fade">
-        <View className="flex-1 justify-center px-6">
+        <View className="justify-center flex-1 px-6">
           <Pressable
             style={StyleSheet.absoluteFillObject}
             className="bg-black/40"
@@ -3998,14 +4185,17 @@ export default function RouteCreateScreen(): React.JSX.Element {
             </Text>
             {(() => {
               const leg = legs.find((l) => l.id === editingLegId);
-              if (!leg?.directionsDetail) return null;
+              const legDetail = sanitizeRouteDisplayText(
+                leg?.directionsDetail,
+              );
+              if (!legDetail) return null;
               return (
                 <ScrollView
-                  className="mb-3 max-h-40 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2"
+                  className="px-3 py-2 mb-3 border max-h-40 rounded-xl border-slate-100 bg-slate-50"
                   nestedScrollEnabled
                 >
                   <Text className="text-xs leading-5 text-slate-700">
-                    {leg.directionsDetail}
+                    {legDetail}
                   </Text>
                 </ScrollView>
               );
@@ -4102,7 +4292,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                   <Text className="mb-2 text-sm font-semibold text-gray-800">
                     대중교통 종류 (필터)
                   </Text>
-                  <View className="mb-3 flex-row gap-2">
+                  <View className="flex-row gap-2 mb-3">
                     {(Object.keys(TRANSIT_TYPE_LABELS) as TransitType[]).map(
                       (tt) => {
                         const on = (leg.transitType ?? "subway") === tt;
@@ -4183,7 +4373,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                         );
                       })
                     ) : (
-                      <Text className="py-4 text-center text-xs text-gray-500">
+                      <Text className="py-4 text-xs text-center text-gray-500">
                         대중교통 경로를 조회하는 중이거나, 이 구간에 승차 정보가
                         없습니다.
                       </Text>
@@ -4206,7 +4396,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
           className="items-center justify-center bg-black/35"
         >
           <View
-            className="items-center rounded-2xl bg-white px-8 py-6"
+            className="items-center px-8 py-6 bg-white rounded-2xl"
             style={{
               shadowColor: "#000",
               shadowOffset: { width: 0, height: 4 },
@@ -4227,22 +4417,22 @@ export default function RouteCreateScreen(): React.JSX.Element {
       ) : null}
 
       <Modal visible={!!editingStop} transparent animationType="fade">
-        <View className="flex-1 justify-center px-6">
+        <View className="justify-center flex-1 px-6">
           <Pressable
             style={StyleSheet.absoluteFillObject}
             className="bg-black/40"
             onPress={() => setEditingStop(null)}
           />
-          <View className="rounded-2xl bg-white p-5" style={{ zIndex: 1 }}>
+          <View className="p-5 bg-white rounded-2xl" style={{ zIndex: 1 }}>
             <Text className="text-lg font-bold text-gray-900">장소 이름</Text>
             <TextInput
               value={editTitle}
               onChangeText={setEditTitle}
-              className="mt-3 rounded-xl border border-gray-200 px-3 py-3 text-base text-gray-900"
+              className="px-3 py-3 mt-3 text-base text-gray-900 border border-gray-200 rounded-xl"
               placeholder="표시할 이름"
               autoFocus
             />
-            <View className="mt-4 flex-row justify-end gap-2">
+            <View className="flex-row justify-end gap-2 mt-4">
               <Pressable
                 onPress={() => setEditingStop(null)}
                 className="rounded-xl px-4 py-2.5 active:opacity-70"

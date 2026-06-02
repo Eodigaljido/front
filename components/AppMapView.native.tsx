@@ -261,9 +261,7 @@ function AppMapViewExpoGoogleMapsImpl({
 
 export default function AppMapView(props: Props): React.JSX.Element {
   const useNativeGoogle = Platform.OS === "android" && !isExpoGoClient();
-  const needsGuideCamera =
-    props.followUser === true ||
-    (typeof props.mapHeading === "number" && Number.isFinite(props.mapHeading));
+  const needsGuideCamera = props.followUser === true;
 
   if (useNativeGoogle && !needsGuideCamera) {
     return <AppMapViewExpoGoogleMapsImpl {...props} />;

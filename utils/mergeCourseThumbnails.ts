@@ -58,6 +58,7 @@ export function applyMineAuthorToPersonalRoutes(
   return courses.map((c) => {
     const ur = userSavedRoutes.find((r) => sameCourseId(r.id, c.id));
     if (!ur || ur.collaborative) return c;
+    if (String(ur.forkedFromSharedId ?? "").trim()) return c;
     return {
       ...c,
       authorUuid: uuid || c.authorUuid,

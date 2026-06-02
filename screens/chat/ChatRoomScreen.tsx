@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -55,7 +56,7 @@ export const ChatRoomScreen = () => {
     null,
   );
 
-  const { handleTypingEvent, typingText } = useTypingIndicator(userUuid);
+  const { handleTypingEvent, typingUsers } = useTypingIndicator(userUuid);
 
   const { sendMessage: socketSend, sendTyping } = useChatSocket(
     roomUuid,
@@ -139,6 +140,12 @@ export const ChatRoomScreen = () => {
       );
     });
   }, [fetchMessages]);
+
+  useEffect(() => {
+    if (typingUsers.size > 0) {
+      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 50);
+    }
+  }, [typingUsers.size]);
 
   const handleSend = async (text: string) => {
     if (editingMessage) {
@@ -228,9 +235,14 @@ export const ChatRoomScreen = () => {
     );
     try {
       await sendImageMessage(accessToken, roomUuid, imageUri);
-    } catch (err) {
-      console.error("[Chat] 이미지 전송 실패:", err);
+    } catch (err: any) {
+      console.warn("[Chat] 이미지 전송 실패:", err?.response?.status, err?.response?.data);
       setMessages((prev) => prev.filter((m) => m.uuid !== pendingUuid));
+      const detail =
+        err?.response?.data?.message ??
+        err?.message ??
+        "이미지를 보내지 못했습니다.";
+      Alert.alert("이미지 전송 실패", String(detail));
     }
   };
 
@@ -254,7 +266,7 @@ export const ChatRoomScreen = () => {
 
   if (loading) {
     return (
-      <View className="flex-1 justify-center items-center">
+      <View className="items-center justify-center flex-1">
         <ActivityIndicator size="large" />
       </View>
     );
@@ -315,13 +327,16 @@ export const ChatRoomScreen = () => {
               />
             );
           })}
+          {Array.from(typingUsers.entries()).map(([uuid, name]) => (
+            <BubbleChat
+              key={`typing-${uuid}`}
+              isMine={false}
+              isTyping={true}
+              userName={memberCount >= 3 ? name : undefined}
+            />
+          ))}
         </KeyboardAwareScrollView>
         <KeyboardStickyView offset={{ closed: 0, opened: 15 }}>
-          {typingText !== "" && (
-            <View style={typingStyles.container}>
-              <Text style={typingStyles.text}>{typingText}</Text>
-            </View>
-          )}
           <MessageInput
             onSend={handleSend}
             onImageSend={handleImageSend}
@@ -426,14 +441,3 @@ const modalStyles = StyleSheet.create({
   },
 });
 
-const typingStyles = StyleSheet.create({
-  container: {
-    paddingHorizontal: 20,
-    paddingVertical: 6,
-  },
-  text: {
-    fontSize: 12,
-    color: "#888",
-    fontStyle: "italic",
-  },
-});

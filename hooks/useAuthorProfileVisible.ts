@@ -8,6 +8,8 @@ type Options = {
   isOwn?: boolean;
   /** 코스 응답의 authorProfilePublic — false면 즉시 숨김 */
   apiFlag?: boolean;
+  /** UUID 없이 userId만 있어도 제작자 라벨 표시 */
+  authorUserId?: string | null;
 };
 
 /**
@@ -21,10 +23,13 @@ export function useAuthorProfileVisible(
   const isOwn = opts?.isOwn === true;
   const apiFlag = opts?.apiFlag;
   const uuid = String(authorUuid ?? "").trim();
+  const userId = String(opts?.authorUserId ?? "").trim();
+  const hasLabelOnly = !uuid && Boolean(userId);
 
   const [visible, setVisible] = useState<boolean | null>(() => {
     if (isOwn) return true;
     if (apiFlag === false) return false;
+    if (hasLabelOnly) return true;
     if (!uuid) return false;
     const cached = getCachedAuthorProfileVisible(uuid);
     if (cached !== undefined) return cached;
@@ -38,6 +43,10 @@ export function useAuthorProfileVisible(
     }
     if (apiFlag === false) {
       setVisible(false);
+      return;
+    }
+    if (hasLabelOnly) {
+      setVisible(true);
       return;
     }
     if (!uuid) {
@@ -59,7 +68,7 @@ export function useAuthorProfileVisible(
     return () => {
       cancelled = true;
     };
-  }, [uuid, isOwn, apiFlag]);
+  }, [uuid, userId, hasLabelOnly, isOwn, apiFlag]);
 
   return visible;
 }

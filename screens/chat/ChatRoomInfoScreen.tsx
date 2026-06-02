@@ -56,6 +56,7 @@ type ChatRoomInfoRouteProp = RouteProp<
 type Member = {
   uuid: string;
   nickname: string;
+  profileImageUrl?: string | null;
   color: string;
   isOwner?: boolean;
 };
@@ -119,7 +120,8 @@ export default function ChatRoomInfoScreen() {
     setProfileImageUrl(room.profileImageUrl || null);
     const mapped: Member[] = (room.members ?? []).map((m, i) => ({
       uuid: m.uuid,
-      nickname: m.userId ?? m.uuid.slice(0, 8),
+      nickname: m.nickname ?? m.userId ?? m.uuid.slice(0, 8),
+      profileImageUrl: m.profileImageUrl ?? null,
       color: FRIEND_COLORS[i % FRIEND_COLORS.length],
       isOwner: m.uuid === room.ownerUuid,
     }));
@@ -323,12 +325,17 @@ export default function ChatRoomInfoScreen() {
         {/* 프로필 카드 */}
         <View style={s.profileCard}>
           <TouchableOpacity
-            onPress={() => {
-              setTempPresetId("");
-              setTempLocalImageUri(null);
-              setImageModalVisible(true);
-            }}
-            activeOpacity={0.85}
+            onPress={
+              isOwner
+                ? () => {
+                    setTempPresetId("");
+                    setTempLocalImageUri(null);
+                    setImageModalVisible(true);
+                  }
+                : undefined
+            }
+            activeOpacity={isOwner ? 0.85 : 1}
+            disabled={!isOwner}
           >
             <View style={s.avatarShadow}>
               <View style={[s.profileCircle, { backgroundColor: "#E5E7EB" }]}>
@@ -342,25 +349,33 @@ export default function ChatRoomInfoScreen() {
                 )}
               </View>
             </View>
-            <View style={s.editBadge}>
-              <Edit2 color="white" size={11} />
-            </View>
+            {isOwner && (
+              <View style={s.editBadge}>
+                <Edit2 color="white" size={11} />
+              </View>
+            )}
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={s.roomNameRow}
-            onPress={() => {
-              setEditingName(roomName);
-              setNameModalVisible(true);
-            }}
-            activeOpacity={0.7}
-          >
-            <Text style={s.roomNameText}>{roomName}</Text>
-            <View style={s.nameEditPill}>
-              <Edit2 color="#3B82F6" size={12} />
-              <Text style={s.nameEditPillText}>수정</Text>
+          {isOwner ? (
+            <TouchableOpacity
+              style={s.roomNameRow}
+              onPress={() => {
+                setEditingName(roomName);
+                setNameModalVisible(true);
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={s.roomNameText}>{roomName}</Text>
+              <View style={s.nameEditPill}>
+                <Edit2 color="#3B82F6" size={12} />
+                <Text style={s.nameEditPillText}>수정</Text>
+              </View>
+            </TouchableOpacity>
+          ) : (
+            <View style={s.roomNameRow}>
+              <Text style={s.roomNameText}>{roomName}</Text>
             </View>
-          </TouchableOpacity>
+          )}
         </View>
 
         {/* 멤버 카드 */}
@@ -382,12 +397,25 @@ export default function ChatRoomInfoScreen() {
           {members.map((member, index) => (
             <View key={member.uuid}>
               {index > 0 && <View style={s.memberDivider} />}
-              <View style={s.memberRow}>
-                <View
-                  style={[s.memberAvatar, { backgroundColor: member.color }]}
-                >
-                  <Text style={s.memberAvatarText}>{member.nickname[0]}</Text>
-                </View>
+              <TouchableOpacity
+                style={s.memberRow}
+                activeOpacity={0.7}
+                onPress={() =>
+                  navigation.navigate("UserProfile", { uuid: member.uuid })
+                }
+              >
+                {member.profileImageUrl ? (
+                  <Image
+                    source={{ uri: member.profileImageUrl }}
+                    style={[s.memberAvatar, { backgroundColor: member.color }]}
+                  />
+                ) : (
+                  <View
+                    style={[s.memberAvatar, { backgroundColor: member.color }]}
+                  >
+                    <Text style={s.memberAvatarText}>{member.nickname[0]}</Text>
+                  </View>
+                )}
                 <View style={{ flex: 1 }}>
                   <Text style={s.memberName}>{member.nickname}</Text>
                 </View>
@@ -405,7 +433,7 @@ export default function ChatRoomInfoScreen() {
                     <X color="#9CA3AF" size={16} />
                   </TouchableOpacity>
                 )}
-              </View>
+              </TouchableOpacity>
             </View>
           ))}
         </View>

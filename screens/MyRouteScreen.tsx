@@ -20,6 +20,26 @@ import {
   Platform,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  ScrollView,
+  TouchableOpacity,
+  Pressable,
+  Modal,
+  Image,
+  FlatList,
+  ImageBackground,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+  Animated,
+  Dimensions,
+  PanResponder,
+} from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -56,9 +76,24 @@ import FilterBottomSheet from "../components/FilterBottomSheet";
 import { formatOverallDurationLabel } from "../utils/formatOverallDurationLabel";
 import { resolveCourseRegionLabel } from "../utils/inferCourseRegionLabel";
 import { shareCollaborativeRoute } from "../utils/shareCollaborativeRoute";
-import { sameCourseId } from "../utils/sameCourseId";
-import { getCourseAuthorLabel, isOwnServerCourse } from "../utils/formatCourseAuthor";
-import { CourseCardAuthorRow } from "../components/CourseCardAuthorRow";
+import { dedupeCoursesById, sameCourseId } from "../utils/sameCourseId";
+import {
+  getCourseAuthorLabel,
+  getCourseModifierLabel,
+  isOwnServerCourse,
+} from "../utils/formatCourseAuthor";
+import {
+  CourseAuthorCardRow,
+  CourseAuthorDetailChip,
+} from "../components/CourseAuthorDisplay";
+import {
+  enrichCourseWithForkOriginAuthor,
+  enrichCoursesWithForkOriginAuthors,
+} from "../utils/enrichForkOriginAuthor";
+import {
+  applyCachedAuthorCredits,
+  mergeCourseAuthorCredits,
+} from "../utils/courseAuthorCredits";
 import { useAuthStore } from "../store/authStore";
 import {
   applyMineAuthorToPersonalRoutes,
@@ -73,7 +108,11 @@ const ROUTE_KIND_CHIPS: { key: RouteKindFilter; label: string }[] = [
   { key: "personal", label: "개인" },
   { key: "collaborative", label: "공동" },
 ];
-import { fetchMergedDirectionsPolyline } from "../data/googleDirectionsApi";
+import {
+  fetchMergedDirectionsPolyline,
+  looksLikeStraightStopConnectorPath,
+  resolveCoursePreviewDirectionsMode,
+} from "../data/googleDirectionsApi";
 import { useCourseStepWalkingSegments } from "../hooks/useCourseStepWalkingSegments";
 
 const CARD_STYLE = {
@@ -91,7 +130,7 @@ function CourseCard({
   onEdit,
   isFavorite,
   isCollaborative,
-  authorLabel,
+  authorCtx,
 }: {
   item: CourseItem;
   onPressCard: () => void;
@@ -100,19 +139,25 @@ function CourseCard({
   onEdit: () => void;
   isFavorite?: boolean;
   isCollaborative?: boolean;
-  authorLabel: string;
+  authorCtx: {
+    myUuid?: string | null;
+    myUserId?: string | null;
+    myNickname?: string | null;
+    isLocalOwnRoute?: boolean;
+  };
 }) {
   return (
     <View
       className="mx-4 mb-3 overflow-hidden bg-white rounded-2xl"
       style={CARD_STYLE}
     >
-      <TouchableOpacity
-        onPress={onPressCard}
-        style={({ pressed }) => ({ opacity: pressed ? 0.96 : 1 })}
-      >
-        {/* 상단: 썸네일 + 제목/메타 + 삭제 아이콘 */}
-        <View className="flex-row border-b border-gray-100 p-3.5">
+      <View className="flex-row border-b border-gray-100 p-3.5">
+        <Pressable
+          onPress={onPressCard}
+          className="flex-row flex-1 min-w-0 active:opacity-95"
+          accessibilityRole="button"
+          accessibilityLabel={`${item.title} 코스 상세`}
+        >
           <View className="h-[80px] w-[80px] shrink-0 overflow-hidden rounded-xl bg-blue-50">
             {item.thumbnail ? (
               <Image
@@ -127,77 +172,89 @@ function CourseCard({
             )}
           </View>
           <View className="justify-center flex-1 min-w-0 ml-3">
-            <View className="flex-row items-start gap-1 flex-wrap">
+            <View className="flex-row flex-wrap items-start gap-1">
               {isCollaborative ? (
-                <View className="rounded-md bg-orange-100 px-1.5 py-0.5 mr-1">
+                <View className="mr-1 rounded-md bg-orange-100 px-1.5 py-0.5">
                   <Text className="text-[10px] font-bold text-orange-700">공동</Text>
                 </View>
               ) : null}
               {isFavorite ? (
-                <Ionicons name="bookmark" size={15} color="#2563EB" style={{ marginTop: 2 }} />
+                <Ionicons
+                  name="bookmark"
+                  size={15}
+                  color="#2563EB"
+                  style={{ marginTop: 2 }}
+                />
               ) : null}
               <Text
-                className="text-[15px] font-semibold leading-snug text-gray-900"
+                className="flex-1 text-[15px] font-semibold leading-snug text-gray-900"
                 numberOfLines={2}
-                style={{ flex: 1 }}
               >
                 {item.title}
               </Text>
             </View>
-            <CourseCardAuthorRow label={authorLabel} />
+            <CourseAuthorCardRow course={item} authorCtx={authorCtx} />
             <Text className="mt-1 text-xs text-gray-500" numberOfLines={1}>
               {item.meta}
             </Text>
           </View>
+        </Pressable>
+        <View className="items-center justify-center pl-1 ml-1 shrink-0">
           <View className="flex-row items-center">
-            <TouchableOpacity
-              onPress={onEdit}
-              className="justify-center pl-1"
-              hitSlop={8}
-            >
-              <Ionicons name="create-outline" size={22} color="#3b82f6" />
+            <TouchableOpacity onPress={onEdit} hitSlop={8} accessibilityLabel="수정">
+              <Ionicons name="create-outline" size={20} color="#3b82f6" />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={onRemove}
-              className="justify-center pl-2"
+              className="ml-2"
               hitSlop={8}
+              accessibilityLabel="삭제"
             >
-              <Ionicons name="trash-outline" size={22} color="#ef4444" />
+              <Ionicons name="trash-outline" size={20} color="#ef4444" />
             </TouchableOpacity>
           </View>
-        </View>
-
-        {/* 경로 안내 */}
-        <View className="flex-row items-center px-3.5 py-2.5">
-          <View className="px-2 py-1 bg-blue-600 rounded-md">
-            <Text className="text-[11px] font-semibold text-white">출발</Text>
-          </View>
-          <Text className="ml-2 text-[13px] text-gray-900" numberOfLines={1}>
-            {item.departure}
-          </Text>
-          <View className="w-px h-3 mx-2 bg-gray-300" />
-          <View className="px-2 py-1 bg-slate-500 rounded-md">
-            <Text className="text-[11px] font-semibold text-white">도착</Text>
-          </View>
-          <Text
-            className="ml-2 flex-1 text-[13px] text-gray-900"
-            numberOfLines={1}
+          <Pressable
+            onPress={onPressCard}
+            className="mt-2 active:opacity-70"
+            hitSlop={8}
+            accessibilityLabel="상세 보기"
           >
-            {item.arrival}
-          </Text>
+            <Ionicons name="chevron-forward" size={22} color="#9ca3af" />
+          </Pressable>
         </View>
-      </TouchableOpacity>
+      </View>
 
-      <View className="border-t border-gray-100 px-3.5 py-2.5">
-        <TouchableOpacity
+      <Pressable
+        onPress={onPressCard}
+        className="flex-row items-center px-3.5 py-2.5 active:opacity-95"
+        accessibilityRole="button"
+        accessibilityLabel="출발·도착 보기"
+      >
+        <View className="px-2 py-1 bg-blue-600 rounded-md">
+          <Text className="text-[11px] font-semibold text-white">출발</Text>
+        </View>
+        <Text className="ml-2 min-w-0 flex-1 text-[13px] text-gray-900" numberOfLines={1}>
+          {item.departure}
+        </Text>
+        <View className="w-px h-3 mx-2 bg-gray-300" />
+        <View className="px-2 py-1 rounded-md bg-slate-500">
+          <Text className="text-[11px] font-semibold text-white">도착</Text>
+        </View>
+        <Text className="ml-2 min-w-0 flex-1 text-[13px] text-gray-900" numberOfLines={1}>
+          {item.arrival}
+        </Text>
+      </Pressable>
+
+      <View className="flex-row justify-end border-t border-gray-100 px-3.5 py-2">
+        <Pressable
           onPress={onGuide}
-          activeOpacity={0.85}
-          className="flex-row items-center justify-center gap-2 rounded-xl bg-blue-50 py-2.5"
+          className="flex-row items-center rounded-lg bg-blue-50 px-3 py-1.5 active:opacity-85"
+          accessibilityRole="button"
           accessibilityLabel="지도 안내"
         >
-          <Ionicons name="map-outline" size={18} color="#2563eb" />
-          <Text className="text-sm font-semibold text-blue-600">안내</Text>
-        </TouchableOpacity>
+          <Ionicons name="map-outline" size={16} color="#2563eb" />
+          <Text className="ml-1.5 text-xs font-semibold text-blue-600">안내</Text>
+        </Pressable>
       </View>
     </View>
   );
@@ -223,9 +280,16 @@ function clampMyRouteDetailSheetHeight(px: number): number {
   return Math.min(Math.max(Math.round(px), minH), maxH);
 }
 
-type MyRouteParams = { viewCourseId?: string };
+type MyRouteParams = { viewCourseId?: string; section?: string };
 
-export default function MyRouteScreen(): React.JSX.Element {
+type MyRouteScreenProps = {
+  /** RouteScreen 탭 내부 — 상단 배너·SafeArea는 부모가 담당 */
+  embedded?: boolean;
+};
+
+export default function MyRouteScreen({
+  embedded = false,
+}: MyRouteScreenProps = {}): React.JSX.Element {
   const route = useRoute();
   const myRouteParams = (route.params || {}) as MyRouteParams;
   const authUser = useAuthStore((s) => s.user);
@@ -247,6 +311,7 @@ export default function MyRouteScreen(): React.JSX.Element {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [apiMyCourses, setApiMyCourses] = useState<CourseItem[]>([]);
+  const [enrichedMyCourses, setEnrichedMyCourses] = useState<CourseItem[]>([]);
   const [filterVisible, setFilterVisible] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
@@ -310,10 +375,64 @@ export default function MyRouteScreen(): React.JSX.Element {
   const [myDetailCourseApi, setMyDetailCourseApi] = useState<CourseItem | null>(null);
   const [myCourseDetailLoading, setMyCourseDetailLoading] = useState(false);
 
+  const isCollaborativeRouteId = useCallback(
+    (id: string) =>
+      userSavedRoutes.some(
+        (r) => sameCourseId(r.id, id) && r.collaborative === true,
+      ),
+    [userSavedRoutes],
+  );
+
+  const mergedCourses = useMemo(() => {
+    const fromUser = userSavedRoutes.map(userRouteToCourseItem);
+    const apiTitles = new Set(
+      apiMyCourses
+        .map((c) => String(c.title ?? "").trim())
+        .filter(Boolean),
+    );
+    const merged = mergeApiAndLocalCourseLists(apiMyCourses, fromUser);
+    const filtered = merged.filter((c) => {
+      const k = String(c.id ?? "");
+      if (
+        k.startsWith("ur-") &&
+        apiTitles.has(String(c.title ?? "").trim())
+      ) {
+        return false;
+      }
+      return Boolean(k);
+    });
+    const deduped = dedupeMyCourseList(filtered, userSavedRoutes);
+    return applyMineAuthorToPersonalRoutes(deduped, userSavedRoutes, authorCtx);
+  }, [userSavedRoutes, apiMyCourses, authorCtx]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void enrichCoursesWithForkOriginAuthors(
+      mergedCourses,
+      userSavedRoutes,
+    ).then((list) => {
+      if (!cancelled) {
+        setEnrichedMyCourses((prev) => mergeCourseAuthorCredits(list, prev));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [mergedCourses, userSavedRoutes]);
+
+  const displayCourses = useMemo(() => {
+    const base =
+      enrichedMyCourses.length > 0 ? enrichedMyCourses : mergedCourses;
+    return applyCachedAuthorCredits(base);
+  }, [enrichedMyCourses, mergedCourses]);
+
   const detailMapCourse = useMemo(() => {
     if (!viewingCourseId) return null;
     const ur = userSavedRoutes.find((r) =>
       sameCourseId(r.id, viewingCourseId),
+    );
+    const fromDisplay = displayCourses.find((c) =>
+      sameCourseId(c.id, viewingCourseId),
     );
     const courseFromApi = apiMyCourses.find((c) =>
       sameCourseId(c.id, viewingCourseId),
@@ -323,12 +442,13 @@ export default function MyRouteScreen(): React.JSX.Element {
       sameCourseId(myDetailCourseApi.id, viewingCourseId)
         ? myDetailCourseApi
         : null) ??
-      courseFromApi ??
-      (ur ? userRouteToCourseItem(ur) : null) ??
+      fromDisplay ??
       (viewingCourseSnapshot &&
       sameCourseId(viewingCourseSnapshot.id, viewingCourseId)
         ? viewingCourseSnapshot
-        : null)
+        : null) ??
+      courseFromApi ??
+      (ur ? userRouteToCourseItem(ur) : null)
     );
   }, [
     viewingCourseId,
@@ -336,6 +456,7 @@ export default function MyRouteScreen(): React.JSX.Element {
     apiMyCourses,
     myDetailCourseApi,
     viewingCourseSnapshot,
+    displayCourses,
   ]);
   const detailMapStepPoints = useMemo(() => {
     if (!viewingCourseId || !detailMapCourse) return null;
@@ -390,6 +511,7 @@ export default function MyRouteScreen(): React.JSX.Element {
   );
 
   useEffect(() => {
+    if (myRouteParams?.section === "shared") return;
     const vid = String(myRouteParams?.viewCourseId ?? "").trim();
     if (!vid) return;
     const fromUser = userSavedRoutes.find((r) => sameCourseId(r.id, vid));
@@ -399,7 +521,7 @@ export default function MyRouteScreen(): React.JSX.Element {
       : fromApi ?? null;
     if (snap) setViewingCourseSnapshot(snap);
     setViewingCourseId(vid);
-  }, [myRouteParams?.viewCourseId, userSavedRoutes, apiMyCourses]);
+  }, [myRouteParams?.section, myRouteParams?.viewCourseId, userSavedRoutes, apiMyCourses]);
 
   useEffect(() => {
     if (viewingCourseId) setDetailModalMounted(true);
@@ -522,9 +644,13 @@ export default function MyRouteScreen(): React.JSX.Element {
     let mounted = true;
     setMyCourseDetailLoading(true);
     resolveCourseDetailForRoute(viewingCourseId)
-      .then(({ course }) => {
+      .then(async ({ course }) => {
         if (!mounted) return;
-        setMyDetailCourseApi(course ?? null);
+        const enriched = await enrichCourseWithForkOriginAuthor(
+          course,
+          userSavedRoutes,
+        );
+        setMyDetailCourseApi(enriched ?? course ?? null);
         setMyCourseDetailLoading(false);
       })
       .catch(() => {
@@ -581,13 +707,25 @@ export default function MyRouteScreen(): React.JSX.Element {
     const ac = new AbortController();
     setDetailPathLoading(true);
     setDetailMergedPath(null);
-    fetchMergedDirectionsPolyline({
-      points: stepPoints,
-      mode: "transit",
-      signal: ac.signal,
-    })
-      .then((path) => {
-        if (!ac.signal.aborted && path.length >= 2) setDetailMergedPath(path);
+    const directionsMode = resolveCoursePreviewDirectionsMode(course.routeLegs);
+    const loadMergedPath = (mode: typeof directionsMode) =>
+      fetchMergedDirectionsPolyline({
+        points: stepPoints,
+        mode,
+        signal: ac.signal,
+      });
+
+    loadMergedPath(directionsMode)
+      .then(async (path) => {
+        if (ac.signal.aborted) return;
+        let final = path;
+        if (
+          looksLikeStraightStopConnectorPath(path, stepPoints.length) &&
+          directionsMode === "transit"
+        ) {
+          final = await loadMergedPath("driving");
+        }
+        if (!ac.signal.aborted && final.length >= 2) setDetailMergedPath(final);
       })
       .catch(() => {})
       .finally(() => {
@@ -603,38 +741,8 @@ export default function MyRouteScreen(): React.JSX.Element {
     viewingCourseSnapshot,
   ]);
 
-  const isCollaborativeRouteId = useCallback(
-    (id: string) =>
-      userSavedRoutes.some(
-        (r) => sameCourseId(r.id, id) && r.collaborative === true,
-      ),
-    [userSavedRoutes],
-  );
-
-  const mergedCourses = useMemo(() => {
-    const fromUser = userSavedRoutes.map(userRouteToCourseItem);
-    const apiTitles = new Set(
-      apiMyCourses
-        .map((c) => String(c.title ?? "").trim())
-        .filter(Boolean),
-    );
-    const merged = mergeApiAndLocalCourseLists(apiMyCourses, fromUser);
-    const filtered = merged.filter((c) => {
-      const k = String(c.id ?? "");
-      if (
-        k.startsWith("ur-") &&
-        apiTitles.has(String(c.title ?? "").trim())
-      ) {
-        return false;
-      }
-      return Boolean(k);
-    });
-    const deduped = dedupeMyCourseList(filtered, userSavedRoutes);
-    return applyMineAuthorToPersonalRoutes(deduped, userSavedRoutes, authorCtx);
-  }, [userSavedRoutes, apiMyCourses, authorCtx]);
-
   const filteredCourses = useMemo(() => {
-    let list = mergedCourses;
+    let list = displayCourses;
 
     if (selectedCategory)
       list = list.filter((c) => c.category === selectedCategory);
@@ -670,9 +778,9 @@ export default function MyRouteScreen(): React.JSX.Element {
       list = [...list].sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
     }
 
-    return list;
+    return dedupeCoursesById(list);
   }, [
-    mergedCourses,
+    displayCourses,
     searchQuery,
     selectedCategory,
     selectedRegion,
@@ -700,6 +808,22 @@ export default function MyRouteScreen(): React.JSX.Element {
     [apiMyCourses, authorCtx, userSavedRoutes],
   );
 
+  const removeCourseFromUi = useCallback((courseId: string) => {
+    setApiMyCourses((prev) => prev.filter((c) => !sameCourseId(c.id, courseId)));
+    setEnrichedMyCourses((prev) =>
+      prev.filter((c) => !sameCourseId(c.id, courseId)),
+    );
+    setViewingCourseSnapshot((prev) =>
+      prev && sameCourseId(prev.id, courseId) ? null : prev,
+    );
+    setMyDetailCourseApi((prev) =>
+      prev && sameCourseId(prev.id, courseId) ? null : prev,
+    );
+    if (sameCourseId(viewingCourseId, courseId)) {
+      dismissCourseDetailImmediate();
+    }
+  }, [viewingCourseId]);
+
   const handleRemove = (item: CourseItem) => {
     Alert.alert(
       "저장 삭제",
@@ -710,18 +834,32 @@ export default function MyRouteScreen(): React.JSX.Element {
           text: "삭제",
           style: "destructive",
           onPress: async () => {
-            if (isUserSavedRouteId(item.id)) {
-              // 기기에만 저장된 루트 — 서버 DELETE 호출 시 404
-              deleteUserRoute(item.id);
-            } else if (isOwnServerCourse(item, authorCtx)) {
-              await deleteMyCourse(item.id);
-            } else {
-              // 공유 코스 북마크(내 루트 추가) — save 해제
-              await unsaveSharedCourse(item.id);
-            }
-            removeSavedCourse(item.id);
-            if (sameCourseId(viewingCourseId, item.id)) {
-              dismissCourseDetailImmediate();
+            const prevApi = apiMyCourses;
+            const prevEnriched = enrichedMyCourses;
+            const prevSnapshot = viewingCourseSnapshot;
+            const prevDetail = myDetailCourseApi;
+            const prevViewingId = viewingCourseId;
+            try {
+              // 삭제 버튼 즉시 반영 (낙관적 UI)
+              removeCourseFromUi(item.id);
+              if (isUserSavedRouteId(item.id)) {
+                // 기기에만 저장된 루트 — 서버 DELETE 호출 시 404
+                deleteUserRoute(item.id);
+              } else if (isOwnServerCourse(item, authorCtx)) {
+                await deleteMyCourse(item.id);
+              } else {
+                // 공유 코스 북마크(내 루트 추가) — save 해제
+                await unsaveSharedCourse(item.id);
+              }
+              removeSavedCourse(item.id);
+            } catch {
+              // 실패 시 UI 롤백
+              setApiMyCourses(prevApi);
+              setEnrichedMyCourses(prevEnriched);
+              setViewingCourseSnapshot(prevSnapshot);
+              setMyDetailCourseApi(prevDetail);
+              if (prevViewingId) setViewingCourseId(prevViewingId);
+              Alert.alert("오류", "코스 삭제에 실패했어요. 잠시 후 다시 시도해 주세요.");
             }
           },
         },
@@ -740,31 +878,17 @@ export default function MyRouteScreen(): React.JSX.Element {
     rootNavigate("RouteCreate", { seedSharedCourseId: sharedCourseId });
   };
 
-  return (
-    <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={["top"]}>
-      {/* 헤더 배너 */}
-      <View className="px-4 pt-2 pb-2">
-        <View className="rounded-2xl px-4 py-4" style={{ backgroundColor: "#2563EB" }}>
-          <View className="flex-row items-center justify-between">
-            <View className="flex-1 pr-3">
-              <Text className="text-xl font-semibold text-white">내 코스</Text>
-              <Text className="mt-1 text-xs text-blue-100">
-                저장한 코스와 내가 만든 코스를 관리해요
-              </Text>
-            </View>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => rootNavigate("RouteCreate")}
-              className="px-3 py-2 rounded-lg bg-white/20 active:opacity-90"
-            >
-              <Text className="text-xs font-semibold text-white">루트 제작</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
+  const ScreenRoot = embedded ? View : SafeAreaView;
+  const screenRootProps = embedded
+    ? { className: "flex-1 bg-[#F0F5FF]" }
+    : { className: "flex-1 bg-[#F0F5FF]", edges: ["top"] as const };
 
+  return (
+    <ScreenRoot {...screenRootProps}>
       {/* 검색 + 필터 — 배경과 분리된 카드형 검색바 */}
-      <View className="flex-row items-center gap-2.5 px-4 py-3">
+      <View
+        className={`flex-row items-center gap-2.5 px-4 ${embedded ? 'pb-2 pt-1' : 'py-3'}`}
+      >
         <View
           className="flex-1 flex-row items-center rounded-2xl bg-white px-3.5"
           style={{
@@ -776,11 +900,11 @@ export default function MyRouteScreen(): React.JSX.Element {
             shadowOffset: { width: 0, height: 2 },
             shadowOpacity: 0.06,
             shadowRadius: 8,
-            elevation: Platform.OS === 'android' ? 0 : 3,
+            elevation: 3,
           }}
         >
           <View
-            className="mr-2 h-9 w-9 items-center justify-center rounded-xl"
+            className="items-center justify-center mr-2 h-9 w-9 rounded-xl"
             style={{ backgroundColor: "rgba(37,99,235,0.08)" }}
           >
             <Ionicons name="search" size={20} color="#2563EB" />
@@ -799,7 +923,7 @@ export default function MyRouteScreen(): React.JSX.Element {
           onPress={() => setFilterVisible(true)}
           activeOpacity={0.85}
           accessibilityLabel="필터"
-          className="items-center justify-center rounded-2xl bg-white"
+          className="items-center justify-center bg-white rounded-2xl"
           style={{
             width: 46,
             height: 46,
@@ -809,7 +933,7 @@ export default function MyRouteScreen(): React.JSX.Element {
             shadowOffset: { width: 0, height: 2 },
             shadowOpacity: 0.06,
             shadowRadius: 8,
-            elevation: Platform.OS === 'android' ? 0 : 3,
+            elevation: 3,
           }}
         >
           <Ionicons name="options-outline" size={23} color="#2563EB" />
@@ -860,17 +984,18 @@ export default function MyRouteScreen(): React.JSX.Element {
       ) : (
         <FlatList<CourseItem>
           data={filteredCourses ?? []}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item, index) => `my-${item.id}-${index}`}
           renderItem={({ item }) => {
             const ur = userSavedRoutes.find((r) => sameCourseId(r.id, item.id));
-            const authorLabel = getCourseAuthorLabel(item, {
+            const cardAuthorCtx = {
               ...authorCtx,
-              isLocalOwnRoute: Boolean(ur),
-            });
+              isLocalOwnRoute:
+                Boolean(ur) && !String(ur?.forkedFromSharedId ?? "").trim(),
+            };
             return (
               <CourseCard
                 item={item}
-                authorLabel={authorLabel}
+                authorCtx={cardAuthorCtx}
                 isFavorite={favoriteCourseIds.some((fid) =>
                   sameCourseId(fid, item.id),
                 )}
@@ -970,7 +1095,7 @@ export default function MyRouteScreen(): React.JSX.Element {
               }}
             >
               <View
-                className="overflow-hidden rounded-t-3xl flex-1"
+                className="flex-1 overflow-hidden rounded-t-3xl"
                 style={{
                   height: "100%",
                   backgroundColor: "#F8FBFF",
@@ -981,6 +1106,9 @@ export default function MyRouteScreen(): React.JSX.Element {
                   const ur = userSavedRoutes.find((r) =>
                     sameCourseId(r.id, viewingCourseId),
                   );
+                  const courseFromDisplay = displayCourses.find((c) =>
+                    sameCourseId(c.id, viewingCourseId),
+                  );
                   const courseFromApi = apiMyCourses.find((c) =>
                     sameCourseId(c.id, viewingCourseId),
                   );
@@ -989,12 +1117,13 @@ export default function MyRouteScreen(): React.JSX.Element {
                     sameCourseId(myDetailCourseApi.id, viewingCourseId)
                       ? myDetailCourseApi
                       : null) ??
-                    courseFromApi ??
-                    (ur ? userRouteToCourseItem(ur) : null) ??
+                    courseFromDisplay ??
                     (viewingCourseSnapshot &&
                     sameCourseId(viewingCourseSnapshot.id, viewingCourseId)
                       ? viewingCourseSnapshot
-                      : null);
+                      : null) ??
+                    courseFromApi ??
+                    (ur ? userRouteToCourseItem(ur) : null);
                   if (!course) {
                     return (
                       <View
@@ -1074,11 +1203,11 @@ export default function MyRouteScreen(): React.JSX.Element {
                     pathPts && pathPts.length >= 1
                       ? buildMapMarkersFromPathPoints(pathPts)
                       : undefined;
-                  // 실경로가 있으면 단순화해서 사용하고, 없으면 경유지 연결선으로 대체
+                  // 실경로만 표시 (실패 시 정류장 직선 연결·부채꼴 방지)
                   const polylinePath = simplifyRoutePath(
                     detailMergedPath && detailMergedPath.length >= 2
                       ? detailMergedPath
-                      : pathPts,
+                      : undefined,
                   );
                   const fallbackCenter = ur
                     ? userRouteMapCenter(ur)
@@ -1227,7 +1356,7 @@ export default function MyRouteScreen(): React.JSX.Element {
 
                       <ScrollView
                         showsVerticalScrollIndicator={false}
-                        className="bg-white flex-1"
+                        className="flex-1 bg-white"
                         style={{ flexGrow: 1 }}
                         contentContainerStyle={{
                           paddingHorizontal: 20,
@@ -1239,7 +1368,7 @@ export default function MyRouteScreen(): React.JSX.Element {
                           <Text className="text-xl font-bold text-gray-900">
                             코스 상세
                           </Text>
-                          <View className="flex-row items-center gap-2 flex-wrap justify-end">
+                          <View className="flex-row flex-wrap items-center justify-end gap-2">
                             {ur?.collaborative === true ? (
                               <TouchableOpacity
                                 onPress={() => {
@@ -1248,7 +1377,7 @@ export default function MyRouteScreen(): React.JSX.Element {
                                     title: course.title,
                                   });
                                 }}
-                                className="flex-row items-center gap-1 rounded-xl bg-orange-50 px-3 py-2"
+                                className="flex-row items-center gap-1 px-3 py-2 rounded-xl bg-orange-50"
                               >
                                 <Ionicons
                                   name="share-social-outline"
@@ -1278,7 +1407,7 @@ export default function MyRouteScreen(): React.JSX.Element {
                                   }
                                 });
                               }}
-                              className="flex-row items-center gap-1 rounded-xl bg-blue-50 px-3 py-2"
+                              className="flex-row items-center gap-1 px-3 py-2 rounded-xl bg-blue-50"
                             >
                               <Ionicons
                                 name="create-outline"
@@ -1293,7 +1422,7 @@ export default function MyRouteScreen(): React.JSX.Element {
                               onPress={() => {
                                 closeCourseDetail(() => handleRemove(course));
                               }}
-                              className="flex-row items-center gap-1 rounded-xl bg-red-50 px-3 py-2"
+                              className="flex-row items-center gap-1 px-3 py-2 rounded-xl bg-red-50"
                             >
                               <Ionicons
                                 name="trash-outline"
@@ -1310,48 +1439,59 @@ export default function MyRouteScreen(): React.JSX.Element {
                         <Text className="mb-1 text-base font-semibold text-gray-900">
                           {course.title}
                         </Text>
-                        {(() => {
-                          const authorLabel = getCourseAuthorLabel(course, {
+                        <CourseAuthorDetailChip
+                          course={course}
+                          authorCtx={{
                             ...authorCtx,
-                            isLocalOwnRoute: Boolean(ur),
-                          });
-                          const authorUuid = String(course.authorUuid ?? '').trim();
-                          const authorUserId = String(course.authorUserId ?? '').trim();
-                          const isMine = authorLabel.includes('(나)') || authorLabel === '내가 제작';
-                          const canOpenProfile = !isMine && Boolean(authorUuid || authorUserId);
-                          return (
-                            <Pressable
-                              disabled={!canOpenProfile}
-                              onPress={() => {
-                                if (!canOpenProfile) return;
-                                rootNavigate('UserProfile', {
-                                  userUuid: authorUuid || undefined,
-                                  userId: authorUserId || undefined,
-                                  nickname:
-                                    authorLabel.startsWith('@') || authorLabel === '제작자 미표시'
-                                      ? undefined
-                                      : authorLabel,
-                                });
-                              }}
-                              className="mb-2 flex-row items-center self-start rounded-full px-3 py-1.5"
-                              style={{
-                                backgroundColor: canOpenProfile ? '#EFF6FF' : '#F3F4F6',
-                              }}
-                            >
-                              <Ionicons
-                                name={canOpenProfile ? 'person-circle-outline' : 'person-outline'}
-                                size={14}
-                                color={canOpenProfile ? '#2563EB' : '#6B7280'}
-                              />
-                              <Text
-                                className="ml-1 text-xs font-semibold"
-                                style={{ color: canOpenProfile ? '#1D4ED8' : '#6B7280' }}
-                              >
-                                제작자 {authorLabel}
-                              </Text>
-                            </Pressable>
-                          );
-                        })()}
+                            isLocalOwnRoute:
+                              Boolean(ur) &&
+                              !String(ur?.forkedFromSharedId ?? "").trim(),
+                          }}
+                          onPressCreator={() => {
+                            const authorLabel = getCourseAuthorLabel(course, {
+                              ...authorCtx,
+                              isLocalOwnRoute:
+                                Boolean(ur) &&
+                                !String(ur?.forkedFromSharedId ?? "").trim(),
+                            });
+                            const authorUuid = String(
+                              course.authorUuid ?? "",
+                            ).trim();
+                            const authorUserId = String(
+                              course.authorUserId ?? "",
+                            ).trim();
+                            rootNavigate("UserProfile", {
+                              userUuid: authorUuid || undefined,
+                              userId: authorUserId || undefined,
+                              nickname:
+                                authorLabel.startsWith("@") ||
+                                authorLabel === "제작자 미표시"
+                                  ? undefined
+                                  : authorLabel,
+                            });
+                          }}
+                          onPressModifier={() => {
+                            const modLabel = getCourseModifierLabel(
+                              course,
+                              authorCtx,
+                            );
+                            const modUuid = String(
+                              course.modifierUuid ?? "",
+                            ).trim();
+                            const modUserId = String(
+                              course.modifierUserId ?? "",
+                            ).trim();
+                            rootNavigate("UserProfile", {
+                              userUuid: modUuid || undefined,
+                              userId: modUserId || undefined,
+                              nickname:
+                                modLabel.startsWith("@") ||
+                                modLabel === "수정자 미표시"
+                                  ? undefined
+                                  : modLabel,
+                            });
+                          }}
+                        />
                         {Array.isArray(course.tags) && course.tags.length > 0 ? (
                           <View className="mb-2 flex-row flex-wrap gap-1.5">
                             {course.tags.slice(0, 2).map((tag) => (
@@ -1481,6 +1621,6 @@ export default function MyRouteScreen(): React.JSX.Element {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </ScreenRoot>
   );
 }

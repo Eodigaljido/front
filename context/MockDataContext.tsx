@@ -12,6 +12,10 @@ import type { UserSavedRoute } from '../data/userSavedRoute';
 import type { CourseReview } from '../data/mockData';
 import { fetchMySavedCourseIds } from '../api/courses';
 import { useAuthStore } from '../store/authStore';
+import {
+  loadUserSavedRoutes,
+  saveUserSavedRoutes,
+} from '../utils/persistUserSavedRoutes';
 
 type MockDataContextValue = {
   savedCourseIds: string[];
@@ -52,6 +56,8 @@ export function MockDataProvider({ children }: { children: React.ReactNode }) {
   }, [savedCourseIds]);
 
   const [userSavedRoutes, setUserSavedRoutes] = useState<UserSavedRoute[]>([]);
+  const [userRoutesHydrated, setUserRoutesHydrated] = useState(false);
+  const userUuid = useAuthStore((s) => s.user?.uuid);
   const [extraSharedCourseReviews, setExtraSharedCourseReviews] = useState<
     Record<string, CourseReview[]>
   >({});
@@ -86,10 +92,35 @@ export function MockDataProvider({ children }: { children: React.ReactNode }) {
     if (!isAuthenticated) {
       setSavedCourseIds([]);
       setFavoriteCourseIds([]);
+      setUserSavedRoutes([]);
+      setUserRoutesHydrated(false);
       return;
     }
     void refreshSavedCourseIds();
   }, [isAuthenticated, refreshSavedCourseIds]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !userUuid) {
+      setUserSavedRoutes([]);
+      setUserRoutesHydrated(false);
+      return;
+    }
+    let cancelled = false;
+    setUserRoutesHydrated(false);
+    void loadUserSavedRoutes(userUuid).then((routes) => {
+      if (cancelled) return;
+      setUserSavedRoutes(routes);
+      setUserRoutesHydrated(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, userUuid]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !userUuid || !userRoutesHydrated) return;
+    void saveUserSavedRoutes(userUuid, userSavedRoutes);
+  }, [userSavedRoutes, isAuthenticated, userUuid, userRoutesHydrated]);
 
   const upsertUserRoute = useCallback((route: UserSavedRoute) => {
     setUserSavedRoutes((prev) => {

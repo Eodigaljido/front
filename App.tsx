@@ -15,8 +15,7 @@ import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { MockDataProvider } from './context/MockDataContext';
 import { ToastProvider } from './context/ToastContext';
 import HomeScreen from './screens/HomeScreen';
-import SharedRouteScreen from './screens/SharedRouteScreen';
-import MyRouteScreen from './screens/MyRouteScreen';
+import RouteScreen, { type RouteTabParams } from './screens/RouteScreen';
 import AllScreen from './screens/AllScreen';
 import OnBoardStart from './screens/onboard/OnBoardStart';
 import AreaOnBoard from './screens/onboard/AreaOnBoard';
@@ -48,8 +47,7 @@ import SwipeTabWrapper from './components/SwipeTabWrapper';
 
 export type RootTabParamList = {
   Home: undefined;
-  SharedRoute: { openFilter?: boolean; openAsPopular?: boolean; viewCourseId?: string } | undefined;
-  MyRoute: { viewCourseId?: string } | undefined;
+  Route: RouteTabParams | undefined;
   Chat: undefined;
   All: { friendCode?: string } | undefined;
 
@@ -69,10 +67,7 @@ export type RootTabParamList = {
 
 export type RootStackParamList = {
   Tabs: undefined;
-  SharedRouteStack:
-    | { openFilter?: boolean; openAsPopular?: boolean; viewCourseId?: string }
-    | undefined;
-  MyRouteStack: undefined;
+  RouteStack: RouteTabParams | undefined;
   RouteCreate:
     | {
         editRouteId?: string;
@@ -82,6 +77,7 @@ export type RootStackParamList = {
     | undefined;
   ProfileSettings: undefined;
   UserProfile: {
+    uuid?: string;
     userUuid?: string;
     userId?: string;
     nickname?: string;
@@ -120,7 +116,7 @@ const Tab = createBottomTabNavigator<RootTabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const AllStack = createNativeStackNavigator();
 
-const TAB_ORDER = ['Home', 'SharedRoute', 'MyRoute', 'Chat', 'All'] as const;
+const TAB_ORDER = ['Home', 'Route', 'Chat', 'All'] as const;
 
 function CustomTabBar(props: any) {
   const forcedActiveTab = useTabStore(s => s.forcedActiveTab);
@@ -133,8 +129,7 @@ function AllStackNavigator() {
   return (
     <AllStack.Navigator screenOptions={{ headerShown: false }}>
       <AllStack.Screen name="AllMain" component={AllScreen} />
-      <AllStack.Screen name="AllSharedRoute" component={SharedRouteScreen} />
-      <AllStack.Screen name="AllMyRoute" component={MyRouteScreen} />
+      <AllStack.Screen name="AllRoute" component={RouteScreen} />
       <AllStack.Screen name="AllAppSettings" component={AppSettingsScreen} />
       <AllStack.Screen name="AllFriendRequests" component={FriendRequestsScreen} />
       <AllStack.Screen name="AllGuide" component={GuideScreen} />
@@ -154,8 +149,7 @@ function withSwipeTab<P extends object>(Component: React.ComponentType<P>): Reac
 }
 
 const HomeScreenSwipe = withSwipeTab(HomeScreen);
-const SharedRouteScreenSwipe = withSwipeTab(SharedRouteScreen);
-const MyRouteScreenSwipe = withSwipeTab(MyRouteScreen);
+const RouteScreenSwipe = withSwipeTab(RouteScreen);
 const ChatHomeScreenSwipe = withSwipeTab(ChatHomeScreen);
 const AllStackNavigatorSwipe = withSwipeTab(AllStackNavigator);
 
@@ -166,10 +160,9 @@ const TAB_GLASS_BORDER = 'rgba(148, 163, 184, 0.35)';
 
 type IonIconName = NonNullable<ComponentProps<typeof Ionicons>['name']>;
 
-const TAB_ICONS: Record<'Home' | 'SharedRoute' | 'MyRoute' | 'Chat' | 'All', IonIconName> = {
+const TAB_ICONS: Record<'Home' | 'Route' | 'Chat' | 'All', IonIconName> = {
   Home: 'home',
-  SharedRoute: 'paper-plane',
-  MyRoute: 'map',
+  Route: 'map',
   Chat: 'chatbubble',
   All: 'menu',
 };
@@ -233,7 +226,7 @@ function TabNavigator() {
             }}
           >
             <Ionicons
-              name={TAB_ICONS[route.name as 'Home' | 'SharedRoute' | 'MyRoute' | 'Chat' | 'All']}
+              name={TAB_ICONS[route.name as 'Home' | 'Route' | 'Chat' | 'All']}
               size={24}
               color={color}
             />
@@ -291,14 +284,9 @@ function TabNavigator() {
         options={{ headerShown: false, tabBarLabel: '홈' }}
       />
       <Tab.Screen
-        name="SharedRoute"
-        component={SharedRouteScreenSwipe}
-        options={{ headerShown: false, tabBarLabel: '공유 루트' }}
-      />
-      <Tab.Screen
-        name="MyRoute"
-        component={MyRouteScreenSwipe}
-        options={{ headerShown: false, tabBarLabel: '내 루트' }}
+        name="Route"
+        component={RouteScreenSwipe}
+        options={{ headerShown: false, tabBarLabel: '루트' }}
       />
       <Tab.Screen
         name="Chat"
@@ -345,8 +333,7 @@ export default function App(): React.JSX.Element {
                   <Stack.Screen name="Login" component={LoginScreen} />
                   <Stack.Screen name="Signup" component={SignupScreen} />
                   <Stack.Screen name="Tabs" component={TabNavigator} />
-                  <Stack.Screen name="SharedRouteStack" component={SharedRouteScreen} />
-                  <Stack.Screen name="MyRouteStack" component={MyRouteScreen} />
+                  <Stack.Screen name="RouteStack" component={RouteScreen} />
                   <Stack.Screen name="RouteCreate" component={RouteCreateScreen} />
                   <Stack.Screen name="RouteCollaborators" component={RouteCollaboratorsScreen} />
                   <Stack.Screen name="CourseGuide" component={CourseGuideScreen} />

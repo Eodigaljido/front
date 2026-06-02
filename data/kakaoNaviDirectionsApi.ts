@@ -6,6 +6,8 @@
  * (로컬 검색과 동일 키: EXPO_PUBLIC_KAKAO_REST_API_KEY)
  */
 
+import { formatRouteDistanceDuration, ROUTE_USER_MESSAGES } from '../utils/routeCopy';
+
 type LatLng = { latitude: number; longitude: number };
 
 /** googleDirectionsApi.DirectionsMode 와 동일 (순환 import 방지) */
@@ -119,13 +121,8 @@ export function kakaoCarRouteToDirectionsLeg(
     segments: [{ mode: segMode, points: pathDeduped.slice() }],
     durationMinutes,
     distanceMeters,
-    summary:
-      distanceMeters < 1000
-        ? `카카오 · 약 ${distanceMeters}m · 약 ${durationMinutes}분`
-        : `카카오 · 약 ${(distanceMeters / 1000).toFixed(1)}km · 약 ${durationMinutes}분`,
-    detail:
-      (guideLine ? `${guideLine}\n` : '') +
-      '※ 카카오 자동차 길찾기 기준 경로입니다. 도보/자전거 모드는 지도 표시용이며 실제와 다를 수 있습니다.',
+    summary: formatRouteDistanceDuration(distanceMeters, durationMinutes),
+    detail: guideLine || ROUTE_USER_MESSAGES.routeDetailFallback,
   };
 }
 

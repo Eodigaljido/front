@@ -1,5 +1,6 @@
 import type { MockPlace } from './routeCreateMocks';
 import { normalizeLatLngForDirections } from './googleDirectionsApi';
+import { ROUTE_USER_MESSAGES } from '../utils/routeCopy';
 
 const KAKAO_LOCAL_KEYWORD_URL = 'https://dapi.kakao.com/v2/local/search/keyword.json';
 
@@ -50,7 +51,7 @@ export async function searchKakaoPlacesByKeyword(
 
   const restKey = process.env.EXPO_PUBLIC_KAKAO_REST_API_KEY?.trim();
   if (!restKey) {
-    throw new Error('카카오 REST API 키가 설정되지 않았습니다.');
+    throw new Error(ROUTE_USER_MESSAGES.placeSearchUnavailable);
   }
 
   const q = query.trim();
@@ -96,24 +97,16 @@ export async function searchKakaoPlacesByKeyword(
   });
 
   if (!res.ok) {
-    let detail = '';
     try {
       const err = await res.json();
-      detail = String(err?.msg || err?.errorType || err?.message || '').trim();
       const message = String(err?.message || '').trim();
       if (message.includes('disabled OPEN_MAP_AND_LOCAL service')) {
-        throw new Error(
-          '카카오 개발자 콘솔에서 OPEN_MAP_AND_LOCAL(카카오맵/로컬) 서비스를 활성화해 주세요.',
-        );
+        throw new Error(ROUTE_USER_MESSAGES.placeSearchUnavailable);
       }
-    } catch {
-      detail = '';
+    } catch (e) {
+      if (e instanceof Error && e.message) throw e;
     }
-    throw new Error(
-      detail
-        ? `카카오 장소 검색 실패 (${res.status}): ${detail}`
-        : `카카오 장소 검색 실패 (${res.status})`,
-    );
+    throw new Error(ROUTE_USER_MESSAGES.placeSearchFailed);
   }
 
   const data = await res.json();

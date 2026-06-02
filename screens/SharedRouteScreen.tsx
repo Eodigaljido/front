@@ -33,7 +33,11 @@ import {
   type CourseItem,
   type CourseReview,
 } from "../data/mockData";
-import type { DirectionsMode } from "../data/googleDirectionsApi";
+import {
+  looksLikeStraightStopConnectorPath,
+  resolveCoursePreviewDirectionsMode,
+  type DirectionsMode,
+} from "../data/googleDirectionsApi";
 import { useMockData } from "../context/MockDataContext";
 import { useToast } from "../context/ToastContext";
 import {
@@ -47,7 +51,10 @@ import {
   submitSharedCourseReview,
 } from "../api/courses";
 import { displayCourseRegionChip } from "../utils/inferCourseRegionLabel";
-import { getCourseAuthorLabel } from "../utils/formatCourseAuthor";
+import {
+  getCourseAuthorLabel,
+  getCourseModifierLabel,
+} from "../utils/formatCourseAuthor";
 import {
   CourseAuthorCardRow,
   CourseAuthorDetailChip,
@@ -63,12 +70,16 @@ import FilterBottomSheet, {
   REGIONS,
   SORT_OPTIONS,
 } from "../components/FilterBottomSheet";
-import { sameCourseId } from "../utils/sameCourseId";
+import { dedupeCoursesById, sameCourseId } from "../utils/sameCourseId";
 import { courseMatchesTagOrCategory } from "../utils/courseTagFilter";
 import { mergeLocalThumbnailsIntoCourses } from "../utils/mergeCourseThumbnails";
+import { enrichCoursesWithForkOriginAuthors, enrichCourseWithForkOriginAuthor } from "../utils/enrichForkOriginAuthor";
+import { mergeCourseAuthorCredits } from "../utils/courseAuthorCredits";
 import { rootNavigate } from "../navigation/rootNavigation";
+import { useRouteSection } from "../context/RouteScreenContext";
 
 type SharedRouteParams = {
+  section?: "shared" | "my";
   openFilter?: boolean;
   openAsPopular?: boolean;
   viewCourseId?: string;
@@ -127,7 +138,7 @@ function CourseCard({
   return (
     <Pressable
       onPress={onPress}
-      className="mx-4 mb-3 overflow-hidden rounded-2xl bg-white active:opacity-95"
+      className="mx-4 mb-3 overflow-hidden bg-white rounded-2xl active:opacity-95"
       style={CARD_STYLE}
     >
       <View className="flex-row border-b border-gray-100 p-3.5">
@@ -135,16 +146,16 @@ function CourseCard({
           {item.thumbnail ? (
             <Image
               source={{ uri: item.thumbnail }}
-              className="h-full w-full"
+              className="w-full h-full"
               resizeMode="cover"
             />
           ) : (
-            <View className="h-full w-full items-center justify-center bg-blue-50">
+            <View className="items-center justify-center w-full h-full bg-blue-50">
               <Ionicons name="image-outline" size={24} color="#60a5fa" />
             </View>
           )}
         </View>
-        <View className="ml-3 flex-1 min-w-0 justify-center">
+        <View className="justify-center flex-1 min-w-0 ml-3">
           <Text
             className="text-[15px] font-semibold leading-snug text-gray-900"
             numberOfLines={2}
@@ -175,14 +186,14 @@ function CourseCard({
       </View>
 
       <View className="flex-row items-center px-3.5 py-2.5">
-        <View className="rounded-md bg-blue-600 px-2 py-1">
+        <View className="px-2 py-1 bg-blue-600 rounded-md">
           <Text className="text-[11px] font-semibold text-white">출발</Text>
         </View>
         <Text className="ml-2 text-[13px] text-gray-900" numberOfLines={1}>
           {item.departure}
         </Text>
-        <View className="mx-2 h-3 w-px bg-gray-300" />
-        <View className="rounded-md bg-slate-500 px-2 py-1">
+        <View className="w-px h-3 mx-2 bg-gray-300" />
+        <View className="px-2 py-1 rounded-md bg-slate-500">
           <Text className="text-[11px] font-semibold text-white">도착</Text>
         </View>
         <Text
@@ -196,7 +207,13 @@ function CourseCard({
   );
 }
 
-export default function SharedRouteScreen(): React.JSX.Element {
+type SharedRouteScreenProps = {
+  embedded?: boolean;
+};
+
+export default function SharedRouteScreen({
+  embedded = false,
+}: SharedRouteScreenProps = {}): React.JSX.Element {
   const route = useRoute();
   const navigation = useNavigation<any>();
   const params = (route.params || {}) as SharedRouteParams;
@@ -208,6 +225,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
     userSavedRoutes,
   } = useMockData();
   const { showToast } = useToast();
+  const routeSection = useRouteSection();
   const authUser = useAuthStore((s) => s.user);
   const authorCtx = useMemo(
     () => ({
@@ -265,6 +283,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
   const [reviewCourseId, setReviewCourseId] = useState<string | null>(null);
   const [reviewComposerOpen, setReviewComposerOpen] = useState(false);
   const [reviewUserName, setReviewUserName] = useState("나");
+  const [reviewAnonymous, setReviewAnonymous] = useState(false);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewBody, setReviewBody] = useState("");
   const [savingMyRoute, setSavingMyRoute] = useState(false);
@@ -282,9 +301,15 @@ export default function SharedRouteScreen(): React.JSX.Element {
     try {
       const courses = await fetchSharedCourses();
       const normalized = normalizeCourseList(courses);
-      setCoursesData(
-        mergeLocalThumbnailsIntoCourses(normalized, userSavedRoutes),
+      const withThumbs = mergeLocalThumbnailsIntoCourses(
+        normalized,
+        userSavedRoutes,
       );
+      const withAuthors = await enrichCoursesWithForkOriginAuthors(
+        withThumbs,
+        userSavedRoutes,
+      );
+      setCoursesData((prev) => mergeCourseAuthorCredits(withAuthors, prev));
     } catch {
       setCoursesData([]);
     }
@@ -373,11 +398,13 @@ export default function SharedRouteScreen(): React.JSX.Element {
   };
 
   useEffect(() => {
+    if (params?.section === "my") return;
     if (params?.openFilter) setFilterVisible(true);
     if (params?.openAsPopular) setSelectedSort("인기순");
     if (params?.viewCourseId) setViewingCourseId(params.viewCourseId);
     if (typeof params?.initialQuery === "string") setSearchQuery(params.initialQuery);
   }, [
+    params?.section,
     params?.openFilter,
     params?.openAsPopular,
     params?.viewCourseId,
@@ -417,14 +444,19 @@ export default function SharedRouteScreen(): React.JSX.Element {
     }
     let mounted = true;
     fetchSharedCourseDetail(viewingCourseId)
-      .then((course) => {
-        if (mounted && course) setSharedDetailCourseApi(course);
+      .then(async (course) => {
+        if (!mounted || !course) return;
+        const enriched = await enrichCourseWithForkOriginAuthor(
+          course,
+          userSavedRoutes,
+        );
+        if (mounted && enriched) setSharedDetailCourseApi(enriched);
       })
       .catch(() => {});
     return () => {
       mounted = false;
     };
-  }, [viewingCourseId]);
+  }, [viewingCourseId, userSavedRoutes]);
 
   useEffect(() => {
     if (!viewingCourseId) {
@@ -443,29 +475,28 @@ export default function SharedRouteScreen(): React.JSX.Element {
       return;
     }
     const stepPoints = courseRouteStepsToMapPath(course.id, routeSteps);
-    const legModes = (course.routeLegs ?? []).map((l) => l.mode);
-    let directionsMode: DirectionsMode = "driving";
-    if (legModes.length > 0 && legModes.every((m) => m === "walk")) {
-      directionsMode = "walking";
-    } else if (legModes.some((m) => m === "bike")) {
-      directionsMode = "bicycling";
-    } else if (
-      legModes.some((m) => m === "transit") &&
-      !legModes.some((m) => m === "car")
-    ) {
-      directionsMode = "transit";
-    }
+    const directionsMode = resolveCoursePreviewDirectionsMode(course.routeLegs);
     const ac = new AbortController();
     setCourseDetailPathLoading(true);
     setCourseDetailMergedPath(null);
-    fetchMergedDirectionsPolyline({
-      points: stepPoints,
-      mode: directionsMode,
-      signal: ac.signal,
-    })
-      .then((path) => {
-        if (!ac.signal.aborted && path.length >= 2)
-          setCourseDetailMergedPath(path);
+    const loadMergedPath = (mode: DirectionsMode) =>
+      fetchMergedDirectionsPolyline({
+        points: stepPoints,
+        mode,
+        signal: ac.signal,
+      });
+    loadMergedPath(directionsMode)
+      .then(async (path) => {
+        if (ac.signal.aborted) return;
+        let final = path;
+        if (
+          looksLikeStraightStopConnectorPath(path, stepPoints.length) &&
+          directionsMode === "transit"
+        ) {
+          final = await loadMergedPath("driving");
+        }
+        if (!ac.signal.aborted && final.length >= 2)
+          setCourseDetailMergedPath(final);
       })
       .catch(() => {})
       .finally(() => {
@@ -524,7 +555,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
       list = [...list].sort((a, b) => b.views - a.views);
     }
 
-    return list;
+    return dedupeCoursesById(list);
   }, [activeTab, searchQuery, selectedCategory, selectedRegion, selectedSort, coursesData]);
 
   const handleCategoryToggle = (cat: string) => {
@@ -537,23 +568,17 @@ export default function SharedRouteScreen(): React.JSX.Element {
     setSelectedSort((prev) => (prev === opt ? null : opt));
   };
 
-  return (
-    <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={["top"]}>
-      {/* 헤더 배너 - 이미지 배경 + 내부 흐림(오버레이) */}
-      <View className="px-4 pt-2 pb-2">
-        <View
-          className="rounded-2xl px-4 py-4"
-          style={{ backgroundColor: "#2563EB" }}
-        >
-          <Text className="text-xl font-semibold text-white">공유 코스</Text>
-          <Text className="mt-1 text-xs text-blue-100">
-            다른 유저의 경로를 탐색하고 저장해 보세요
-          </Text>
-        </View>
-      </View>
+  const ScreenRoot = embedded ? View : SafeAreaView;
+  const screenRootProps = embedded
+    ? { className: "flex-1 bg-[#F0F5FF]" }
+    : { className: "flex-1 bg-[#F0F5FF]", edges: ["top"] as const };
 
+  return (
+    <ScreenRoot {...screenRootProps}>
       {/* 검색 + 필터 — 배경과 분리된 카드형 검색바 */}
-      <View className="flex-row items-center gap-2.5 px-4 py-3">
+      <View
+        className={`flex-row items-center gap-2.5 px-4 ${embedded ? 'pb-2 pt-1' : 'py-3'}`}
+      >
         <View
           className="flex-1 flex-row items-center rounded-2xl bg-white px-3.5"
           style={{
@@ -565,11 +590,11 @@ export default function SharedRouteScreen(): React.JSX.Element {
             shadowOffset: { width: 0, height: 2 },
             shadowOpacity: 0.06,
             shadowRadius: 8,
-            elevation: Platform.OS === 'android' ? 0 : 3,
+            elevation: 3,
           }}
         >
           <View
-            className="mr-2 h-9 w-9 items-center justify-center rounded-xl"
+            className="items-center justify-center mr-2 h-9 w-9 rounded-xl"
             style={{ backgroundColor: "rgba(37,99,235,0.08)" }}
           >
             <Ionicons name="search" size={20} color="#2563EB" />
@@ -594,7 +619,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
             shadowOffset: { width: 0, height: 2 },
             shadowOpacity: 0.06,
             shadowRadius: 8,
-            elevation: Platform.OS === 'android' ? 0 : 3,
+            elevation: 3,
           }}
           accessibilityLabel="필터"
         >
@@ -641,7 +666,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
       {/* 코스 리스트 */}
       <FlatList<CourseItem>
         data={filteredCourses ?? []}
-        keyExtractor={(item: CourseItem) => item.id}
+        keyExtractor={(item: CourseItem, index) => `shared-${item.id}-${index}`}
         renderItem={({ item }: { item: CourseItem }) => (
           <CourseCard
             item={item}
@@ -747,11 +772,11 @@ export default function SharedRouteScreen(): React.JSX.Element {
                       routeSteps.length >= 1
                         ? courseRouteStepsToMapPath(course.id, routeSteps)
                         : undefined;
-                    // 실경로가 있으면 단순화해서 사용하고, 없으면 경유지 연결선으로 대체
+                    // 실경로만 표시 (실패 시 정류장 직선 연결·부채꼴 방지)
                     const polylinePath = simplifyRoutePath(
                       courseDetailMergedPath && courseDetailMergedPath.length >= 2
                         ? courseDetailMergedPath
-                        : pathPts,
+                        : undefined,
                     );
                     const startStepName =
                       routeSteps[0]?.name ?? course.departure;
@@ -817,7 +842,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
                             borderBottomColor: "rgba(37,99,235,0.15)",
                           }}
                         >
-                          <View className="mb-2 flex-row items-center justify-between px-4">
+                          <View className="flex-row items-center justify-between px-4 mb-2">
                             <Text className="text-sm font-semibold text-[#1A1A2E]">
                               코스 위치
                             </Text>
@@ -921,7 +946,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
                             paddingBottom: 28,
                           }}
                         >
-                          <View className="mb-4 flex-row items-center justify-between gap-2">
+                          <View className="flex-row items-center justify-between gap-2 mb-4">
                             <Text className="flex-1 text-xl font-bold text-gray-900">
                               코스 상세
                             </Text>
@@ -933,7 +958,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
                                   title: course.title,
                                 })
                               }
-                              className="flex-row items-center rounded-lg border border-gray-300 bg-white px-3 py-2 active:opacity-90"
+                              className="flex-row items-center px-3 py-2 bg-white border border-gray-300 rounded-lg active:opacity-90"
                             >
                               <Ionicons name="share-outline" size={18} color="#2563eb" />
                               <Text className="ml-1 text-xs font-semibold text-blue-600">
@@ -944,11 +969,21 @@ export default function SharedRouteScreen(): React.JSX.Element {
                               <Pressable
                                 onPress={() => {
                                   closeCourseDetail();
-                                  navigation.navigate("MyRoute", {
-                                    viewCourseId: String(course.id),
-                                  });
+                                  const courseId = String(course.id);
+                                  if (routeSection) {
+                                    routeSection.setSection("my");
+                                    navigation.setParams({
+                                      section: "my",
+                                      viewCourseId: courseId,
+                                    });
+                                  } else {
+                                    navigation.navigate("Route", {
+                                      section: "my",
+                                      viewCourseId: courseId,
+                                    });
+                                  }
                                 }}
-                                className="flex-row items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 active:opacity-90"
+                                className="flex-row items-center px-3 py-2 border border-blue-200 rounded-lg bg-blue-50 active:opacity-90"
                               >
                                 <Ionicons name="map-outline" size={18} color="#2563eb" />
                                 <Text className="ml-1 text-xs font-bold text-blue-700">
@@ -980,7 +1015,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
                                     setSavingMyRoute(false);
                                   }
                                 }}
-                                className="flex-row items-center rounded-lg px-3 py-2 active:opacity-90"
+                                className="flex-row items-center px-3 py-2 rounded-lg active:opacity-90"
                                 style={{
                                   backgroundColor: savedCourseIds.includes(course.id)
                                     ? "#93c5fd"
@@ -1019,7 +1054,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
                           <CourseAuthorDetailChip
                             course={course}
                             authorCtx={authorCtx}
-                            onPress={() => {
+                            onPressCreator={() => {
                               const authorLabel = getCourseAuthorLabel(
                                 course,
                                 authorCtx,
@@ -1040,9 +1075,30 @@ export default function SharedRouteScreen(): React.JSX.Element {
                                     : authorLabel,
                               });
                             }}
+                            onPressModifier={() => {
+                              const modLabel = getCourseModifierLabel(
+                                course,
+                                authorCtx,
+                              );
+                              const modUuid = String(
+                                course.modifierUuid ?? "",
+                              ).trim();
+                              const modUserId = String(
+                                course.modifierUserId ?? "",
+                              ).trim();
+                              rootNavigate("UserProfile", {
+                                userUuid: modUuid || undefined,
+                                userId: modUserId || undefined,
+                                nickname:
+                                  modLabel.startsWith("@") ||
+                                  modLabel === "수정자 미표시"
+                                    ? undefined
+                                    : modLabel,
+                              });
+                            }}
                           />
                           {Array.isArray(course.tags) && course.tags.length > 0 ? (
-                            <View className="mb-2 flex-row flex-wrap gap-1">
+                            <View className="flex-row flex-wrap gap-1 mb-2">
                               {course.tags.slice(0, 2).map((tag) => (
                                 <View
                                   key={String(tag)}
@@ -1056,18 +1112,18 @@ export default function SharedRouteScreen(): React.JSX.Element {
                             <Text className="mb-2 text-sm text-gray-500">{course.meta}</Text>
                           )}
 
-                          <View className="mb-3 flex-row flex-wrap items-center gap-2">
-                            <View className="rounded-full bg-gray-100 px-3 py-1">
+                          <View className="flex-row flex-wrap items-center gap-2 mb-3">
+                            <View className="px-3 py-1 bg-gray-100 rounded-full">
                               <Text className="text-xs text-gray-700">
                                 {regionChipLabel}
                               </Text>
                             </View>
-                            <View className="rounded-full bg-blue-50 px-3 py-1">
+                            <View className="px-3 py-1 rounded-full bg-blue-50">
                               <Text className="text-xs text-blue-700">
                                 예상 소요 약 {hours}시간
                               </Text>
                             </View>
-                            <View className="rounded-full bg-yellow-50 px-3 py-1">
+                            <View className="px-3 py-1 rounded-full bg-yellow-50">
                               <Text className="text-xs text-yellow-700">
                                 ★ {course.rating.toFixed(1)} (
                                 {course.reviewCount}명)
@@ -1075,30 +1131,25 @@ export default function SharedRouteScreen(): React.JSX.Element {
                             </View>
                           </View>
 
-                          <Text className="mb-4 text-xs text-gray-400">
-                            이용자들이 실제로 코스를 다녀온 기록을 기반으로 한
-                            대략적인 체류 시간입니다.
-                          </Text>
-
                           {/* 출발/도착 요약 */}
-                          <View className="mb-6 rounded-xl bg-gray-50 p-3">
+                          <View className="p-3 mb-6 rounded-xl bg-gray-50">
                             <View className="flex-row items-center">
-                              <View className="rounded bg-green-100 px-2 py-1">
+                              <View className="px-2 py-1 bg-green-100 rounded">
                                 <Text className="text-xs font-medium text-green-700">
                                   출발
                                 </Text>
                               </View>
-                              <Text className="ml-2 flex-1 text-sm text-gray-900">
+                              <Text className="flex-1 ml-2 text-sm text-gray-900">
                                 {course.departure}
                               </Text>
                             </View>
-                            <View className="mt-2 flex-row items-center">
-                              <View className="rounded bg-red-100 px-2 py-1">
+                            <View className="flex-row items-center mt-2">
+                              <View className="px-2 py-1 bg-red-100 rounded">
                                 <Text className="text-xs font-medium text-red-700">
                                   도착
                                 </Text>
                               </View>
-                              <Text className="ml-2 flex-1 text-sm text-gray-900">
+                              <Text className="flex-1 ml-2 text-sm text-gray-900">
                                 {course.arrival}
                               </Text>
                             </View>
@@ -1108,7 +1159,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
                           <Text className="mb-2 text-sm font-semibold text-gray-900">
                             코스 경로
                           </Text>
-                          <View className="mb-6 rounded-xl bg-gray-50 p-3">
+                          <View className="p-3 mb-6 rounded-xl bg-gray-50">
                             {routeSteps.map((step, index) => (
                               <Pressable
                                 key={step.id}
@@ -1168,14 +1219,14 @@ export default function SharedRouteScreen(): React.JSX.Element {
                             이용자 후기
                           </Text>
                           {(course.reviews ?? []).length === 0 ? (
-                            <View className="mb-2 rounded-xl bg-gray-50 p-3">
+                            <View className="p-3 mb-2 rounded-xl bg-gray-50">
                               <Text className="text-xs text-gray-500">
                                 아직 등록된 후기가 없습니다. 코스를 다녀온 후 첫
                                 후기를 남겨 보세요.
                               </Text>
                             </View>
                           ) : (
-                            <View className="mb-2 rounded-xl bg-gray-50 p-3">
+                            <View className="p-3 mb-2 rounded-xl bg-gray-50">
                               {(course.reviews ?? []).map((review) => (
                                 <View
                                   key={review.id}
@@ -1203,7 +1254,10 @@ export default function SharedRouteScreen(): React.JSX.Element {
                           <Pressable
                             onPress={() => {
                               setReviewCourseId(course.id);
-                              setReviewUserName("나");
+                              setReviewUserName(
+                                String(authUser?.nickname ?? "").trim() || "나",
+                              );
+                              setReviewAnonymous(false);
                               setReviewRating(5);
                               setReviewBody("");
                               setReviewComposerOpen(true);
@@ -1220,10 +1274,6 @@ export default function SharedRouteScreen(): React.JSX.Element {
                             </Text>
                           </Pressable>
 
-                          <Text className="mt-1 text-[11px] text-gray-400">
-                            작성한 후기는 서버로 전송되며, 연결 실패 시에만 이 기기에
-                            임시 표시됩니다.
-                          </Text>
                         </ScrollView>
                       </>
                     );
@@ -1264,7 +1314,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
                 showsVerticalScrollIndicator={false}
                 style={{ flex: 1, width: "100%" }}
               >
-                <View className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+                <View className="w-full max-w-md p-5 bg-white shadow-xl rounded-2xl">
                   <Text className="text-lg font-bold text-gray-900">
                     리뷰 작성
                   </Text>
@@ -1276,21 +1326,47 @@ export default function SharedRouteScreen(): React.JSX.Element {
                   </Text>
 
                   <Text className="mt-4 text-xs font-semibold text-gray-600">
-                    닉네임
+                    작성자 공개
                   </Text>
-                  <TextInput
-                    value={reviewUserName}
-                    onChangeText={setReviewUserName}
-                    placeholder="표시될 이름"
-                    placeholderTextColor="#9ca3af"
-                    className="mt-1 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-base text-gray-900"
-                    maxLength={20}
-                  />
+                  <View className="flex-row gap-2 mt-2">
+                    <Pressable
+                      onPress={() => setReviewAnonymous(false)}
+                      className={`flex-1 rounded-xl border px-3 py-2.5 ${
+                        !reviewAnonymous
+                          ? "border-blue-500 bg-blue-50"
+                          : "border-gray-200 bg-gray-50"
+                      }`}
+                    >
+                      <Text
+                        className={`text-center text-sm font-semibold ${
+                          !reviewAnonymous ? "text-blue-700" : "text-gray-700"
+                        }`}
+                      >
+                        닉네임 공개
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setReviewAnonymous(true)}
+                      className={`flex-1 rounded-xl border px-3 py-2.5 ${
+                        reviewAnonymous
+                          ? "border-blue-500 bg-blue-50"
+                          : "border-gray-200 bg-gray-50"
+                      }`}
+                    >
+                      <Text
+                        className={`text-center text-sm font-semibold ${
+                          reviewAnonymous ? "text-blue-700" : "text-gray-700"
+                        }`}
+                      >
+                        익명
+                      </Text>
+                    </Pressable>
+                  </View>
 
                   <Text className="mt-3 text-xs font-semibold text-gray-600">
                     별점
                   </Text>
-                  <View className="mt-2 flex-row gap-2">
+                  <View className="flex-row gap-2 mt-2">
                     {[1, 2, 3, 4, 5].map((n) => (
                       <Pressable
                         key={n}
@@ -1307,7 +1383,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
                   </View>
 
                   <Text className="mt-4 text-xs font-semibold text-gray-600">
-                    후기
+                    후기 작성
                   </Text>
                   <TextInput
                     value={reviewBody}
@@ -1320,10 +1396,10 @@ export default function SharedRouteScreen(): React.JSX.Element {
                     maxLength={500}
                   />
 
-                  <View className="mt-5 flex-row gap-2">
+                  <View className="flex-row gap-2 mt-5">
                     <Pressable
                       onPress={() => setReviewComposerOpen(false)}
-                      className="flex-1 items-center rounded-xl border border-gray-200 py-3 active:opacity-80"
+                      className="items-center flex-1 py-3 border border-gray-200 rounded-xl active:opacity-80"
                     >
                       <Text className="text-sm font-semibold text-gray-600">
                         취소
@@ -1333,24 +1409,27 @@ export default function SharedRouteScreen(): React.JSX.Element {
                       onPress={async () => {
                         if (!reviewCourseId) return;
                         const t = reviewBody.trim();
+                        const displayName = reviewAnonymous
+                          ? "익명"
+                          : String(reviewUserName ?? "").trim() || "나";
                         if (!t) {
                           showToast('후기 내용을 입력해 주세요');
                           return;
                         }
                         const ok = await submitSharedCourseReview(reviewCourseId, {
-                          userName: reviewUserName,
+                          userName: displayName,
                           rating: reviewRating,
                           text: t,
                         });
                         addSharedCourseReview(reviewCourseId, {
-                          userName: reviewUserName,
+                          userName: displayName,
                           rating: reviewRating,
                           text: t,
                         });
                         setReviewComposerOpen(false);
                         showToast(ok ? '후기가 등록됐어요' : '후기를 등록하지 못했어요');
                       }}
-                      className="flex-1 items-center rounded-xl bg-amber-500 py-3 active:opacity-90"
+                      className="items-center flex-1 py-3 rounded-xl bg-amber-500 active:opacity-90"
                     >
                       <Text className="text-sm font-bold text-white">등록</Text>
                     </Pressable>
@@ -1361,6 +1440,6 @@ export default function SharedRouteScreen(): React.JSX.Element {
           ) : null}
         </View>
       </Modal>
-    </SafeAreaView>
+    </ScreenRoot>
   );
 }

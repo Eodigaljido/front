@@ -1,10 +1,18 @@
-import { View, Text, TouchableOpacity, Image } from "react-native";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  Image,
+  ActivityIndicator,
+} from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { rootNavigate } from "@/navigation/rootNavigation";
 import { getChatRooms, ChatRoom as ChatRoomType } from "@/api/chat/chat";
 import { useCallback, useState } from "react";
 import { useAuthStore } from "@/store/authStore";
 import { useChatSocket, ChatSocketEvent } from "@/hooks/useChatSocket";
+import { MessageSquare, Search } from "lucide-react-native";
+import React from "react";
 
 interface ChatRoomProps {
   searchQuery?: string;
@@ -37,6 +45,7 @@ function formatTime(dateStr: string): string {
 
 export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
   const [chatRooms, setChatRooms] = useState<ChatRoomType[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const accessToken = useAuthStore((s) => s.accessToken);
 
   // 방 목록이 로드된 후 모든 방을 구독해 실시간 업데이트 수신
@@ -51,11 +60,13 @@ export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
 
   const fetchChatRooms = () => {
     if (!accessToken) return;
+    setIsLoading(true);
     getChatRooms(accessToken)
       .then((rooms) => setChatRooms(Array.isArray(rooms) ? rooms : []))
       .catch((err) => {
         console.error("채팅방 목록 불러오기 실패:", err);
-      });
+      })
+      .finally(() => setIsLoading(false));
   };
 
   useFocusEffect(
@@ -72,6 +83,59 @@ export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
           room.lastMessage?.includes(searchQuery),
       )
     : roomList;
+
+  if (isLoading) {
+    return (
+      <View style={{ paddingVertical: 40, alignItems: "center" }}>
+        <ActivityIndicator size="small" color="#9CA3AF" />
+      </View>
+    );
+  }
+
+  if (filteredRooms.length === 0) {
+    const isSearching = searchQuery.length > 0;
+    return (
+      <View
+        style={{
+          alignItems: "center",
+          paddingVertical: 48,
+          gap: 12,
+        }}
+      >
+        <View
+          style={{
+            width: 64,
+            height: 64,
+            borderRadius: 32,
+            backgroundColor: isSearching ? "#F3F4F6" : "#EFF6FF",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {isSearching ? (
+            <Search color="#9CA3AF" size={26} />
+          ) : (
+            <MessageSquare color="#3B82F6" size={26} />
+          )}
+        </View>
+        <Text style={{ fontSize: 15, fontWeight: "600", color: "#374151" }}>
+          {isSearching ? `"${searchQuery}" 검색 결과 없음` : "채팅방이 없어요"}
+        </Text>
+        <Text
+          style={{
+            fontSize: 13,
+            color: "#9CA3AF",
+            textAlign: "center",
+            lineHeight: 20,
+          }}
+        >
+          {isSearching
+            ? "다른 검색어로 다시 시도해보세요"
+            : "우측 상단 버튼을 눌러\n첫 번째 채팅방을 만들어보세요"}
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View>
@@ -91,7 +155,7 @@ export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
           <View className="flex-row items-center flex-1">
             <View style={{ position: "relative" }}>
               <View
-                className="rounded-full bg-blue-100 items-center justify-center"
+                className="items-center justify-center bg-blue-100 rounded-full"
                 style={{ width: 50, height: 50 }}
               >
                 <Image
@@ -139,7 +203,7 @@ export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
               </Text>
             </View>
           </View>
-          <Text className="text-xs text-gray-700 ml-2">
+          <Text className="ml-2 text-xs text-gray-700">
             {formatTime(room.lastMessageAt)}
           </Text>
         </TouchableOpacity>
