@@ -16,6 +16,7 @@ import {
 } from "react-native-keyboard-controller";
 import { RouteProp, useRoute } from "@react-navigation/native";
 import { RoomHeader } from "@/components/chat/RoomHeader";
+import { RouteShareMessageCard } from "@/components/chat/RouteShareMessageCard";
 import { BubbleChat } from "@/stories/chat/BubbleChat";
 import {
   getRoomMessages,
@@ -307,6 +308,45 @@ export const ChatRoomScreen = () => {
           )}
           {messages.map((msg) => {
             const isMine = msg.senderUuid === userUuid;
+            if (String(msg.messageType ?? "").trim().toUpperCase() === "ROUTE") {
+              return (
+                <View
+                  key={msg.uuid}
+                  style={{
+                    alignSelf: isMine ? "flex-end" : "flex-start",
+                    maxWidth: "88%",
+                    marginVertical: 4,
+                  }}
+                >
+                  {!isMine && memberCount >= 3 ? (
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        color: "#8E8E93",
+                        marginBottom: 4,
+                        marginLeft: 2,
+                      }}
+                    >
+                      {msg.senderNickname}
+                    </Text>
+                  ) : null}
+                  <RouteShareMessageCard message={msg} isMine={isMine} />
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      color: "#8E8E93",
+                      marginTop: 4,
+                      alignSelf: isMine ? "flex-end" : "flex-start",
+                    }}
+                  >
+                    {new Date(msg.createdAt).toLocaleTimeString("ko-KR", {
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
+                  </Text>
+                </View>
+              );
+            }
             return (
               <BubbleChat
                 key={msg.uuid}
