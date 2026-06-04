@@ -441,7 +441,20 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
     ...pickCourseAuthorFromRaw(raw as Record<string, unknown>),
     ...pickForkChainFromRaw(raw as Record<string, unknown>),
     savedByMe: pickCourseSavedByMe(raw),
+    collaborative: raw.collaborative === true,
+    version:
+      raw.version != null && Number.isFinite(Number(raw.version))
+        ? Number(raw.version)
+        : undefined,
+    chatRoomUuid:
+      raw.chatRoomUuid != null ? String(raw.chatRoomUuid).trim() : undefined,
   };
+}
+
+/** API 상세·409 충돌 body 등을 CourseItem으로 변환 */
+export function courseItemFromApiPayload(raw: unknown): CourseItem | null {
+  if (!raw || typeof raw !== "object") return null;
+  return toCourseItem(raw as ApiCourseLike, 0);
 }
 
 /** 내가 저장한 공유 코스 id 목록 — 홈·공유 탭 북마크 동기화 */
