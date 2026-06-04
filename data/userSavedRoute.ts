@@ -102,6 +102,7 @@ export function userRouteToCourseItem(r: UserSavedRoute): CourseItem {
       id: `${r.id}-step-${i}`,
       name: s.title,
       stayMinutes: 0,
+      ...(s.lat != null && s.lng != null ? { lat: s.lat, lng: s.lng } : {}),
     })),
     routeLegs: r.legs.map((l, i) => ({
       id: l.id || `${r.id}-leg-${i}`,
