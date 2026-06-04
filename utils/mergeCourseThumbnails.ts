@@ -1,8 +1,65 @@
 import type { CourseItem } from "../data/mockData";
 import type { UserSavedRoute } from "../data/userSavedRoute";
+import { userRouteToCourseItem } from "../data/userSavedRoute";
 import { resolveCourseThumbnailForDisplay } from "./courseThumbnailUri";
 import { sameCourseId } from "./sameCourseId";
 import { hasMeaningfulRouteSteps } from "../api/courses";
+import { pickRicherRouteSteps } from "./routeStopRichness";
+
+const PLACEHOLDER_PLACE = /^(출발지|도착지|경유지)$/u;
+
+export function isPlaceholderPlaceLabel(value: string | undefined): boolean {
+  const v = String(value ?? "").trim();
+  return !v || PLACEHOLDER_PLACE.test(v);
+}
+
+/** API 목록 + 로컬 CourseItem 병합 */
+export function mergeLocalCourseIntoApiCourse(
+  api: CourseItem,
+  local: CourseItem,
+): CourseItem {
+  return {
+    ...api,
+    title: String(api.title ?? "").trim() || local.title,
+    departure: isPlaceholderPlaceLabel(api.departure)
+      ? local.departure
+      : api.departure,
+    arrival: isPlaceholderPlaceLabel(api.arrival)
+      ? local.arrival
+      : api.arrival,
+    routeSteps: pickRicherRouteSteps(api, local),
+    routeLegs:
+      Array.isArray(api.routeLegs) && api.routeLegs.length > 0
+        ? api.routeLegs
+        : local.routeLegs,
+    tags: local.tags?.length ? local.tags : api.tags,
+    thumbnail: resolveCourseThumbnailForDisplay(
+      api.thumbnail,
+      local.thumbnail,
+    ),
+    collaborative:
+      local.collaborative === true ? true : api.collaborative,
+  };
+}
+
+/** API·목록 코스에 로컬 stops 기반 출발·도착·경로 보강 */
+export function mergeCourseItemWithLocalRoute(
+  course: CourseItem,
+  route: UserSavedRoute,
+): CourseItem {
+  return mergeLocalCourseIntoApiCourse(course, userRouteToCourseItem(route));
+}
+
+/** 상세·지도용 — 로컬 저장 루트가 있으면 출발·도착 우선 */
+export function resolveDetailCourseItem(
+  course: CourseItem | null | undefined,
+  route: UserSavedRoute | undefined,
+): CourseItem | null {
+  if (!course && !route) return null;
+  if (!route) return course ?? null;
+  if (!course) return userRouteToCourseItem(route);
+  return mergeCourseItemWithLocalRoute(course, route);
+}
 
 export type MineAuthorContext = {
   myUuid?: string | null;
@@ -156,10 +213,7 @@ export function mergeApiAndLocalCourseLists(
       byId.set(id, c);
       continue;
     }
-    const thumb = resolveCourseThumbnailForDisplay(prev.thumbnail, c.thumbnail);
-    if (thumb) {
-      byId.set(id, { ...prev, thumbnail: thumb });
-    }
+    byId.set(id, mergeLocalCourseIntoApiCourse(prev, c));
   }
   return Array.from(byId.values());
 }
