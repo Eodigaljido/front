@@ -4,12 +4,9 @@ import {
   Text,
   Modal,
   Pressable,
-  ScrollView,
   TextInput,
   Animated,
   Easing,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
   Image,
   TouchableOpacity,
@@ -17,8 +14,13 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
+  KeyboardAwareScrollView,
+  KeyboardStickyView,
+} from 'react-native-keyboard-controller';
+import {
   getRoomMessages,
   markAsRead,
+  isChatApiNotFoundError,
   type ChatMessage,
 } from '../api/chat/chat';
 import { useChatSocket, type ChatSocketEvent } from '../hooks/useChatSocket';
@@ -27,7 +29,9 @@ import {
   dismissRouteChatSyncBanner,
   isRouteChatSyncBannerDismissed,
 } from '../utils/routeChatSyncBanner';
+import { ChatScrollToBottomFab } from './chat/ChatScrollToBottomFab';
 import { RouteShareMessageCard } from './chat/RouteShareMessageCard';
+import { useChatScrollToBottom } from '../hooks/useChatScrollToBottom';
 
 const SHEET_SLIDE = 420;
 const MESSAGE_POLL_MS = 4000;
@@ -80,16 +84,29 @@ function mergeMessages(
   incoming: ChatMessage[],
 ): ChatMessage[] {
   const map = new Map<string, ChatMessage>();
-  for (const m of prev) {
-    if (!m.uuid.startsWith('pending-')) map.set(m.uuid, m);
-  }
   for (const m of incoming) {
     if (!m.isDeleted) map.set(m.uuid, m);
+  }
+  for (const m of prev) {
+    if (m.uuid.startsWith('pending-')) map.set(m.uuid, m);
   }
   return [...map.values()].sort(
     (a, b) =>
       new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
   );
+}
+
+function replacePendingMessage(
+  prev: ChatMessage[],
+  pendingUuid: string,
+  saved: ChatMessage,
+): ChatMessage[] {
+  const pendingIdx = prev.findIndex((m) => m.uuid === pendingUuid);
+  if (pendingIdx === -1) {
+    if (prev.some((m) => m.uuid === saved.uuid)) return prev;
+    return [...prev, saved];
+  }
+  return prev.map((m, i) => (i === pendingIdx ? saved : m));
 }
 
 export function RouteCollaborativeChatSheet({
@@ -106,7 +123,8 @@ export function RouteCollaborativeChatSheet({
   const insets = useSafeAreaInsets();
   const backdrop = useRef(new Animated.Value(0)).current;
   const sheetY = useRef(new Animated.Value(SHEET_SLIDE)).current;
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<KeyboardAwareScrollView>(null);
+  const messageCountRef = useRef(0);
   const [rendered, setRendered] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [apiMessages, setApiMessages] = useState<ChatMessage[]>([]);
@@ -116,6 +134,7 @@ export function RouteCollaborativeChatSheet({
   const [expandedImageUrl, setExpandedImageUrl] = useState<string | null>(
     null,
   );
+  const [roomUnavailable, setRoomUnavailable] = useState(false);
 
   const roomId = String(chatRoomUuid ?? '').trim();
   const useApi = Boolean(accessToken && roomId);
@@ -130,6 +149,21 @@ export function RouteCollaborativeChatSheet({
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated }), 50);
   }, []);
 
+  const {
+    showScrollToBottom,
+    handleScrollPosition,
+    scrollToBottomPress,
+    maybeScrollToEnd,
+    stickToBottom,
+  } = useChatScrollToBottom(scrollToEnd);
+
+  useEffect(() => {
+    if (!visible || apiMessages.length === 0) return;
+    if (apiMessages.length === messageCountRef.current) return;
+    messageCountRef.current = apiMessages.length;
+    maybeScrollToEnd(true);
+  }, [visible, apiMessages.length, maybeScrollToEnd]);
+
   const applyIncomingMessages = useCallback(
     (incoming: ChatMessage[], scroll = false) => {
       setApiMessages((prev) => {
@@ -139,33 +173,30 @@ export function RouteCollaborativeChatSheet({
           merged.every((m, i) => m.uuid === prev[i]?.uuid);
         return same ? prev : merged;
       });
-      if (scroll) scrollToEnd(false);
+      if (scroll) maybeScrollToEnd(false);
     },
-    [scrollToEnd],
+    [maybeScrollToEnd],
   );
 
   const handleSocketEvent = useCallback(
     (event: ChatSocketEvent) => {
       onChatSocketEvent(event);
       if (event.eventType === 'MESSAGE_CREATED') {
-        if (event.payload.senderUuid === myUuid) {
-          setApiMessages((prev) => {
+        setApiMessages((prev) => {
+          if (prev.some((m) => m.uuid === event.payload.uuid)) return prev;
+          if (event.payload.senderUuid === myUuid) {
             const pendingIdx = prev.findIndex((m) =>
               m.uuid.startsWith('pending-'),
             );
-            if (pendingIdx === -1) {
-              if (prev.some((m) => m.uuid === event.payload.uuid)) return prev;
-              return [...prev, event.payload];
+            if (pendingIdx >= 0) {
+              return prev.map((m, i) =>
+                i === pendingIdx ? event.payload : m,
+              );
             }
-            return prev.map((m, i) => (i === pendingIdx ? event.payload : m));
-          });
-        } else {
-          setApiMessages((prev) => {
-            if (prev.some((m) => m.uuid === event.payload.uuid)) return prev;
-            return [...prev, event.payload];
-          });
-        }
-        scrollToEnd();
+          }
+          return [...prev, event.payload];
+        });
+        maybeScrollToEnd();
         return;
       }
       if (event.eventType === 'MESSAGE_EDITED') {
@@ -180,7 +211,7 @@ export function RouteCollaborativeChatSheet({
         );
       }
     },
-    [myUuid, scrollToEnd, onChatSocketEvent],
+    [myUuid, maybeScrollToEnd, onChatSocketEvent],
   );
 
   const { sendMessage: socketSend, isConnected } = useChatSocket(
@@ -243,7 +274,7 @@ export function RouteCollaborativeChatSheet({
 
   const fetchMessagesFromApi = useCallback(
     async (opts?: { showSpinner?: boolean }) => {
-      if (!useApi || !accessToken) return;
+      if (!useApi || !accessToken || roomUnavailable) return;
       if (opts?.showSpinner) setLoadingMsgs(true);
       try {
         const fetched = await getRoomMessages(accessToken, roomId, { limit: 80 });
@@ -251,13 +282,18 @@ export function RouteCollaborativeChatSheet({
           .reverse()
           .filter((m) => !m.isDeleted);
         applyIncomingMessages(chronological, Boolean(opts?.showSpinner));
-      } catch {
+      } catch (err) {
+        if (isChatApiNotFoundError(err)) {
+          setRoomUnavailable(true);
+          setApiMessages([]);
+          return;
+        }
         if (opts?.showSpinner) setApiMessages([]);
       } finally {
         if (opts?.showSpinner) setLoadingMsgs(false);
       }
     },
-    [useApi, accessToken, roomId, applyIncomingMessages],
+    [useApi, accessToken, roomId, roomUnavailable, applyIncomingMessages],
   );
 
   useEffect(() => {
@@ -275,22 +311,31 @@ export function RouteCollaborativeChatSheet({
   }, [visible, useApi, userId, roomId]);
 
   useEffect(() => {
-    if (!visible || !useApi || !accessToken) return;
+    if (!visible) {
+      messageCountRef.current = 0;
+      setRoomUnavailable(false);
+      return;
+    }
+    if (!useApi || !accessToken) return;
+    setRoomUnavailable(false);
     setApiMessages([]);
+    messageCountRef.current = 0;
     void fetchMessagesFromApi({ showSpinner: true });
     void markAsRead(accessToken, roomId)
       .then(() => refresh())
-      .catch(() => {});
+      .catch((err) => {
+        if (isChatApiNotFoundError(err)) setRoomUnavailable(true);
+      });
   }, [visible, useApi, accessToken, roomId, fetchMessagesFromApi, refresh]);
 
   useEffect(() => {
-    if (!visible || !useApi) return;
+    if (!visible || !useApi || roomUnavailable) return;
     const interval = isConnected ? MESSAGE_POLL_MS : MESSAGE_POLL_DISCONNECTED_MS;
     const timer = setInterval(() => {
       void fetchMessagesFromApi();
     }, interval);
     return () => clearInterval(timer);
-  }, [visible, useApi, isConnected, fetchMessagesFromApi]);
+  }, [visible, useApi, roomUnavailable, isConnected, fetchMessagesFromApi]);
 
   const dismissSyncBanner = () => {
     setShowSyncBanner(false);
@@ -321,21 +366,16 @@ export function RouteCollaborativeChatSheet({
     };
     setApiMessages((m) => [...m, optimistic]);
     setChatInput('');
-    scrollToEnd();
+    stickToBottom();
 
     setSending(true);
     try {
       const saved = await socketSend(t);
       if (saved) {
-        setApiMessages((prev) => {
-          const pendingIdx = prev.findIndex((m) => m.uuid === pendingUuid);
-          if (pendingIdx === -1) {
-            if (prev.some((m) => m.uuid === saved.uuid)) return prev;
-            return [...prev, saved];
-          }
-          return prev.map((m, i) => (i === pendingIdx ? saved : m));
-        });
-        scrollToEnd();
+        setApiMessages((prev) => replacePendingMessage(prev, pendingUuid, saved));
+        stickToBottom();
+      } else {
+        void fetchMessagesFromApi();
       }
     } catch {
       setApiMessages((m) => m.filter((msg) => msg.uuid !== pendingUuid));
@@ -361,10 +401,7 @@ export function RouteCollaborativeChatSheet({
 
   return (
     <Modal visible={rendered || visible} transparent animationType="none" statusBarTranslucent>
-      <KeyboardAvoidingView
-        className="flex-1 justify-end"
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <View className="flex-1 justify-end">
         <Animated.View
           pointerEvents="none"
           style={{
@@ -376,17 +413,17 @@ export function RouteCollaborativeChatSheet({
         <Animated.View
           style={{
             transform: [{ translateY: sheetY }],
-            maxHeight: '72%',
+            maxHeight: '88%',
             borderTopLeftRadius: 24,
             borderTopRightRadius: 24,
             backgroundColor: '#fff',
-            paddingBottom: Math.max(insets.bottom, 12),
             shadowColor: '#000',
             shadowOffset: { width: 0, height: -6 },
             shadowOpacity: 0.12,
             shadowRadius: 16,
             elevation: 24,
             zIndex: 1,
+            overflow: 'hidden',
           }}
         >
           <View className="flex-row items-center justify-between border-b border-gray-100 px-3 py-3">
@@ -444,10 +481,29 @@ export function RouteCollaborativeChatSheet({
             </View>
           ) : null}
 
-          <ScrollView ref={scrollRef} className="max-h-80 px-3 py-2">
+          <View style={{ maxHeight: 360, position: 'relative' }}>
+            <KeyboardAwareScrollView
+              ref={scrollRef}
+              style={{ maxHeight: 360 }}
+              contentContainerStyle={{
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                flexGrow: 1,
+              }}
+              keyboardShouldPersistTaps="handled"
+              bottomOffset={72}
+              scrollEventThrottle={16}
+              onScroll={handleScrollPosition}
+              onContentSizeChange={() => maybeScrollToEnd(false)}
+            >
             {!useApi ? (
               <Text className="py-6 text-center text-xs text-gray-500">
                 채팅방을 선택하거나 루트를 저장한 뒤 다시 열어 주세요.
+              </Text>
+            ) : roomUnavailable ? (
+              <Text className="py-6 text-center text-xs text-gray-500">
+                연결된 채팅방을 찾을 수 없어요.{'\n'}루트를 저장한 뒤 채팅방을 다시
+                연결해 주세요.
               </Text>
             ) : loadingMsgs ? (
               <ActivityIndicator className="py-6" color="#2563eb" />
@@ -535,25 +591,43 @@ export function RouteCollaborativeChatSheet({
                 아직 메시지가 없어요. 첫 메시지를 남겨 보세요.
               </Text>
             ) : null}
-          </ScrollView>
-          <View className="flex-row items-center gap-2 border-t border-gray-100 px-3 py-2">
-            <TextInput
-              value={chatInput}
-              onChangeText={setChatInput}
-              placeholder={useApi ? '메시지 입력…' : '채팅방을 선택해 주세요'}
-              className="flex-1 rounded-xl bg-gray-50 px-3 py-2.5 text-base"
-              placeholderTextColor="#9ca3af"
-              onSubmitEditing={() => void sendChat()}
-              editable={useApi && !sending}
+            </KeyboardAwareScrollView>
+            <ChatScrollToBottomFab
+              visible={showScrollToBottom && useApi && apiMessages.length > 0}
+              onPress={scrollToBottomPress}
             />
-            <Pressable
-              onPress={() => void sendChat()}
-              disabled={!useApi || sending}
-              className="rounded-xl bg-blue-600 px-4 py-2.5 active:opacity-90"
-            >
-              <Text className="font-bold text-white">{sending ? '…' : '전송'}</Text>
-            </Pressable>
           </View>
+          <KeyboardStickyView
+            offset={{ closed: 0, opened: Math.max(insets.bottom, 8) }}
+          >
+            <View
+              className="flex-row items-center gap-2 border-t border-gray-100 bg-white px-3 py-2"
+              style={{ paddingBottom: Math.max(insets.bottom, 8) }}
+            >
+              <TextInput
+                value={chatInput}
+                onChangeText={setChatInput}
+                placeholder={
+                  roomUnavailable
+                    ? '채팅방을 다시 연결해 주세요'
+                    : useApi
+                      ? '메시지 입력…'
+                      : '채팅방을 선택해 주세요'
+                }
+                className="flex-1 rounded-xl bg-gray-50 px-3 py-2.5 text-base"
+                placeholderTextColor="#9ca3af"
+                onSubmitEditing={() => void sendChat()}
+                editable={useApi && !sending && !roomUnavailable}
+              />
+              <Pressable
+                onPress={() => void sendChat()}
+                disabled={!useApi || sending || roomUnavailable}
+                className="rounded-xl bg-blue-600 px-4 py-2.5 active:opacity-90"
+              >
+                <Text className="font-bold text-white">{sending ? '…' : '전송'}</Text>
+              </Pressable>
+            </View>
+          </KeyboardStickyView>
         </Animated.View>
 
         {expandedImageUrl ? (
@@ -583,7 +657,7 @@ export function RouteCollaborativeChatSheet({
             </View>
           </View>
         ) : null}
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
