@@ -132,7 +132,7 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'notifications-outline',
       iconColor: '#6b7280',
       iconBg: '#e5e7eb',
-      onPress: () => {},
+      onPress: () => navigation.navigate('AllNotificationSettings'),
     },
   ];
 
