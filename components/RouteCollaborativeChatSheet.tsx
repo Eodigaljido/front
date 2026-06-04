@@ -27,6 +27,7 @@ import {
   dismissRouteChatSyncBanner,
   isRouteChatSyncBannerDismissed,
 } from '../utils/routeChatSyncBanner';
+import { RouteShareMessageCard } from './chat/RouteShareMessageCard';
 
 const SHEET_SLIDE = 420;
 const MESSAGE_POLL_MS = 4000;
@@ -46,8 +47,7 @@ type Props = {
 
 function messageBody(msg: ChatMessage): string {
   if (msg.messageType === 'ROUTE') {
-    const title = String(msg.routeTitle ?? '').trim();
-    return title ? `📍 루트 공유 · ${title}` : '📍 루트가 공유됐어요';
+    return '';
   }
   if (msg.messageType === 'IMAGE') {
     return msg.content?.trim() || '📷 사진';
@@ -450,7 +450,7 @@ export function RouteCollaborativeChatSheet({
                 채팅방을 선택하거나 루트를 저장한 뒤 다시 열어 주세요.
               </Text>
             ) : loadingMsgs ? (
-              <ActivityIndicator className="py-6" color="#ea580c" />
+              <ActivityIndicator className="py-6" color="#2563eb" />
             ) : (
               apiMessages.map((msg) => {
                 const isMe = msg.senderUuid === myUuid;
@@ -489,7 +489,26 @@ export function RouteCollaborativeChatSheet({
                   );
                 }
 
-                // 텍스트/루트 공유
+                // ROUTE 공유 카드
+                if (String(msg.messageType ?? '').trim().toUpperCase() === 'ROUTE') {
+                  return (
+                    <View
+                      key={msg.uuid}
+                      style={{
+                        alignSelf: isMe ? 'flex-end' : 'flex-start',
+                        maxWidth: '92%',
+                        marginBottom: 10,
+                      }}
+                    >
+                      <Text className="mb-1 text-[10px] font-semibold text-gray-500">
+                        {msg.senderNickname || (isMe ? '나' : '멤버')}
+                      </Text>
+                      <RouteShareMessageCard message={msg} isMine={isMe} />
+                    </View>
+                  );
+                }
+
+                // 텍스트
                 const body = messageBody(msg);
                 if (!body) return null;
                 return (
@@ -530,7 +549,7 @@ export function RouteCollaborativeChatSheet({
             <Pressable
               onPress={() => void sendChat()}
               disabled={!useApi || sending}
-              className="rounded-xl bg-orange-500 px-4 py-2.5 active:opacity-90"
+              className="rounded-xl bg-blue-600 px-4 py-2.5 active:opacity-90"
             >
               <Text className="font-bold text-white">{sending ? '…' : '전송'}</Text>
             </Pressable>
