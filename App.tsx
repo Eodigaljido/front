@@ -38,6 +38,7 @@ import FollowingNewsScreen from './screens/FollowingNewsScreen';
 import NotificationCenterScreen from './screens/NotificationCenterScreen';
 import CourseGuideScreen from './screens/CourseGuideScreen';
 import AppSettingsScreen from './screens/AccountSettingsScreen';
+import NotificationSettingsScreen from './screens/NotificationSettingsScreen';
 import FriendRequestsScreen from './screens/FriendRequestsScreen';
 import { appLinking } from './constants/shareLinking';
 import UserProfileScreen from './screens/UserProfileScreen';
@@ -150,6 +151,7 @@ function AllStackNavigator() {
       <AllStack.Screen name="AllRoute" component={RouteScreen} />
       <AllStack.Screen name="AllAppSettings" component={AppSettingsScreen} />
       <AllStack.Screen name="AllGuide" component={GuideScreen} />
+      <AllStack.Screen name="AllNotificationSettings" component={NotificationSettingsScreen} />
     </AllStack.Navigator>
   );
 }
