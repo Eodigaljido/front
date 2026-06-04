@@ -42,6 +42,7 @@ import { appLinking } from './constants/shareLinking';
 import UserProfileScreen from './screens/UserProfileScreen';
 import { ChatRouteHistory } from './screens/chat/ChatRouteHistory';
 import { useTabStore } from './store/tabStore';
+import { restorePendingShareLinkFromStorage } from './utils/pendingShareLink';
 
 export type RootTabParamList = {
   Home: undefined;
@@ -71,7 +72,6 @@ export type RootStackParamList = {
         editRouteId?: string;
         collaborative?: boolean;
         seedSharedCourseId?: string;
-        contributorSummary?: string;
       }
     | undefined;
   ProfileSettings: undefined;
@@ -108,6 +108,7 @@ export type RootStackParamList = {
   RouteCollaborators: {
     routeId: string;
     routeTitle?: string;
+    chatRoomUuid?: string | null;
   };
 };
 
@@ -289,7 +290,9 @@ export default function App(): React.JSX.Element {
   const restoreSession = useAuthStore(s => s.restoreSession);
   const isAuthenticated = useAuthStore(s => s.isAuthenticated);
   useEffect(() => {
-    restoreSession().finally(() => setIsReady(true));
+    restoreSession()
+      .then(() => restorePendingShareLinkFromStorage())
+      .finally(() => setIsReady(true));
   }, []);
 
   if (!isReady) {
