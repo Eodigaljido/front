@@ -7,6 +7,10 @@ import {
   type ChatRoom,
 } from '../api/chat/chat';
 import { getUserProfileByUuid } from '../api/users';
+import {
+  addCollaborativeCourseMembers,
+  linkCollaborativeCourseChatRoom,
+} from '../api/collaborativeCourse';
 import { buildCollaborativeRouteShareUrl } from '../utils/shareCollaborativeRoute';
 import { Alert } from 'react-native';
 
@@ -197,6 +201,10 @@ export async function linkCourseChatRoomForShare(opts: {
 }): Promise<string | null> {
   const chatRoomUuid = await linkRouteToGroupChat(opts);
   if (!chatRoomUuid) return null;
+  const routeId = String(opts.routeId ?? '').trim();
+  if (routeId && !routeId.startsWith('ur-')) {
+    await linkCollaborativeCourseChatRoom(routeId, chatRoomUuid);
+  }
   return postRouteShareToChat({
     accessToken: opts.accessToken,
     myUuid: opts.myUuid,
@@ -231,6 +239,11 @@ export async function inviteFriendsToRouteChat(opts: {
 
   if (!chatRoomUuid) {
     return { chatRoomUuid: null, sent: false };
+  }
+
+  if (routeId && !routeId.startsWith('ur-')) {
+    await addCollaborativeCourseMembers(routeId, friends);
+    await linkCollaborativeCourseChatRoom(routeId, chatRoomUuid);
   }
 
   const title = String(opts.routeTitle ?? '').trim() || '루트';
