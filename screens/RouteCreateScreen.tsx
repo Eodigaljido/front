@@ -46,7 +46,6 @@ import {
   type MockPlace,
   estimateMinutes,
 } from "../data/routeCreateMocks";
-import { getChatRooms } from "../api/chat/chat";
 import {
 } from "../data/collaborativeRoute";
 import { useCollaborativeRouteMembers } from "../hooks/useCollaborativeRouteMembers";
@@ -56,6 +55,7 @@ import { rootNavigate, safeGoBack } from "../navigation/rootNavigation";
 import CollaboratorAvatarStack from "../components/CollaboratorAvatarStack";
 import { CollaborativeFriendInviteModal } from "../components/CollaborativeFriendInviteModal";
 import { RouteCollaborativeChatSheet } from "../components/RouteCollaborativeChatSheet";
+import { RouteChatRoomPickerModal } from "../components/RouteChatRoomPickerModal";
 import { presentCollaborativeShareOptions } from "../utils/shareCollaborativeRoute";
 import { useAuthStore } from "../store/authStore";
 import {
@@ -126,10 +126,48 @@ type RouteStop = {
   id: string;
   kind: "start" | "via" | "end";
   title: string;
+  /** 장소 검색·지도에서 받은 원래 이름 */
+  originalTitle?: string;
   timeLine: string;
   lat?: number;
   lng?: number;
 };
+
+function stopOriginalTitleHint(stop: RouteStop): string | null {
+  const orig = String(stop.originalTitle ?? "").trim();
+  const title = String(stop.title ?? "").trim();
+  if (!orig || orig === title) return null;
+  if (stop.lat == null || stop.lng == null) return null;
+  return orig;
+}
+
+function withPlaceFromSearch(
+  stop: RouteStop,
+  placeName: string,
+  patch: Partial<RouteStop>,
+): RouteStop {
+  const name = String(placeName).trim();
+  return {
+    ...stop,
+    ...patch,
+    title: name,
+    originalTitle: name,
+  };
+}
+
+function routeStopToPersist(s: RouteStop) {
+  const orig = String(s.originalTitle ?? "").trim();
+  const title = String(s.title ?? "").trim();
+  return {
+    id: s.id,
+    kind: s.kind,
+    title: s.title,
+    timeLine: s.timeLine,
+    lat: s.lat,
+    lng: s.lng,
+    ...(orig && orig !== title ? { originalTitle: orig } : {}),
+  };
+}
 
 type RouteLeg = {
   id: string;
@@ -239,11 +277,13 @@ function courseItemToRouteStops(course: CourseItem): {
       s.lat != null && s.lng != null
         ? { lat: s.lat, lng: s.lng }
         : getCourseStepMapPoint(course.id, 0);
+    const placeName = String(s.name).trim();
     const stops: RouteStop[] = [
       {
         id: `seed-${uid()}-s`,
         kind: "start",
-        title: s.name,
+        title: placeName,
+        originalTitle: placeName,
         timeLine: `목 코스 · 약 ${s.stayMinutes}분`,
         lat,
         lng,
@@ -251,7 +291,8 @@ function courseItemToRouteStops(course: CourseItem): {
       {
         id: `seed-${uid()}-e`,
         kind: "end",
-        title: s.name,
+        title: placeName,
+        originalTitle: placeName,
         timeLine: "도착",
         lat,
         lng,
@@ -276,10 +317,14 @@ function courseItemToRouteStops(course: CourseItem): {
     const isFirst = index === 0;
     const isLast = index === steps.length - 1;
     const kind = isFirst ? "start" : isLast ? "end" : "via";
+    const placeName = String(step.name).trim();
+    const orig =
+      String(step.originalTitle ?? "").trim() || placeName;
     return {
       id: `seed-${step.id}`,
       kind,
-      title: step.name,
+      title: placeName,
+      originalTitle: orig,
       timeLine: `목 코스 · 약 ${step.stayMinutes}분`,
       lat,
       lng,
@@ -1138,6 +1183,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
   const initialMapCenterFetchedRef = useRef(false);
 
   const [chatOpen, setChatOpen] = useState(false);
+  const [chatRoomPickerVisible, setChatRoomPickerVisible] = useState(false);
   const [activeChatRoomMeta, setActiveChatRoomMeta] = useState<{
     name: string;
     memberCount: number;
@@ -1268,14 +1314,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
         updatedAt: now,
         collaborative: true,
         chatRoomUuid: room,
-        stops: stops.map((s) => ({
-          id: s.id,
-          kind: s.kind,
-          title: s.title,
-          timeLine: s.timeLine,
-          lat: s.lat,
-          lng: s.lng,
-        })),
+        stops: stops.map(routeStopToPersist),
         legs: legs.map((l) => ({
           id: l.id,
           mode: l.mode,
@@ -1399,14 +1438,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
         title: routeTitle.trim() || "루트",
         collaborative: true,
         tags: selectedTags,
-        stops: stops.map((s) => ({
-          id: s.id,
-          kind: s.kind,
-          title: s.title,
-          timeLine: s.timeLine,
-          lat: s.lat,
-          lng: s.lng,
-        })),
+        stops: stops.map(routeStopToPersist),
         legs: legs.map((l) => ({
           id: l.id,
           mode: l.mode,
@@ -1651,14 +1683,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
             prev?.chatRoomUuid ??
             (String(collabAccessRef.current?.chatRoomUuid ?? "").trim() ||
               undefined),
-          stops: stops.map((s) => ({
-            id: s.id,
-            kind: s.kind,
-            title: s.title,
-            timeLine: s.timeLine,
-            lat: s.lat,
-            lng: s.lng,
-          })),
+          stops: stops.map(routeStopToPersist),
           legs: legs.map((l) => ({
             id: l.id,
             mode: l.mode,
@@ -2713,13 +2738,11 @@ export default function RouteCreateScreen(): React.JSX.Element {
       setStops((prev) =>
         prev.map((s) =>
           s.id === searchTargetStopId
-            ? {
-                ...s,
-                title: selectedPlace.name,
+            ? withPlaceFromSearch(s, selectedPlace.name, {
                 timeLine,
                 lat: selectedPlace.latitude,
                 lng: selectedPlace.longitude,
-              }
+              })
             : s,
         ),
       );
@@ -2778,13 +2801,11 @@ export default function RouteCreateScreen(): React.JSX.Element {
       setStops((prev) => {
         if (prev.length < 2) return prev;
         const [, ...rest] = prev;
-        const newStart: RouteStop = {
-          ...prev[0],
-          title: selectedPlace.name,
+        const newStart = withPlaceFromSearch(prev[0], selectedPlace.name, {
           timeLine: "",
           lat: selectedPlace.latitude,
           lng: selectedPlace.longitude,
-        };
+        });
         return [newStart, ...rest];
       });
       setLegs([]);
@@ -2798,13 +2819,11 @@ export default function RouteCreateScreen(): React.JSX.Element {
         const end = prev[prev.length - 1];
         return [
           ...prev.slice(0, -1),
-          {
-            ...end,
-            title: selectedPlace.name,
+          withPlaceFromSearch(end, selectedPlace.name, {
             timeLine: "",
             lat: selectedPlace.latitude,
             lng: selectedPlace.longitude,
-          },
+          }),
         ];
       });
       setLegs([
@@ -2824,14 +2843,19 @@ export default function RouteCreateScreen(): React.JSX.Element {
       if (prev.length < 2) return prev;
       const end = prev[prev.length - 1];
       const middle = prev.slice(0, -1);
-      const newVia: RouteStop = {
-        id: uid(),
-        kind: "via",
-        title: selectedPlace.name,
-        timeLine: "경유지",
-        lat: selectedPlace.latitude,
-        lng: selectedPlace.longitude,
-      };
+      const newVia: RouteStop = withPlaceFromSearch(
+        {
+          id: uid(),
+          kind: "via",
+          title: selectedPlace.name,
+          timeLine: "경유지",
+        },
+        selectedPlace.name,
+        {
+          lat: selectedPlace.latitude,
+          lng: selectedPlace.longitude,
+        },
+      );
       return [...middle, newVia, end];
     });
 
@@ -2922,17 +2946,19 @@ export default function RouteCreateScreen(): React.JSX.Element {
     ]);
   };
 
-  const editStop = (stop: RouteStop) => {
-    if (stop.kind === "start" || stop.kind === "end") {
-      openSearch(stop.id);
-      return;
-    }
+  /** 표시 이름 변경 (연필) */
+  const editStopName = (stop: RouteStop) => {
     if (stop.lat == null || stop.lng == null) {
-      openSearch();
+      openSearch(stop.id);
       return;
     }
     setEditTitle(stop.title);
     setEditingStop(stop);
+  };
+
+  /** 장소·좌표 변경 (위치 아이콘) */
+  const changeStopPlace = (stop: RouteStop) => {
+    openSearch(stop.id);
   };
 
   const applyEditTitle = () => {
@@ -2943,7 +2969,13 @@ export default function RouteCreateScreen(): React.JSX.Element {
       return;
     }
     setStops((prev) =>
-      prev.map((s) => (s.id === editingStop.id ? { ...s, title: t } : s)),
+      prev.map((s) => {
+        if (s.id !== editingStop.id) return s;
+        const originalTitle =
+          String(s.originalTitle ?? editingStop.title).trim() ||
+          editingStop.title;
+        return { ...s, title: t, originalTitle };
+      }),
     );
     setEditingStop(null);
   };
@@ -3055,14 +3087,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
           title,
           collaborative: isCollab,
           tags: tagsForSave,
-          stops: stops.map((s) => ({
-            id: s.id,
-            kind: s.kind,
-            title: s.title,
-            timeLine: s.timeLine,
-            lat: s.lat,
-            lng: s.lng,
-          })),
+          stops: stops.map(routeStopToPersist),
           legs: legs.map((l) => ({
             id: l.id,
             mode: l.mode,
@@ -3424,88 +3449,34 @@ export default function RouteCreateScreen(): React.JSX.Element {
     [pickServerBackedRouteId, patchRouteChatRoom],
   );
 
-  const openRouteChatList = useCallback(async () => {
-    if (!accessToken) {
-      showToast("로그인 후 채팅 목록을 볼 수 있어요");
-      return;
-    }
-    try {
-      const rooms = await getChatRooms(accessToken);
-      const current = String(routeChatRoomUuid ?? "").trim();
-      const topRooms = rooms.slice(0, 8);
-
-      if (!rooms.length && !current) {
-        Alert.alert("", "참여 중인 채팅방이 없어요.");
-        return;
-      }
-
-      const currentRoom = current
-        ? rooms.find((r) => String(r.uuid ?? "").trim() === current)
-        : null;
-
-      const defaultRoomAction = current
-        ? {
-            text: `기본 채팅방 · ${
-              currentRoom?.name ||
-              activeChatRoomMeta?.name ||
-              buildRouteGroupChatName(routeTitle.trim() || "루트")
-            }`,
-            onPress: () =>
-              handleSelectRouteChatRoom({
-                uuid: current,
-                name:
-                  String(
-                    currentRoom?.name ||
-                      activeChatRoomMeta?.name ||
-                      buildRouteGroupChatName(routeTitle.trim() || "루트"),
-                  ).trim() || "채팅",
-                memberCount: Math.max(
-                  2,
-                  currentRoom?.memberCount ??
-                    activeChatRoomMeta?.memberCount ??
-                    collabMembers.length,
-                ),
-              }),
-          }
-        : null;
-
-      const roomActions = topRooms
-        .filter((room) => String(room.uuid ?? "").trim() !== current)
-        .map((room) => {
-          const id = String(room.uuid ?? "").trim();
-          return {
-            text: `${room.name || "채팅"}`,
-            onPress: () =>
-              handleSelectRouteChatRoom({
-                uuid: id,
-                name: String(room.name ?? "").trim() || "채팅",
-                memberCount: Math.max(2, room.memberCount ?? 2),
-              }),
-          };
-        });
-
-      Alert.alert(
-        "채팅방 선택",
-        "대화할 채팅방을 선택해 주세요.",
-        [
-          ...(defaultRoomAction ? [defaultRoomAction] : []),
-          ...roomActions,
-          { text: "닫기", style: "cancel" },
-        ],
-      );
-    } catch {
-      showToast("채팅 목록을 불러오지 못했어요");
-    }
+  const linkedRouteChatRoom = useMemo(() => {
+    const id = String(routeChatRoomUuid ?? "").trim();
+    if (!id) return null;
+    return {
+      uuid: id,
+      name:
+        String(activeChatRoomMeta?.name ?? "").trim() ||
+        buildRouteGroupChatName(routeTitle.trim() || "루트"),
+      memberCount: Math.max(
+        2,
+        activeChatRoomMeta?.memberCount ?? collabMembers.length,
+      ),
+    };
   }, [
-    accessToken,
     routeChatRoomUuid,
     activeChatRoomMeta?.name,
     activeChatRoomMeta?.memberCount,
     routeTitle,
     collabMembers.length,
-    handleSelectRouteChatRoom,
-    showToast,
   ]);
+
+  const openRouteChatList = useCallback(() => {
+    if (!accessToken) {
+      showToast("로그인 후 채팅 목록을 볼 수 있어요");
+      return;
+    }
+    setChatRoomPickerVisible(true);
+  }, [accessToken, showToast]);
 
   const ensureCollaborativeRoutePersisted = useCallback(async (): Promise<
     string | null
@@ -3545,14 +3516,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
         .map((t) => String(t).trim())
         .filter(Boolean)
         .slice(0, MAX_ROUTE_TAGS),
-      stops: patchedStops.map((s) => ({
-        id: s.id,
-        kind: s.kind,
-        title: s.title,
-        timeLine: s.timeLine,
-        lat: s.lat,
-        lng: s.lng,
-      })),
+      stops: patchedStops.map(routeStopToPersist),
       legs: legs.map((l) => ({
         id: l.id,
         mode: l.mode,
@@ -4079,22 +4043,18 @@ export default function RouteCreateScreen(): React.JSX.Element {
             </View>
           </View>
 
-          {isCollaborative && collabCourseIdForSync ? (
+          {isCollaborative &&
+          collabCourseIdForSync &&
+          (!collabCanEdit || isCourseSocketConnected) ? (
             <View className="border-b border-blue-50 px-4 pb-2">
               <Text
                 className={`text-[10px] font-medium ${
-                  !collabCanEdit
-                    ? "text-slate-500"
-                    : isCourseSocketConnected
-                      ? "text-blue-600"
-                      : "text-slate-500"
+                  !collabCanEdit ? "text-slate-500" : "text-blue-600"
                 }`}
               >
                 {!collabCanEdit
                   ? "읽기 전용 · 멤버 수정은 실시간으로 반영돼요"
-                  : isCourseSocketConnected
-                    ? "멤버 수정이 실시간으로 반영돼요"
-                    : "연결 대기 중 · 잠시마다 자동으로 맞춰요"}
+                  : "멤버 수정이 실시간으로 반영돼요"}
               </Text>
             </View>
           ) : null}
@@ -4182,6 +4142,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                     : 0.18
                   : 1;
                 const viaIdx = viaStops.findIndex((v) => v.id === stop.id);
+                const originalHint = stopOriginalTitleHint(stop);
                 return (
                   <View
                     key={stop.id}
@@ -4237,19 +4198,49 @@ export default function RouteCreateScreen(): React.JSX.Element {
                         }}
                       >
                         <View className="flex-row items-start justify-between">
-                          <View className="flex-1 flex-row flex-wrap items-center gap-2">
-                            {renderStopBadge(stop.kind)}
-                            <Text
-                              className="text-base font-bold text-gray-900"
-                              numberOfLines={2}
-                            >
-                              {stop.title}
-                            </Text>
+                          <View className="min-w-0 flex-1">
+                            <View className="flex-row flex-wrap items-center gap-2">
+                              {renderStopBadge(stop.kind)}
+                              <Text
+                                className="text-base font-bold text-gray-900"
+                                numberOfLines={2}
+                              >
+                                {stop.title}
+                              </Text>
+                            </View>
+                            {originalHint ? (
+                              <Text
+                                className="mt-0.5 text-xs text-gray-400"
+                                numberOfLines={1}
+                              >
+                                {originalHint}
+                              </Text>
+                            ) : null}
                           </View>
                           <View className="flex-row items-center gap-0.5">
+                            {stop.lat != null && stop.lng != null ? (
+                              <Pressable
+                                onPress={() => changeStopPlace(stop)}
+                                hitSlop={6}
+                                accessibilityRole="button"
+                                accessibilityLabel="장소 변경"
+                              >
+                                <Ionicons
+                                  name="location-outline"
+                                  size={18}
+                                  color="#6b7280"
+                                />
+                              </Pressable>
+                            ) : null}
                             <Pressable
-                              onPress={() => editStop(stop)}
+                              onPress={() => editStopName(stop)}
                               hitSlop={6}
+                              accessibilityRole="button"
+                              accessibilityLabel={
+                                stop.lat != null && stop.lng != null
+                                  ? "이름 변경"
+                                  : "장소 검색"
+                              }
                             >
                               <Ionicons
                                 name="pencil-outline"
@@ -4783,6 +4774,15 @@ export default function RouteCreateScreen(): React.JSX.Element {
         onOpenChatList={openRouteChatList}
       />
 
+      <RouteChatRoomPickerModal
+        visible={chatRoomPickerVisible}
+        onClose={() => setChatRoomPickerVisible(false)}
+        accessToken={accessToken}
+        currentRoomUuid={routeChatRoomUuid}
+        linkedRoom={linkedRouteChatRoom}
+        onSelectRoom={handleSelectRouteChatRoom}
+      />
+
       <CollaborativeFriendInviteModal
         visible={friendInviteOpen}
         onClose={() => setFriendInviteOpen(false)}
@@ -5046,7 +5046,20 @@ export default function RouteCreateScreen(): React.JSX.Element {
             onPress={() => setEditingStop(null)}
           />
           <View className="rounded-2xl bg-white p-5" style={{ zIndex: 1 }}>
-            <Text className="text-lg font-bold text-gray-900">장소 이름</Text>
+            <Text className="text-lg font-bold text-gray-900">표시 이름</Text>
+            <Text className="mt-1 text-xs text-gray-500">
+              지도·검색에 쓰인 원래 이름은 아래에 그대로 남아요.
+            </Text>
+            {editingStop &&
+            editingStop.lat != null &&
+            String(editingStop.originalTitle ?? editingStop.title).trim() ? (
+              <Text className="mt-1 text-xs text-gray-400" numberOfLines={2}>
+                원래 이름:{" "}
+                {String(
+                  editingStop.originalTitle ?? editingStop.title,
+                ).trim()}
+              </Text>
+            ) : null}
             <TextInput
               value={editTitle}
               onChangeText={setEditTitle}
