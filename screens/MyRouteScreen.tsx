@@ -78,9 +78,12 @@ import {
   applyMineAuthorToPersonalRoutes,
   dedupeMyCourseList,
   mergeApiAndLocalCourseLists,
+  mergeLocalCourseIntoApiCourse,
+  resolveDetailCourseItem,
   collapseDuplicateEmptyDrafts,
 } from "../utils/mergeCourseThumbnails";
 import { rootNavigate } from "../navigation/rootNavigation";
+import { CollaborativeMemberSummaryText } from "../components/CollaborativeMemberSummaryText";
 
 type RouteKindFilter = "all" | "personal" | "collaborative";
 const ROUTE_KIND_CHIPS: { key: RouteKindFilter; label: string }[] = [
@@ -102,23 +105,6 @@ const CARD_STYLE = {
   backgroundColor: "#fff",
 };
 
-function buildContributorSummary(
-  course: CourseItem,
-  authorCtx: {
-    myUuid?: string | null;
-    myUserId?: string | null;
-    myNickname?: string | null;
-    isLocalOwnRoute?: boolean;
-  },
-): string {
-  const creator = getCourseAuthorLabel(course, authorCtx);
-  const modifier = getCourseModifierLabel(course, authorCtx);
-  if (modifier && modifier !== "수정자 미표시" && modifier !== creator) {
-    return `기여: ${creator}, ${modifier}`;
-  }
-  return `기여: ${creator}`;
-}
-
 function CourseCard({
   item,
   onPressCard,
@@ -127,6 +113,7 @@ function CourseCard({
   onEdit,
   isFavorite,
   isCollaborative,
+  chatRoomUuid,
   authorCtx,
 }: {
   item: CourseItem;
@@ -136,6 +123,7 @@ function CourseCard({
   onEdit: () => void;
   isFavorite?: boolean;
   isCollaborative?: boolean;
+  chatRoomUuid?: string | null;
   authorCtx: {
     myUuid?: string | null;
     myUserId?: string | null;
@@ -169,13 +157,6 @@ function CourseCard({
             )}
           </View>
           <View className="ml-3 min-w-0 flex-1 justify-center">
-            {isCollaborative ? (
-              <View className="mb-1 self-start rounded-md bg-orange-50 px-2 py-0.5">
-                <Text className="text-[10px] font-semibold text-orange-700" numberOfLines={1}>
-                  {buildContributorSummary(item, authorCtx)}
-                </Text>
-              </View>
-            ) : null}
             <View className="flex-row flex-wrap items-start gap-1">
               {isCollaborative ? (
                 <View className="mr-1 rounded-md bg-orange-100 px-1.5 py-0.5">
@@ -197,10 +178,22 @@ function CourseCard({
                 {item.title}
               </Text>
             </View>
-            <CourseAuthorCardRow course={item} authorCtx={authorCtx} />
+            {!isCollaborative ? (
+              <CourseAuthorCardRow course={item} authorCtx={authorCtx} />
+            ) : null}
             <Text className="mt-1 text-xs text-gray-500" numberOfLines={1}>
               {item.meta}
             </Text>
+            {isCollaborative ? (
+              <View className="mt-1.5 self-start rounded-md bg-orange-50 px-2 py-0.5">
+                <CollaborativeMemberSummaryText
+                  course={item}
+                  routeId={String(item.id)}
+                  chatRoomUuid={chatRoomUuid}
+                  authorCtx={authorCtx}
+                />
+              </View>
+            ) : null}
           </View>
         </Pressable>
         <View className="ml-1 shrink-0 items-center justify-center pl-1">
@@ -277,6 +270,46 @@ const MY_ROUTE_DETAIL_SHEET_HEIGHT_KEY = "MY_ROUTE_DETAIL_SHEET_MAX_HEIGHT_PX";
 const MY_ROUTE_WINDOW_H = Dimensions.get("window").height;
 /** 시트를 화면 밖으로 밀어 닫을 때 이동 거리 */
 const MY_ROUTE_SHEET_HIDE_Y = Math.ceil(MY_ROUTE_WINDOW_H + 120);
+
+function pickViewingCourse(
+  viewingCourseId: string,
+  opts: {
+    ur?: UserSavedRoute;
+    myDetailCourseApi: CourseItem | null;
+    courseFromDisplay?: CourseItem;
+    viewingCourseSnapshot: CourseItem | null;
+    courseFromApi?: CourseItem;
+  },
+): CourseItem | null {
+  const {
+    ur,
+    myDetailCourseApi,
+    courseFromDisplay,
+    viewingCourseSnapshot,
+    courseFromApi,
+  } = opts;
+  const raw =
+    (myDetailCourseApi &&
+    sameCourseId(myDetailCourseApi.id, viewingCourseId)
+      ? myDetailCourseApi
+      : null) ??
+    courseFromDisplay ??
+    (viewingCourseSnapshot &&
+    sameCourseId(viewingCourseSnapshot.id, viewingCourseId)
+      ? viewingCourseSnapshot
+      : null) ??
+    courseFromApi ??
+    null;
+  let course = resolveDetailCourseItem(raw, ur);
+  if (
+    course &&
+    viewingCourseSnapshot &&
+    sameCourseId(viewingCourseSnapshot.id, viewingCourseId)
+  ) {
+    course = mergeLocalCourseIntoApiCourse(course, viewingCourseSnapshot);
+  }
+  return course;
+}
 
 function clampMyRouteDetailSheetHeight(px: number): number {
   const minH = Math.round(MY_ROUTE_WINDOW_H * 0.45);
@@ -380,11 +413,26 @@ export default function MyRouteScreen({
   const [myCourseDetailLoading, setMyCourseDetailLoading] = useState(false);
 
   const isCollaborativeRouteId = useCallback(
-    (id: string) =>
-      userSavedRoutes.some(
-        (r) => sameCourseId(r.id, id) && r.collaborative === true,
-      ),
-    [userSavedRoutes],
+    (id: string) => {
+      if (
+        userSavedRoutes.some(
+          (r) => sameCourseId(r.id, id) && r.collaborative === true,
+        )
+      ) {
+        return true;
+      }
+      if (
+        apiMyCourses.some(
+          (c) => sameCourseId(c.id, id) && c.collaborative === true,
+        )
+      ) {
+        return true;
+      }
+      return enrichedMyCourses.some(
+        (c) => sameCourseId(c.id, id) && c.collaborative === true,
+      );
+    },
+    [userSavedRoutes, apiMyCourses, enrichedMyCourses],
   );
 
   const mergedCourses = useMemo(() => {
@@ -445,19 +493,13 @@ export default function MyRouteScreen({
     const courseFromApi = apiMyCourses.find((c) =>
       sameCourseId(c.id, viewingCourseId),
     );
-    return (
-      (myDetailCourseApi &&
-      sameCourseId(myDetailCourseApi.id, viewingCourseId)
-        ? myDetailCourseApi
-        : null) ??
-      fromDisplay ??
-      (viewingCourseSnapshot &&
-      sameCourseId(viewingCourseSnapshot.id, viewingCourseId)
-        ? viewingCourseSnapshot
-        : null) ??
-      courseFromApi ??
-      (ur ? userRouteToCourseItem(ur) : null)
-    );
+    return pickViewingCourse(viewingCourseId, {
+      ur,
+      myDetailCourseApi,
+      courseFromDisplay: fromDisplay,
+      viewingCourseSnapshot,
+      courseFromApi,
+    });
   }, [
     viewingCourseId,
     userSavedRoutes,
@@ -676,19 +718,19 @@ export default function MyRouteScreen({
       return;
     }
     const ur = userSavedRoutes.find((r) => sameCourseId(r.id, viewingCourseId));
+    const courseFromDisplay = displayCourses.find((c) =>
+      sameCourseId(c.id, viewingCourseId),
+    );
     const courseFromApi = apiMyCourses.find((c) =>
       sameCourseId(c.id, viewingCourseId),
     );
-    const course =
-      (myDetailCourseApi && sameCourseId(myDetailCourseApi.id, viewingCourseId)
-        ? myDetailCourseApi
-        : null) ??
-      courseFromApi ??
-      (ur ? userRouteToCourseItem(ur) : null) ??
-      (viewingCourseSnapshot &&
-      sameCourseId(viewingCourseSnapshot.id, viewingCourseId)
-        ? viewingCourseSnapshot
-        : null);
+    const course = pickViewingCourse(viewingCourseId, {
+      ur,
+      myDetailCourseApi,
+      courseFromDisplay,
+      viewingCourseSnapshot,
+      courseFromApi,
+    });
     if (!course) {
       setDetailMergedPath(null);
       setDetailPathLoading(false);
@@ -747,6 +789,7 @@ export default function MyRouteScreen({
     apiMyCourses,
     myDetailCourseApi,
     viewingCourseSnapshot,
+    displayCourses,
   ]);
 
   const filteredCourses = useMemo(() => {
@@ -875,15 +918,10 @@ export default function MyRouteScreen({
     );
   };
 
-  const openRouteCreateEdit = (
-    routeId: string,
-    collaborative: boolean,
-    contributorSummary?: string,
-  ) => {
+  const openRouteCreateEdit = (routeId: string, collaborative: boolean) => {
     rootNavigate("RouteCreate", {
       editRouteId: routeId,
       collaborative,
-      contributorSummary,
     });
   };
 
@@ -1012,7 +1050,10 @@ export default function MyRouteScreen({
                 isFavorite={favoriteCourseIds.some((fid) =>
                   sameCourseId(fid, item.id),
                 )}
-                isCollaborative={ur?.collaborative === true}
+                isCollaborative={
+                  ur?.collaborative === true || item.collaborative === true
+                }
+                chatRoomUuid={ur?.chatRoomUuid}
                 onPressCard={() => {
                   setViewingCourseSnapshot(item);
                   setViewingCourseId(String(item.id));
@@ -1025,22 +1066,14 @@ export default function MyRouteScreen({
                 }}
                 onRemove={() => handleRemove(item)}
                 onEdit={() => {
-                  const contributorSummary = buildContributorSummary(
-                    item,
-                    cardAuthorCtx,
-                  );
                   if (isUserSavedRouteId(item.id)) {
-                    openRouteCreateEdit(
-                      item.id,
-                      ur?.collaborative === true,
-                      contributorSummary,
-                    );
+                    openRouteCreateEdit(item.id, ur?.collaborative === true);
                   } else if (
                     isServerBackedMyCourse(item.id) &&
                     canEditAsOwnMyCourse(item)
                   ) {
                     void fetchMyRouteCollaborativeFlag(item.id).then((collab) =>
-                      openRouteCreateEdit(item.id, collab, contributorSummary),
+                      openRouteCreateEdit(item.id, collab),
                     );
                   } else {
                     openRouteCreateFromSharedCourse(item.id);
@@ -1130,18 +1163,13 @@ export default function MyRouteScreen({
                   const courseFromApi = apiMyCourses.find((c) =>
                     sameCourseId(c.id, viewingCourseId),
                   );
-                  const course =
-                    (myDetailCourseApi &&
-                    sameCourseId(myDetailCourseApi.id, viewingCourseId)
-                      ? myDetailCourseApi
-                      : null) ??
-                    courseFromDisplay ??
-                    (viewingCourseSnapshot &&
-                    sameCourseId(viewingCourseSnapshot.id, viewingCourseId)
-                      ? viewingCourseSnapshot
-                      : null) ??
-                    courseFromApi ??
-                    (ur ? userRouteToCourseItem(ur) : null);
+                  const course = pickViewingCourse(viewingCourseId, {
+                    ur,
+                    myDetailCourseApi,
+                    courseFromDisplay,
+                    viewingCourseSnapshot,
+                    courseFromApi,
+                  });
                   if (!course) {
                     return (
                       <View
@@ -1175,6 +1203,15 @@ export default function MyRouteScreen({
                       </View>
                     );
                   }
+
+                  const detailIsCollaborative =
+                    ur?.collaborative === true || course.collaborative === true;
+                  const detailAuthorCtx = {
+                    ...authorCtx,
+                    isLocalOwnRoute:
+                      Boolean(ur) &&
+                      !String(ur?.forkedFromSharedId ?? "").trim(),
+                  };
 
                   const mapBlockHeight = Math.min(
                     240,
@@ -1257,11 +1294,6 @@ export default function MyRouteScreen({
                         : mapFocus ?? fallbackCenter;
                   const mapZoom = mapRouteFit?.zoom;
                   const mapFitToRoute = !mapRouteFit;
-                  const startStepName =
-                    routeSteps[0]?.name ?? course.departure;
-                  const endStepName =
-                    routeSteps[routeSteps.length - 1]?.name ??
-                    course.arrival;
 
                   return (
                     <View style={{ flex: 1 }}>
@@ -1362,13 +1394,6 @@ export default function MyRouteScreen({
                             </View>
                           ) : null}
                         </View>
-                        <Text className="mt-2 px-4 text-[11px] font-medium text-slate-500">
-                          {showWalkOnMap
-                            ? "도보 구간: 주황"
-                            : pathPts && pathPts.length >= 2
-                              ? `1(${startStepName}) → ${pathPts.length}(${endStepName})`
-                              : "출발 기준"}
-                        </Text>
                       </View>
 
 
@@ -1457,59 +1482,54 @@ export default function MyRouteScreen({
                         <Text className="mb-1 text-base font-semibold text-gray-900">
                           {course.title}
                         </Text>
-                        <CourseAuthorDetailChip
-                          course={course}
-                          authorCtx={{
-                            ...authorCtx,
-                            isLocalOwnRoute:
-                              Boolean(ur) &&
-                              !String(ur?.forkedFromSharedId ?? "").trim(),
-                          }}
-                          onPressCreator={() => {
-                            const authorLabel = getCourseAuthorLabel(course, {
-                              ...authorCtx,
-                              isLocalOwnRoute:
-                                Boolean(ur) &&
-                                !String(ur?.forkedFromSharedId ?? "").trim(),
-                            });
-                            const authorUuid = String(
-                              course.authorUuid ?? "",
-                            ).trim();
-                            const authorUserId = String(
-                              course.authorUserId ?? "",
-                            ).trim();
-                            rootNavigate("UserProfile", {
-                              userUuid: authorUuid || undefined,
-                              userId: authorUserId || undefined,
-                              nickname:
-                                authorLabel.startsWith("@") ||
-                                authorLabel === "제작자 미표시"
-                                  ? undefined
-                                  : authorLabel,
-                            });
-                          }}
-                          onPressModifier={() => {
-                            const modLabel = getCourseModifierLabel(
-                              course,
-                              authorCtx,
-                            );
-                            const modUuid = String(
-                              course.modifierUuid ?? "",
-                            ).trim();
-                            const modUserId = String(
-                              course.modifierUserId ?? "",
-                            ).trim();
-                            rootNavigate("UserProfile", {
-                              userUuid: modUuid || undefined,
-                              userId: modUserId || undefined,
-                              nickname:
-                                modLabel.startsWith("@") ||
-                                modLabel === "수정자 미표시"
-                                  ? undefined
-                                  : modLabel,
-                            });
-                          }}
-                        />
+                        {!detailIsCollaborative ? (
+                          <CourseAuthorDetailChip
+                            course={course}
+                            authorCtx={detailAuthorCtx}
+                            onPressCreator={() => {
+                              const authorLabel = getCourseAuthorLabel(
+                                course,
+                                detailAuthorCtx,
+                              );
+                              const authorUuid = String(
+                                course.authorUuid ?? "",
+                              ).trim();
+                              const authorUserId = String(
+                                course.authorUserId ?? "",
+                              ).trim();
+                              rootNavigate("UserProfile", {
+                                userUuid: authorUuid || undefined,
+                                userId: authorUserId || undefined,
+                                nickname:
+                                  authorLabel.startsWith("@") ||
+                                  authorLabel === "제작자 미표시"
+                                    ? undefined
+                                    : authorLabel,
+                              });
+                            }}
+                            onPressModifier={() => {
+                              const modLabel = getCourseModifierLabel(
+                                course,
+                                authorCtx,
+                              );
+                              const modUuid = String(
+                                course.modifierUuid ?? "",
+                              ).trim();
+                              const modUserId = String(
+                                course.modifierUserId ?? "",
+                              ).trim();
+                              rootNavigate("UserProfile", {
+                                userUuid: modUuid || undefined,
+                                userId: modUserId || undefined,
+                                nickname:
+                                  modLabel.startsWith("@") ||
+                                  modLabel === "수정자 미표시"
+                                    ? undefined
+                                    : modLabel,
+                              });
+                            }}
+                          />
+                        ) : null}
                         {Array.isArray(course.tags) && course.tags.length > 0 ? (
                           <View className="mb-2 flex-row flex-wrap gap-1.5">
                             {course.tags.slice(0, 2).map((tag) => (
@@ -1548,6 +1568,19 @@ export default function MyRouteScreen({
                             </Text>
                           </View>
                         </View>
+
+                        {detailIsCollaborative ? (
+                          <View className="mb-3 self-start rounded-md bg-orange-50 px-2.5 py-1">
+                            <CollaborativeMemberSummaryText
+                              course={course}
+                              routeId={String(course.id)}
+                              chatRoomUuid={ur?.chatRoomUuid}
+                              authorCtx={detailAuthorCtx}
+                              className="text-[11px] font-semibold text-orange-700"
+                              numberOfLines={3}
+                            />
+                          </View>
+                        ) : null}
 
                         <View className="p-3 mb-6 rounded-xl bg-gray-50">
                           <View className="flex-row items-center">
