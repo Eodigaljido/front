@@ -105,17 +105,10 @@ export function useChatSocket(
           "메시지를 전송할 수 없습니다: 채팅방이 지정되지 않았습니다.",
         );
       }
-      if (clientRef.current?.connected) {
-        clientRef.current.publish({
-          destination: `/app/chat/${singleRoomUuid}`,
-          body: JSON.stringify({ content, mentionedUserUuids: [] }),
-        });
-        return null;
+      if (!accessToken) {
+        throw new Error("메시지를 전송할 수 없습니다: 연결이 끊어졌습니다.");
       }
-      if (accessToken) {
-        return sendMessageHttp(accessToken, singleRoomUuid, content);
-      }
-      throw new Error("메시지를 전송할 수 없습니다: 연결이 끊어졌습니다.");
+      return sendMessageHttp(accessToken, singleRoomUuid, content);
     },
     [accessToken, singleRoomUuid],
   );
