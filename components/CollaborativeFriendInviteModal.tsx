@@ -97,7 +97,7 @@ export function CollaborativeFriendInviteModal({
             />
           </View>
           {loading ? (
-            <ActivityIndicator className="py-8" color="#ea580c" />
+            <ActivityIndicator className="py-8" color="#2563eb" />
           ) : (
             <ScrollView className="max-h-96 px-4">
               {filtered.length === 0 ? (
@@ -112,7 +112,7 @@ export function CollaborativeFriendInviteModal({
                       key={f.uuid}
                       onPress={() => toggle(f.uuid)}
                       className={`mb-2 flex-row items-center rounded-xl px-3 py-2.5 ${
-                        on ? 'bg-orange-50' : 'bg-gray-50'
+                        on ? 'bg-blue-50' : 'bg-gray-50'
                       }`}
                     >
                       <Image
@@ -125,7 +125,7 @@ export function CollaborativeFriendInviteModal({
                       <Ionicons
                         name={on ? 'checkmark-circle' : 'ellipse-outline'}
                         size={22}
-                        color={on ? '#ea580c' : '#cbd5e1'}
+                        color={on ? '#2563eb' : '#cbd5e1'}
                       />
                     </Pressable>
                   );
@@ -137,7 +137,7 @@ export function CollaborativeFriendInviteModal({
             onPress={handleConfirm}
             disabled={selected.size === 0 || submitting}
             className={`mx-4 mt-3 rounded-xl py-3.5 ${
-              selected.size === 0 || submitting ? 'bg-orange-200' : 'bg-orange-500'
+              selected.size === 0 || submitting ? 'bg-blue-200' : 'bg-blue-600'
             }`}
           >
             <Text className="text-center text-base font-bold text-white">
