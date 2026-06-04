@@ -6,6 +6,8 @@
 export type CourseRouteStep = {
   id: string;
   name: string;
+  /** 검색·지도에서 가져온 원래 장소명 (표시명과 다를 때) */
+  originalTitle?: string;
   /** 이 장소에서 머무른 평균 시간(분) */
   stayMinutes: number;
   /** API 정류장 좌표가 있을 때 지도·경로에 사용 */
