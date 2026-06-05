@@ -1,6 +1,15 @@
 // @ts-nocheck
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Pressable, ScrollView, Animated, Easing, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  Pressable,
+  ScrollView,
+  Animated,
+  Easing,
+  Platform,
+  ActivityIndicator,
+} from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +29,12 @@ type SettingKey =
   | 'chatInvite'
   | 'chatCourseShared'
   | 'chatCourseEdited'
+  | 'meetJoinRequest'
+  | 'meetJoinResult'
+  | 'meetNewMember'
+  | 'meetNewPost'
+  | 'meetNewRoute'
+  | 'meetNewChatRoom'
   | 'courseRecommended'
   | 'courseFavoritedOrUsed';
 
@@ -44,7 +59,11 @@ const SETTING_GROUPS: SettingGroup[] = [
     iconColor: '#2563eb',
     iconBg: '#dbeafe',
     items: [
-      { key: 'chatMessage', title: '새 채팅 메시지', description: '채팅방에 새 메시지가 도착했을 때' },
+      {
+        key: 'chatMessage',
+        title: '새 채팅 메시지',
+        description: '채팅방에 새 메시지가 도착했을 때',
+      },
       { key: 'chatMention', title: '멘션 알림', description: '누군가 나를 멘션했을 때' },
       { key: 'chatInvite', title: '채팅방 초대', description: '누군가 나를 채팅방에 초대했을 때' },
       {
@@ -56,6 +75,44 @@ const SETTING_GROUPS: SettingGroup[] = [
         key: 'chatCourseEdited',
         title: '코스 생성 · 수정',
         description: '채팅방에서 누군가 코스를 생성하거나 수정했을 때',
+      },
+    ],
+  },
+  {
+    label: '모임',
+    icon: 'people-outline',
+    iconColor: '#7c3aed',
+    iconBg: '#f5f3ff',
+    items: [
+      {
+        key: 'meetJoinRequest',
+        title: '가입 신청',
+        description: '내가 방장인 모임에 누군가 가입을 신청했을 때',
+      },
+      {
+        key: 'meetJoinResult',
+        title: '가입 신청 결과',
+        description: '내 가입 신청이 승인되거나 거절되었을 때',
+      },
+      {
+        key: 'meetNewMember',
+        title: '새 멤버 참여',
+        description: '참여 중인 모임에 새 멤버가 들어왔을 때',
+      },
+      {
+        key: 'meetNewPost',
+        title: '새 게시물',
+        description: '참여 중인 모임에 새 게시물이 올라왔을 때',
+      },
+      {
+        key: 'meetNewRoute',
+        title: '루트 공유',
+        description: '참여 중인 모임에 새 루트가 공유되었을 때',
+      },
+      {
+        key: 'meetNewChatRoom',
+        title: '새 채팅방',
+        description: '참여 중인 모임에 새 채팅방이 생성되었을 때',
       },
     ],
   },
@@ -210,11 +267,7 @@ const SettingRow = React.memo(function SettingRow({
           <Text className="mt-1 text-xs leading-4 text-gray-400">{item.description}</Text>
         ) : null}
       </View>
-      <AnimatedSwitch
-        value={value}
-        onValueChange={() => onToggle(item.key)}
-        disabled={disabled}
-      />
+      <AnimatedSwitch value={value} onValueChange={() => onToggle(item.key)} disabled={disabled} />
     </View>
   );
 });
@@ -294,58 +347,70 @@ export default function NotificationSettingsScreen(): React.JSX.Element {
         <Text className="flex-1 text-lg font-bold text-gray-900">알림 설정</Text>
       </View>
 
-      <ScrollView
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 20, paddingBottom: scrollPaddingBottom }}
-      >
-        {/* 전체 알림 */}
-        <View style={SECTION_STYLE} className="px-4 mb-6">
-          <View className="flex-row items-center justify-between py-4">
-            <View className="flex-row items-center flex-1 gap-3 pr-3">
-              <View className="items-center justify-center w-9 h-9 rounded-full bg-blue-50">
-                <Ionicons name="notifications-outline" size={18} color="#2563eb" />
-              </View>
-              <View className="flex-1">
-                <Text className="text-[15px] font-semibold text-gray-900">전체 알림</Text>
-                <Text className="mt-0.5 text-xs text-gray-400">모든 알림을 한 번에 켜고 끕니다</Text>
-              </View>
-            </View>
-            <AnimatedSwitch value={allEnabled} onValueChange={toggleAll} disabled={!loaded} />
-          </View>
+      {!loaded ? (
+        <View className="items-center justify-center flex-1">
+          <ActivityIndicator color="#2563eb" />
         </View>
-
-        {SETTING_GROUPS.map(group => (
-          <View key={group.label} className="mb-6">
-            <View className="flex-row items-center gap-2 mb-2 ml-1">
-              <View
-                className="items-center justify-center rounded-full w-7 h-7"
-                style={{ backgroundColor: group.iconBg }}
-              >
-                <Ionicons name={group.icon} size={15} color={group.iconColor} />
+      ) : (
+        <ScrollView
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 20,
+            paddingBottom: scrollPaddingBottom,
+          }}
+        >
+          {/* 전체 알림 */}
+          <View style={SECTION_STYLE} className="px-4 mb-6">
+            <View className="flex-row items-center justify-between py-4">
+              <View className="flex-row items-center flex-1 gap-3 pr-3">
+                <View className="items-center justify-center rounded-full w-9 h-9 bg-blue-50">
+                  <Ionicons name="notifications-outline" size={18} color="#2563eb" />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-[15px] font-semibold text-gray-900">전체 알림</Text>
+                  <Text className="mt-0.5 text-xs text-gray-400">
+                    모든 알림을 한 번에 켜고 끕니다
+                  </Text>
+                </View>
               </View>
-              <Text className="text-xs font-semibold tracking-wide text-gray-400 uppercase">
-                {group.label}
-              </Text>
-            </View>
-
-            <View style={SECTION_STYLE} className="px-4">
-              {group.items.map((item, idx) => (
-                <SettingRow
-                  key={item.key}
-                  item={item}
-                  value={settings[item.key]}
-                  disabled={!loaded}
-                  showBorder={idx < group.items.length - 1}
-                  onToggle={toggle}
-                />
-              ))}
+              <AnimatedSwitch value={allEnabled} onValueChange={toggleAll} disabled={!loaded} />
             </View>
           </View>
-        ))}
 
-        <Text className="px-1 mt-1 text-xs leading-5 text-gray-400">
-          기기의 시스템 알림이 꺼져 있으면 위 설정과 관계없이 알림을 받을 수 없습니다.
-        </Text>
-      </ScrollView>
+          {SETTING_GROUPS.map(group => (
+            <View key={group.label} className="mb-6">
+              <View className="flex-row items-center gap-2 mb-2 ml-1">
+                <View
+                  className="items-center justify-center rounded-full w-7 h-7"
+                  style={{ backgroundColor: group.iconBg }}
+                >
+                  <Ionicons name={group.icon} size={15} color={group.iconColor} />
+                </View>
+                <Text className="text-xs font-semibold tracking-wide text-gray-400 uppercase">
+                  {group.label}
+                </Text>
+              </View>
+
+              <View style={SECTION_STYLE} className="px-4">
+                {group.items.map((item, idx) => (
+                  <SettingRow
+                    key={item.key}
+                    item={item}
+                    value={settings[item.key]}
+                    disabled={!loaded}
+                    showBorder={idx < group.items.length - 1}
+                    onToggle={toggle}
+                  />
+                ))}
+              </View>
+            </View>
+          ))}
+
+          <Text className="px-1 mt-1 text-xs leading-5 text-gray-400">
+            기기의 시스템 알림이 꺼져 있으면 위 설정과 관계없이 알림을 받을 수 없습니다.
+          </Text>
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
