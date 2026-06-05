@@ -119,20 +119,20 @@ export default function AllScreen(): React.JSX.Element {
       onPress: () => navigation.navigate('AllAppSettings'),
     },
     {
-      id: 'help',
-      title: '가이드',
-      icon: 'help-circle-outline',
-      iconColor: '#4b5563',
-      iconBg: '#f3f4f6',
-      onPress: () => navigation.navigate('AllGuide'),
-    },
-    {
       id: 'alarm',
       title: '알림 설정',
       icon: 'notifications-outline',
       iconColor: '#6b7280',
       iconBg: '#e5e7eb',
       onPress: () => navigation.navigate('AllNotificationSettings'),
+    },
+    {
+      id: 'help',
+      title: '가이드',
+      icon: 'help-circle-outline',
+      iconColor: '#4b5563',
+      iconBg: '#f3f4f6',
+      onPress: () => navigation.navigate('AllGuide'),
     },
   ];
 
