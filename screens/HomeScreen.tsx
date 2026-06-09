@@ -1612,7 +1612,7 @@ export default function HomeScreen(): React.JSX.Element {
                     }}
                     onPress={(e) => {
                       e?.stopPropagation?.();
-                      openSharedCourseDetail(course.courseId);
+                      openRecentCourse(course.courseId);
                     }}
                   >
                     <Text style={{ color: "#ffffff", fontSize: 13, fontWeight: "600" }}>보기</Text>

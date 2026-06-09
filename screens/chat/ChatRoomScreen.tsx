@@ -151,7 +151,10 @@ export const ChatRoomScreen = () => {
 
   useEffect(() => {
     if (typingUsers.size > 0) {
-      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 50);
+      setTimeout(
+        () => scrollViewRef.current?.scrollToEnd({ animated: true }),
+        50,
+      );
     }
   }, [typingUsers.size]);
 
@@ -254,7 +257,11 @@ export const ChatRoomScreen = () => {
     try {
       await sendImageMessage(accessToken, roomUuid, imageUri);
     } catch (err: any) {
-      console.warn("[Chat] 이미지 전송 실패:", err?.response?.status, err?.response?.data);
+      console.warn(
+        "[Chat] 이미지 전송 실패:",
+        err?.response?.status,
+        err?.response?.data,
+      );
       setMessages((prev) => prev.filter((m) => m.uuid !== pendingUuid));
       const detail =
         err?.response?.data?.message ??
@@ -301,112 +308,120 @@ export const ChatRoomScreen = () => {
       <View className="flex-1 bg-white">
         <RoomHeader roomName={roomName} roomUuid={roomUuid} />
         <View style={{ flex: 1 }}>
-        <KeyboardAwareScrollView
-          ref={scrollViewRef}
-          className="flex-1"
-          contentContainerStyle={{
-            paddingHorizontal: 10,
-            paddingBottom: 20,
-          }}
-          onScroll={handleScroll}
-          scrollEventThrottle={100}
-        >
-          {loadingMore && (
-            <ActivityIndicator size="small" style={{ marginBottom: 8 }} />
-          )}
-          {messages.map((msg) => {
-            const isMine = msg.senderUuid === userUuid;
-            if (String(msg.messageType ?? "").trim().toUpperCase() === "ROUTE") {
-              return (
-                <View
-                  key={msg.uuid}
-                  style={{
-                    alignSelf: isMine ? "flex-end" : "flex-start",
-                    maxWidth: "88%",
-                    marginVertical: 4,
-                  }}
-                >
-                  {!isMine && memberCount >= 3 ? (
+          <KeyboardAwareScrollView
+            ref={scrollViewRef}
+            className="flex-1"
+            contentContainerStyle={{
+              paddingHorizontal: 10,
+              paddingBottom: 20,
+            }}
+            onScroll={handleScroll}
+            scrollEventThrottle={100}
+          >
+            {loadingMore && (
+              <ActivityIndicator size="small" style={{ marginBottom: 8 }} />
+            )}
+            {messages.map((msg) => {
+              const isMine = msg.senderUuid === userUuid;
+              if (
+                String(msg.messageType ?? "")
+                  .trim()
+                  .toUpperCase() === "ROUTE"
+              ) {
+                return (
+                  <View
+                    key={msg.uuid}
+                    style={{
+                      alignSelf: isMine ? "flex-end" : "flex-start",
+                      maxWidth: "88%",
+                      marginVertical: 4,
+                    }}
+                  >
+                    {!isMine && memberCount >= 3 ? (
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          color: "#8E8E93",
+                          marginBottom: 4,
+                          marginLeft: 2,
+                        }}
+                      >
+                        {msg.senderNickname}
+                      </Text>
+                    ) : null}
+                    <RouteShareMessageCard message={msg} isMine={isMine} />
                     <Text
                       style={{
                         fontSize: 12,
                         color: "#8E8E93",
-                        marginBottom: 4,
-                        marginLeft: 2,
+                        marginTop: 4,
+                        alignSelf: isMine ? "flex-end" : "flex-start",
                       }}
                     >
-                      {msg.senderNickname}
+                      {new Date(msg.createdAt).toLocaleTimeString("ko-KR", {
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
                     </Text>
-                  ) : null}
-                  <RouteShareMessageCard message={msg} isMine={isMine} />
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      color: "#8E8E93",
-                      marginTop: 4,
-                      alignSelf: isMine ? "flex-end" : "flex-start",
-                    }}
-                  >
-                    {new Date(msg.createdAt).toLocaleTimeString("ko-KR", {
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}
-                  </Text>
-                </View>
+                  </View>
+                );
+              }
+              return (
+                <BubbleChat
+                  key={msg.uuid}
+                  text={
+                    msg.messageType === "IMAGE"
+                      ? undefined
+                      : (msg.content ?? undefined)
+                  }
+                  imageUrl={
+                    msg.messageType === "IMAGE" ? msg.attachmentUrl : undefined
+                  }
+                  isMine={isMine}
+                  sentAt={new Date(msg.createdAt)}
+                  userName={msg.senderNickname}
+                  profileImageUrl={
+                    !isMine ? msg.senderProfileImageUrl : undefined
+                  }
+                  showSender={!isMine && memberCount >= 3}
+                  isEdited={!!msg.editedAt}
+                  onLongPress={
+                    isMine && !msg.uuid.startsWith("pending-")
+                      ? () => setSelectedMessage(msg)
+                      : undefined
+                  }
+                  onImageLoad={
+                    msg.uuid === scrollOnImageLoadRef.current
+                      ? () => {
+                          scrollOnImageLoadRef.current = null;
+                          scrollViewRef.current?.scrollToEnd({
+                            animated: true,
+                          });
+                        }
+                      : undefined
+                  }
+                />
               );
-            }
-            return (
+            })}
+            {Array.from(typingUsers.entries()).map(([uuid, name]) => (
               <BubbleChat
-                key={msg.uuid}
-                text={
-                  msg.messageType === "IMAGE"
-                    ? undefined
-                    : (msg.content ?? undefined)
-                }
-                imageUrl={
-                  msg.messageType === "IMAGE" ? msg.attachmentUrl : undefined
-                }
-                isMine={isMine}
-                sentAt={new Date(msg.createdAt)}
-                userName={msg.senderNickname}
-                profileImageUrl={
-                  !isMine ? msg.senderProfileImageUrl : undefined
-                }
-                showSender={!isMine && memberCount >= 3}
-                isEdited={!!msg.editedAt}
-                onLongPress={
-                  isMine && !msg.uuid.startsWith("pending-")
-                    ? () => setSelectedMessage(msg)
-                    : undefined
-                }
-                onImageLoad={
-                  msg.uuid === scrollOnImageLoadRef.current
-                    ? () => {
-                        scrollOnImageLoadRef.current = null;
-                        scrollViewRef.current?.scrollToEnd({ animated: true });
-                      }
-                    : undefined
-                }
+                key={`typing-${uuid}`}
+                isMine={false}
+                isTyping={true}
+                userName={memberCount >= 3 ? name : undefined}
               />
-            );
-          })}
-          {Array.from(typingUsers.entries()).map(([uuid, name]) => (
-            <BubbleChat
-              key={`typing-${uuid}`}
-              isMine={false}
-              isTyping={true}
-              userName={memberCount >= 3 ? name : undefined}
-            />
-          ))}
-        </KeyboardAwareScrollView>
-        {showScrollToBottom && (
-          <TouchableOpacity
-            style={chatStyles.scrollToBottomBtn}
-            onPress={() => scrollViewRef.current?.scrollToEnd({ animated: false })}
-          >
-            <ArrowDown size={26} color="#333" />
-          </TouchableOpacity>
-        )}
+            ))}
+          </KeyboardAwareScrollView>
+          {showScrollToBottom && (
+            <TouchableOpacity
+              style={chatStyles.scrollToBottomBtn}
+              onPress={() =>
+                scrollViewRef.current?.scrollToEnd({ animated: false })
+              }
+            >
+              <ArrowDown size={26} color="#333" />
+            </TouchableOpacity>
+          )}
         </View>
         <KeyboardStickyView offset={{ closed: 0, opened: 15 }}>
           <MessageInput
@@ -531,4 +546,3 @@ const modalStyles = StyleSheet.create({
     color: "#888",
   },
 });
-
