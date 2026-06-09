@@ -6,6 +6,8 @@
 export type CourseRouteStep = {
   id: string;
   name: string;
+  /** 검색·지도에서 가져온 원래 장소명 (표시명과 다를 때) */
+  originalTitle?: string;
   /** 이 장소에서 머무른 평균 시간(분) */
   stayMinutes: number;
   /** API 정류장 좌표가 있을 때 지도·경로에 사용 */
@@ -66,6 +68,12 @@ export type CourseItem = {
   modifierProfilePublic?: boolean;
   /** 로그인 사용자가 이 공유 코스를 저장(북마크)했는지 — API `savedByMe` 등 */
   savedByMe?: boolean;
+  /** 공동 편집 루트 — GET /api/courses/my 목록 */
+  collaborative?: boolean;
+  /** 공동 편집 낙관적 잠금 — PATCH version */
+  version?: number;
+  /** 연결된 루트 채팅방 */
+  chatRoomUuid?: string | null;
 };
 
 /** 코스별 지도 중심 (API 좌표 없을 때 보간용 기본값) */

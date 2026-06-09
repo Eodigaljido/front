@@ -227,6 +227,7 @@ export default function SharedRouteScreen({
   const { showToast } = useToast();
   const routeSection = useRouteSection();
   const authUser = useAuthStore((s) => s.user);
+  const accessToken = useAuthStore((s) => s.accessToken);
   const authorCtx = useMemo(
     () => ({
       myUuid: authUser?.uuid,
@@ -778,11 +779,6 @@ export default function SharedRouteScreen({
                         ? courseDetailMergedPath
                         : undefined,
                     );
-                    const startStepName =
-                      routeSteps[0]?.name ?? course.departure;
-                    const endStepName =
-                      routeSteps[routeSteps.length - 1]?.name ??
-                      course.arrival;
                     const stepNamesForRegionChips = routeSteps
                       .map((s) => String(s?.name ?? "").trim())
                       .filter(Boolean);
@@ -928,13 +924,6 @@ export default function SharedRouteScreen({
                               </View>
                             ) : null}
                           </View>
-                          <Text className="mt-2 px-4 text-[11px] font-medium text-slate-500">
-                            {showWalkOnMap
-                              ? "도보 구간: 주황"
-                              : pathPts && pathPts.length >= 2
-                                ? `1(${startStepName}) → ${pathPts.length}(${endStepName})`
-                                : "출발 기준"}
-                          </Text>
                         </View>
 
                         <ScrollView
@@ -956,6 +945,8 @@ export default function SharedRouteScreen({
                                 void sharePublicCourse({
                                   courseId: course.id,
                                   title: course.title,
+                                  accessToken,
+                                  myUuid: authUser?.uuid,
                                 })
                               }
                               className="flex-row items-center px-3 py-2 bg-white border border-gray-300 rounded-lg active:opacity-90"

@@ -1,6 +1,10 @@
 import { Alert, Platform, Share } from "react-native";
 import Constants from "expo-constants";
 import { SHARE_LINK_HOST } from "../constants/shareLinking";
+import {
+  linkCourseChatRoomForShare,
+  promptCreateCourseChatRoom,
+} from "../data/routeCollaborativeChat";
 
 export function getShareBaseUrl(): string {
   const fromEnv = String(process.env.EXPO_PUBLIC_SHARE_BASE_URL ?? "").trim();
@@ -36,6 +40,10 @@ export function buildPublicCourseShareUrl(courseId: string): string {
 export async function sharePublicCourse(opts: {
   courseId: string;
   title: string;
+  accessToken?: string | null;
+  myUuid?: string | null;
+  existingChatRoomUuid?: string | null;
+  onChatRoomLinked?: (roomUuid: string) => void;
 }): Promise<void> {
   const title = String(opts.title ?? "코스").trim() || "코스";
   const shareId = resolveShareablePublicCourseId(opts.courseId);
@@ -52,6 +60,25 @@ export async function sharePublicCourse(opts: {
   if (!url.includes("/courses/public/")) {
     Alert.alert("", "공유 링크를 만들지 못했어요.");
     return;
+  }
+
+  const existingRoom = String(opts.existingChatRoomUuid ?? "").trim();
+  if (!existingRoom) {
+    const createChat = await promptCreateCourseChatRoom();
+    if (
+      createChat &&
+      opts.accessToken &&
+      String(opts.myUuid ?? "").trim()
+    ) {
+      const roomUuid = await linkCourseChatRoomForShare({
+        accessToken: opts.accessToken,
+        myUuid: String(opts.myUuid),
+        routeId: shareId,
+        routeTitle: title,
+        existingChatRoomUuid: existingRoom || null,
+      });
+      if (roomUuid) opts.onChatRoomLinked?.(roomUuid);
+    }
   }
 
   const message = `${title}\n${url}`;

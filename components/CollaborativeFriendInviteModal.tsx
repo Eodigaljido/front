@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getFriends, type Friends } from '../api/friend/friends';
+import { getFriends, type Friends } from '../api/auth/friends';
 
 type Props = {
   visible: boolean;
@@ -38,7 +38,7 @@ export function CollaborativeFriendInviteModal({
     if (!visible || !accessToken) return;
     setLoading(true);
     getFriends(accessToken)
-      .then((list) => setFriends(Array.isArray(list) ? list : []))
+      .then(list => setFriends(Array.isArray(list) ? list : []))
       .catch(() => setFriends([]))
       .finally(() => setLoading(false));
   }, [visible, accessToken]);
@@ -53,11 +53,11 @@ export function CollaborativeFriendInviteModal({
   const filtered = useMemo(() => {
     const q = search.trim();
     if (!q) return friends;
-    return friends.filter((f) => f.nickname.includes(q));
+    return friends.filter(f => f.nickname.includes(q));
   }, [friends, search]);
 
   const toggle = (uuid: string) => {
-    setSelected((prev) => {
+    setSelected(prev => {
       const next = new Set(prev);
       if (next.has(uuid)) next.delete(uuid);
       else next.add(uuid);
@@ -97,7 +97,7 @@ export function CollaborativeFriendInviteModal({
             />
           </View>
           {loading ? (
-            <ActivityIndicator className="py-8" color="#ea580c" />
+            <ActivityIndicator className="py-8" color="#2563eb" />
           ) : (
             <ScrollView className="max-h-96 px-4">
               {filtered.length === 0 ? (
@@ -105,14 +105,14 @@ export function CollaborativeFriendInviteModal({
                   초대할 친구가 없어요. 친구 탭에서 먼저 추가해 주세요.
                 </Text>
               ) : (
-                filtered.map((f) => {
+                filtered.map(f => {
                   const on = selected.has(f.uuid);
                   return (
                     <Pressable
                       key={f.uuid}
                       onPress={() => toggle(f.uuid)}
                       className={`mb-2 flex-row items-center rounded-xl px-3 py-2.5 ${
-                        on ? 'bg-orange-50' : 'bg-gray-50'
+                        on ? 'bg-blue-50' : 'bg-gray-50'
                       }`}
                     >
                       <Image
@@ -125,7 +125,7 @@ export function CollaborativeFriendInviteModal({
                       <Ionicons
                         name={on ? 'checkmark-circle' : 'ellipse-outline'}
                         size={22}
-                        color={on ? '#ea580c' : '#cbd5e1'}
+                        color={on ? '#2563eb' : '#cbd5e1'}
                       />
                     </Pressable>
                   );
@@ -137,7 +137,7 @@ export function CollaborativeFriendInviteModal({
             onPress={handleConfirm}
             disabled={selected.size === 0 || submitting}
             className={`mx-4 mt-3 rounded-xl py-3.5 ${
-              selected.size === 0 || submitting ? 'bg-orange-200' : 'bg-orange-500'
+              selected.size === 0 || submitting ? 'bg-blue-200' : 'bg-blue-600'
             }`}
           >
             <Text className="text-center text-base font-bold text-white">

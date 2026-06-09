@@ -9,6 +9,8 @@ import {
   type RouteSection,
 } from '../context/RouteScreenContext';
 import { rootNavigate } from '../navigation/rootNavigation';
+import { useMockData } from '../context/MockDataContext';
+import { sameCourseId } from '../utils/sameCourseId';
 
 export type RouteTabParams = {
   section?: RouteSection;
@@ -30,10 +32,24 @@ function resolveInitialSection(params: RouteTabParams): RouteSection {
   return 'shared';
 }
 
+function resolveSectionFromParams(
+  params: RouteTabParams,
+  userSavedRoutes: { id: string; publishedToPublic?: boolean }[],
+): RouteSection {
+  if (params.openAsPopular || params.openFilter) return 'shared';
+  const vid = String(params.viewCourseId ?? '').trim();
+  if (vid) {
+    const local = userSavedRoutes.find((r) => sameCourseId(r.id, vid));
+    if (local && local.publishedToPublic !== true) return 'my';
+  }
+  return resolveInitialSection(params);
+}
+
 export default function RouteScreen(): React.JSX.Element {
   const route = useRoute();
   const navigation = useNavigation();
   const params = (route.params || {}) as RouteTabParams;
+  const { userSavedRoutes } = useMockData();
   const [section, setSection] = useState<RouteSection>(() =>
     resolveInitialSection(params),
   );
@@ -50,13 +66,14 @@ export default function RouteScreen(): React.JSX.Element {
 
   useFocusEffect(
     useCallback(() => {
-      if (params.section) {
-        setSection(params.section);
-      }
-      if (params.openAsPopular || params.openFilter) {
-        setSection('shared');
-      }
-    }, [params.section, params.openAsPopular, params.openFilter]),
+      setSection(resolveSectionFromParams(params, userSavedRoutes));
+    }, [
+      params.section,
+      params.viewCourseId,
+      params.openAsPopular,
+      params.openFilter,
+      userSavedRoutes,
+    ]),
   );
 
   return (

@@ -36,6 +36,7 @@ import {
   pickCourseSaveCount,
   pickCourseSavedByMe,
   saveSharedCourse,
+  fetchMySharingCourseIds,
 } from "../api/courses";
 import { getChatRooms, type ChatRoom as ChatRoomType } from "../api/chat/chat";
 import { useMockData } from "../context/MockDataContext";
@@ -49,6 +50,7 @@ import {
 import { sharePublicCourse } from "../utils/shareCourse";
 import { sanitizeCourseCategory } from "../utils/inferCourseRegionLabel";
 import { mergeLocalThumbnailsIntoCourses } from "../utils/mergeCourseThumbnails";
+import { sameCourseId } from "../utils/sameCourseId";
 import FollowingNewsAvatar from "../components/FollowingNewsAvatar";
 
 type HomeNavProp = BottomTabNavigationProp<RootTabParamList, "Home">;
@@ -274,6 +276,7 @@ export default function HomeScreen(): React.JSX.Element {
     userSavedRoutes,
   } = useMockData();
   const [homeCourses, setHomeCourses] = useState<any[]>([]);
+  const [sharingCourseIds, setSharingCourseIds] = useState<string[]>([]);
   const [popularCourses, setPopularCourses] = useState<any[]>([]);
   const [popularBookmarkBusyId, setPopularBookmarkBusyId] = useState<string | null>(
     null,
@@ -321,12 +324,13 @@ export default function HomeScreen(): React.JSX.Element {
   const pullThresholdHapticFiredRef = useRef(false);
 
   const fetchHomeFeedData = useCallback(async () => {
-    const [recent, popular, news] = await Promise.all([
+    const [recent, popular, news, sharing] = await Promise.all([
       fetchHomeCourses(6).catch(() => [] as Awaited<ReturnType<typeof fetchHomeCourses>>),
       fetchPopularCoursesBySaves(6).catch(
         () => [] as Awaited<ReturnType<typeof fetchPopularCoursesBySaves>>,
       ),
       fetchFollowingNews(3).catch(() => [] as Awaited<ReturnType<typeof fetchFollowingNews>>),
+      fetchMySharingCourseIds().catch(() => [] as string[]),
     ]);
     const recentNorm = normalizeCourseList(recent);
     const popularNorm = normalizeCourseList(popular);
@@ -334,6 +338,7 @@ export default function HomeScreen(): React.JSX.Element {
       recent: recentNorm,
       popular: popularNorm.length > 0 ? popularNorm : recentNorm,
       news: Array.isArray(news) ? news : [],
+      sharing: Array.isArray(sharing) ? sharing : [],
     };
   }, []);
 
@@ -346,6 +351,7 @@ export default function HomeScreen(): React.JSX.Element {
         mergeLocalThumbnailsIntoCourses(payload.popular, userSavedRoutes),
       );
       setFollowingNewsApi(payload.news);
+      setSharingCourseIds(payload.sharing);
     },
     [userSavedRoutes],
   );
@@ -461,6 +467,32 @@ export default function HomeScreen(): React.JSX.Element {
     }
     return out;
   }, [userSavedRoutes, homeCourses]);
+
+  const isRecentCoursePublic = useCallback(
+    (courseId: string) => {
+      const id = String(courseId ?? "").trim();
+      if (!id) return false;
+      const local = userSavedRoutes.find((r) => sameCourseId(r.id, id));
+      if (local?.publishedToPublic === true) return true;
+      if (sharingCourseIds.some((sid) => sameCourseId(sid, id))) return true;
+      if (local) return false;
+      return false;
+    },
+    [userSavedRoutes, sharingCourseIds],
+  );
+
+  const openRecentCourse = useCallback(
+    (courseId: string) => {
+      const id = String(courseId ?? "").trim();
+      if (!id) return;
+      const isPublic = isRecentCoursePublic(id);
+      navigation.navigate("Route", {
+        section: isPublic ? "shared" : "my",
+        viewCourseId: id,
+      });
+    },
+    [isRecentCoursePublic, navigation],
+  );
 
   const recentCourses = useMemo(
     () =>
@@ -879,9 +911,17 @@ export default function HomeScreen(): React.JSX.Element {
     [navigation],
   );
 
-  const handleShareCourse = useCallback((courseId: string, title: string) => {
-    void sharePublicCourse({ courseId, title });
-  }, []);
+  const handleShareCourse = useCallback(
+    (courseId: string, title: string) => {
+      void sharePublicCourse({
+        courseId,
+        title,
+        accessToken,
+        myUuid: authUser?.uuid,
+      });
+    },
+    [accessToken, authUser?.uuid],
+  );
   const openScheduleModal = useCallback(() => {
     const seed = courseRecommendDate ?? new Date();
     setScheduleDraftDate(seed);
@@ -1476,12 +1516,7 @@ export default function HomeScreen(): React.JSX.Element {
             {recentCourses.map((course) => (
               <Pressable
                 key={course.id}
-                onPress={() =>
-                  navigation.navigate("Route", {
-                    section: "my",
-                    viewCourseId: String(course.id),
-                  })
-                }
+                onPress={() => openRecentCourse(course.courseId)}
                 className="mr-3 rounded-[16px] p-3 active:opacity-95"
                 style={{ width: RECENT_CARD_WIDTH, ...CARD_STYLE }}
               >
@@ -1577,7 +1612,7 @@ export default function HomeScreen(): React.JSX.Element {
                     }}
                     onPress={(e) => {
                       e?.stopPropagation?.();
-                      openSharedCourseDetail(course.courseId);
+                      openRecentCourse(course.courseId);
                     }}
                   >
                     <Text style={{ color: "#ffffff", fontSize: 13, fontWeight: "600" }}>보기</Text>

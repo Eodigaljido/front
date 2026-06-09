@@ -1,14 +1,18 @@
 // @ts-nocheck
 import React, { useCallback, useState } from 'react';
-import { View, Text, Pressable, FlatList, Image, ActivityIndicator, RefreshControl } from 'react-native';
+import {
+  View,
+  Text,
+  Pressable,
+  FlatList,
+  Image,
+  ActivityIndicator,
+  RefreshControl,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import {
-  getFriendRequests,
-  respondToFriendRequest,
-  type FriendRequest,
-} from '../api/friend/friends';
+import { getFriendRequests, respondToFriendRequest, type FriendRequest } from '../api/auth/friends';
 import ResultModal from '../components/ResultModal';
 
 type ModalState = { visible: boolean; type: 'success' | 'error'; title: string; message: string };
@@ -58,10 +62,20 @@ export default function FriendRequestsScreen(): React.JSX.Element {
         await respondToFriendRequest(requestId, accept);
         setRequests(prev => prev.filter(r => r.requestId !== requestId));
         if (accept) {
-          setModal({ visible: true, type: 'success', title: '친구 추가 완료', message: '친구 요청을 수락했습니다.' });
+          setModal({
+            visible: true,
+            type: 'success',
+            title: '친구 추가 완료',
+            message: '친구 요청을 수락했습니다.',
+          });
         }
       } catch (e: any) {
-        setModal({ visible: true, type: 'error', title: '오류', message: e?.response?.data?.message ?? e?.message ?? '처리에 실패했습니다.' });
+        setModal({
+          visible: true,
+          type: 'error',
+          title: '오류',
+          message: e?.response?.data?.message ?? e?.message ?? '처리에 실패했습니다.',
+        });
       } finally {
         setResponding(null);
       }
@@ -180,7 +194,14 @@ export default function FriendRequestsScreen(): React.JSX.Element {
         renderItem={renderItem}
         contentContainerStyle={filtered.length === 0 ? { flex: 1 } : { backgroundColor: '#FFF' }}
         style={{ backgroundColor: '#F0F5FF' }}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={load} colors={['#2563eb']} tintColor="#2563eb" />}
+        refreshControl={
+          <RefreshControl
+            refreshing={loading}
+            onRefresh={load}
+            colors={['#2563eb']}
+            tintColor="#2563eb"
+          />
+        }
         ListEmptyComponent={
           <View className="items-center justify-center flex-1">
             <Ionicons name="people-outline" size={48} color="#d1d5db" />

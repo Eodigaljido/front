@@ -9,13 +9,22 @@ import {
   Text,
   TouchableOpacity,
   View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from "react-native";
 import {
   KeyboardAwareScrollView,
   KeyboardStickyView,
 } from "react-native-keyboard-controller";
-import { RouteProp, useRoute } from "@react-navigation/native";
+import {
+  RouteProp,
+  useFocusEffect,
+  useIsFocused,
+  useNavigation,
+  useRoute,
+} from "@react-navigation/native";
 import { RoomHeader } from "@/components/chat/RoomHeader";
+import { RouteShareMessageCard } from "@/components/chat/RouteShareMessageCard";
 import { BubbleChat } from "@/stories/chat/BubbleChat";
 import {
   getRoomMessages,
@@ -24,6 +33,7 @@ import {
   deleteMessage,
   editMessage,
   sendImageMessage,
+  isChatApiNotFoundError,
 } from "@/api/chat/chat";
 import { useAuthStore } from "@/store/authStore";
 import { useChatSocket, ChatSocketEvent } from "@/hooks/useChatSocket";
@@ -31,23 +41,44 @@ import { useTypingIndicator } from "@/hooks/useTypingIndicator";
 import { RootStackParamList } from "@/App";
 import { StatusBar } from "expo-status-bar";
 import { MessageInput } from "@/stories/chat/MessageInput";
+import { ChatScrollToBottomFab } from "@/components/chat/ChatScrollToBottomFab";
+import { useChatScrollToBottom } from "@/hooks/useChatScrollToBottom";
 import React from "react";
 
 type ChatRoomRouteProp = RouteProp<RootStackParamList, "ChatRoomScreen">;
 
 export const ChatRoomScreen = () => {
   const route = useRoute<ChatRoomRouteProp>();
+  const navigation = useNavigation();
+  const isFocused = useIsFocused();
   const { roomUuid, roomName, memberCount = 2 } = route.params;
 
   const accessToken = useAuthStore((s) => s.accessToken);
   const userUuid = useAuthStore((s) => s.user?.uuid);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [roomUnavailable, setRoomUnavailable] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const scrollViewRef = useRef<ScrollView>(null);
   const scrollOnImageLoadRef = useRef<string | null>(null);
+  const messageCountRef = useRef(0);
+
+  const scrollToEnd = useCallback((animated = true) => {
+    setTimeout(
+      () => scrollViewRef.current?.scrollToEnd({ animated }),
+      50,
+    );
+  }, []);
+
+  const {
+    showScrollToBottom,
+    handleScrollPosition,
+    scrollToBottomPress,
+    maybeScrollToEnd,
+    stickToBottom,
+  } = useChatScrollToBottom(scrollToEnd);
 
   const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(
     null,
@@ -58,17 +89,26 @@ export const ChatRoomScreen = () => {
 
   const { handleTypingEvent, typingUsers } = useTypingIndicator(userUuid);
 
+  const handleRoomNotFound = useCallback(() => {
+    setRoomUnavailable(true);
+    setMessages([]);
+    setHasMore(false);
+    setLoading(false);
+  }, []);
+
   const { sendMessage: socketSend, sendTyping } = useChatSocket(
-    roomUuid,
+    isFocused && !roomUnavailable ? roomUuid : "",
     (event: ChatSocketEvent) => {
       if (event.eventType === "MESSAGE_CREATED") {
         if (event.payload.senderUuid === userUuid) {
-          // 내가 보낸 메시지 에코: pending 메시지를 서버 응답(실제 UUID)으로 교체
           setMessages((prev) => {
             const pendingIdx = prev.findIndex((m) =>
               m.uuid.startsWith("pending-"),
             );
-            if (pendingIdx === -1) return prev;
+            if (pendingIdx === -1) {
+              if (prev.some((m) => m.uuid === event.payload.uuid)) return prev;
+              return [...prev, event.payload];
+            }
             if (scrollOnImageLoadRef.current?.startsWith("pending-")) {
               scrollOnImageLoadRef.current = event.payload.uuid;
             }
@@ -76,11 +116,11 @@ export const ChatRoomScreen = () => {
           });
           return;
         }
-        setMessages((prev) => [...prev, event.payload]);
-        setTimeout(
-          () => scrollViewRef.current?.scrollToEnd({ animated: true }),
-          50,
-        );
+        setMessages((prev) => {
+          if (prev.some((m) => m.uuid === event.payload.uuid)) return prev;
+          return [...prev, event.payload];
+        });
+        maybeScrollToEnd(true);
       } else if (event.eventType === "MESSAGE_EDITED") {
         setMessages((prev) =>
           prev.map((m) => (m.uuid === event.payload.uuid ? event.payload : m)),
@@ -96,7 +136,7 @@ export const ChatRoomScreen = () => {
 
   const fetchMessages = useCallback(
     async (beforeUuid?: string) => {
-      if (!accessToken) return;
+      if (!accessToken || !isFocused || roomUnavailable) return;
       try {
         const fetched = await getRoomMessages(accessToken, roomUuid, {
           beforeMessageUuid: beforeUuid,
@@ -113,39 +153,68 @@ export const ChatRoomScreen = () => {
         }
         if (fetched.length === 0) setHasMore(false);
       } catch (err) {
-        console.error("메시지를 불러오는 데 실패했습니다:", err);
+        if (isChatApiNotFoundError(err)) {
+          handleRoomNotFound();
+          return;
+        }
+        if (__DEV__) {
+          console.warn("메시지를 불러오는 데 실패했습니다:", err);
+        }
       }
     },
-    [accessToken, roomUuid],
+    [accessToken, roomUuid, isFocused, roomUnavailable, handleRoomNotFound],
   );
 
-  // 채팅방 입장 시 읽음 처리
-  useEffect(() => {
-    if (!accessToken) return;
+  useFocusEffect(
+    useCallback(() => {
+      if (!accessToken) {
+        setLoading(false);
+        return;
+      }
+      setRoomUnavailable(false);
+      setLoading(true);
+      messageCountRef.current = 0;
+      let cancelled = false;
 
-    try {
-      markAsRead(accessToken, roomUuid);
-      console.log("채팅방 읽음 처리 완료");
-    } catch (err) {
-      console.error("읽음 처리 실패:", err);
-    }
-  }, [accessToken, roomUuid]);
+      void (async () => {
+        try {
+          await markAsRead(accessToken, roomUuid);
+        } catch (err) {
+          if (isChatApiNotFoundError(err)) {
+            if (!cancelled) handleRoomNotFound();
+            return;
+          }
+        }
+        if (cancelled) return;
+        await fetchMessages();
+        if (!cancelled) {
+          setTimeout(
+            () => scrollViewRef.current?.scrollToEnd({ animated: false }),
+            100,
+          );
+        }
+      })().finally(() => {
+        if (!cancelled) setLoading(false);
+      });
 
-  useEffect(() => {
-    fetchMessages().finally(() => {
-      setLoading(false);
-      setTimeout(
-        () => scrollViewRef.current?.scrollToEnd({ animated: false }),
-        100,
-      );
-    });
-  }, [fetchMessages]);
+      return () => {
+        cancelled = true;
+      };
+    }, [accessToken, roomUuid, fetchMessages, handleRoomNotFound]),
+  );
 
   useEffect(() => {
     if (typingUsers.size > 0) {
-      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 50);
+      maybeScrollToEnd(true);
     }
-  }, [typingUsers.size]);
+  }, [typingUsers.size, maybeScrollToEnd]);
+
+  useEffect(() => {
+    if (loading || messages.length === 0) return;
+    if (messages.length === messageCountRef.current) return;
+    messageCountRef.current = messages.length;
+    maybeScrollToEnd(true);
+  }, [loading, messages.length, maybeScrollToEnd]);
 
   const handleSend = async (text: string) => {
     if (editingMessage) {
@@ -177,12 +246,19 @@ export const ChatRoomScreen = () => {
       isDeleted: false,
     };
     setMessages((prev) => [...prev, optimistic]);
-    setTimeout(
-      () => scrollViewRef.current?.scrollToEnd({ animated: true }),
-      50,
-    );
+    stickToBottom();
     try {
-      await socketSend(text);
+      const saved = await socketSend(text);
+      if (saved) {
+        setMessages((prev) => {
+          const pendingIdx = prev.findIndex((m) => m.uuid === pendingUuid);
+          if (pendingIdx === -1) {
+            if (prev.some((m) => m.uuid === saved.uuid)) return prev;
+            return [...prev, saved];
+          }
+          return prev.map((m, i) => (i === pendingIdx ? saved : m));
+        });
+      }
     } catch (err) {
       console.error("[Chat] 메시지 전송 실패:", err);
       setMessages((prev) => prev.filter((m) => m.uuid !== pendingUuid));
@@ -229,10 +305,7 @@ export const ChatRoomScreen = () => {
     };
     setMessages((prev) => [...prev, optimistic]);
     scrollOnImageLoadRef.current = pendingUuid;
-    setTimeout(
-      () => scrollViewRef.current?.scrollToEnd({ animated: true }),
-      50,
-    );
+    stickToBottom();
     try {
       await sendImageMessage(accessToken, roomUuid, imageUri);
     } catch (err: any) {
@@ -251,7 +324,11 @@ export const ChatRoomScreen = () => {
     setEditingMessage(msg);
   };
 
-  const handleScroll = async ({ nativeEvent }: any) => {
+  const handleScroll = async (
+    event: NativeSyntheticEvent<NativeScrollEvent>,
+  ) => {
+    handleScrollPosition(event);
+    const { nativeEvent } = event;
     if (
       nativeEvent.contentOffset.y <= 0 &&
       hasMore &&
@@ -272,26 +349,93 @@ export const ChatRoomScreen = () => {
     );
   }
 
+  if (roomUnavailable) {
+    return (
+      <View className="flex-1 bg-white">
+        <StatusBar style="dark" />
+        <RoomHeader roomName={roomName} roomUuid={roomUuid} />
+        <View className="flex-1 items-center justify-center px-8">
+          <Text className="text-center text-base font-semibold text-gray-800">
+            이 채팅방을 찾을 수 없어요
+          </Text>
+          <Text className="mt-2 text-center text-sm text-gray-500">
+            삭제되었거나 더 이상 참여할 수 없는 방이에요.
+          </Text>
+          <Pressable
+            onPress={() => navigation.goBack()}
+            className="mt-6 rounded-xl bg-blue-600 px-6 py-3 active:opacity-90"
+          >
+            <Text className="font-semibold text-white">목록으로</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <>
       <StatusBar style="dark" />
       <View className="flex-1 bg-white">
         <RoomHeader roomName={roomName} roomUuid={roomUuid} />
-        <KeyboardAwareScrollView
-          ref={scrollViewRef}
-          className="flex-1"
-          contentContainerStyle={{
-            paddingHorizontal: 10,
-            paddingBottom: 20,
-          }}
-          onScroll={handleScroll}
-          scrollEventThrottle={400}
-        >
+        <View className="flex-1" style={{ position: "relative" }}>
+          <KeyboardAwareScrollView
+            ref={scrollViewRef}
+            className="flex-1"
+            contentContainerStyle={{
+              paddingHorizontal: 10,
+              paddingBottom: 20,
+              flexGrow: 1,
+            }}
+            keyboardShouldPersistTaps="handled"
+            bottomOffset={80}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            onContentSizeChange={() => maybeScrollToEnd(true)}
+          >
           {loadingMore && (
             <ActivityIndicator size="small" style={{ marginBottom: 8 }} />
           )}
           {messages.map((msg) => {
             const isMine = msg.senderUuid === userUuid;
+            if (String(msg.messageType ?? "").trim().toUpperCase() === "ROUTE") {
+              return (
+                <View
+                  key={msg.uuid}
+                  style={{
+                    alignSelf: isMine ? "flex-end" : "flex-start",
+                    maxWidth: "88%",
+                    marginVertical: 4,
+                  }}
+                >
+                  {!isMine && memberCount >= 3 ? (
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        color: "#8E8E93",
+                        marginBottom: 4,
+                        marginLeft: 2,
+                      }}
+                    >
+                      {msg.senderNickname}
+                    </Text>
+                  ) : null}
+                  <RouteShareMessageCard message={msg} isMine={isMine} />
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      color: "#8E8E93",
+                      marginTop: 4,
+                      alignSelf: isMine ? "flex-end" : "flex-start",
+                    }}
+                  >
+                    {new Date(msg.createdAt).toLocaleTimeString("ko-KR", {
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
+                  </Text>
+                </View>
+              );
+            }
             return (
               <BubbleChat
                 key={msg.uuid}
@@ -335,7 +479,13 @@ export const ChatRoomScreen = () => {
               userName={memberCount >= 3 ? name : undefined}
             />
           ))}
-        </KeyboardAwareScrollView>
+          </KeyboardAwareScrollView>
+          <ChatScrollToBottomFab
+            visible={showScrollToBottom && messages.length > 0}
+            onPress={scrollToBottomPress}
+            style={{ bottom: 8 }}
+          />
+        </View>
         <KeyboardStickyView offset={{ closed: 0, opened: 15 }}>
           <MessageInput
             onSend={handleSend}

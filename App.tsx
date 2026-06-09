@@ -49,6 +49,7 @@ import MeetHomeScreen from './screens/meet/MeetHomeScreen';
 import MeetDetailScreen from './screens/meet/MeetDetailScreen';
 import MeetCreateScreen from './screens/meet/MeetCreateScreen';
 import MeetManageScreen from './screens/meet/MeetManageScreen';
+import { restorePendingShareLinkFromStorage } from './utils/pendingShareLink';
 
 export type RootTabParamList = {
   Home: undefined;
@@ -128,6 +129,7 @@ export type RootStackParamList = {
   RouteCollaborators: {
     routeId: string;
     routeTitle?: string;
+    chatRoomUuid?: string | null;
   };
 };
 
@@ -333,7 +335,9 @@ export default function App(): React.JSX.Element {
   const restoreSession = useAuthStore(s => s.restoreSession);
   const isAuthenticated = useAuthStore(s => s.isAuthenticated);
   useEffect(() => {
-    restoreSession().finally(() => setIsReady(true));
+    restoreSession()
+      .then(() => restorePendingShareLinkFromStorage())
+      .finally(() => setIsReady(true));
   }, []);
 
   if (!isReady) {
