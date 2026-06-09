@@ -15,6 +15,10 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuthStore } from '../store/authStore';
+import {
+  getNotificationSettings,
+  patchNotificationSettings,
+} from '../api/notificationSettings';
 
 const SECTION_STYLE = {
   borderWidth: 0.5,
@@ -29,6 +33,8 @@ type SettingKey =
   | 'chatInvite'
   | 'chatCourseShared'
   | 'chatCourseEdited'
+  | 'friendRequest'
+  | 'friendAccepted'
   | 'meetJoinRequest'
   | 'meetJoinResult'
   | 'meetNewMember'
@@ -75,6 +81,24 @@ const SETTING_GROUPS: SettingGroup[] = [
         key: 'chatCourseEdited',
         title: '코스 생성 · 수정',
         description: '채팅방에서 누군가 코스를 생성하거나 수정했을 때',
+      },
+    ],
+  },
+  {
+    label: '친구',
+    icon: 'person-add-outline',
+    iconColor: '#ea580c',
+    iconBg: '#ffedd5',
+    items: [
+      {
+        key: 'friendRequest',
+        title: '친구 요청',
+        description: '누군가 나에게 친구 요청을 보냈을 때',
+      },
+      {
+        key: 'friendAccepted',
+        title: '친구 요청 수락',
+        description: '내 친구 요청이 수락되었을 때',
       },
     ],
   },
@@ -280,10 +304,14 @@ export default function NotificationSettingsScreen(): React.JSX.Element {
   const userUuid = useAuthStore(s => s.user?.uuid);
   const [settings, setSettings] = useState<Record<SettingKey, boolean>>(DEFAULT_SETTINGS);
   const [loaded, setLoaded] = useState(false);
+  // 최신 settings를 동기 참조 — 토글 시 updater 밖에서 nextVal 계산용
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
 
   useEffect(() => {
     let active = true;
     (async () => {
+      // 1) 로컬 캐시 먼저 반영 — 빠른 첫 페인트
       try {
         const raw = await AsyncStorage.getItem(storageKey(userUuid));
         if (active && raw) {
@@ -294,6 +322,20 @@ export default function NotificationSettingsScreen(): React.JSX.Element {
         // 저장된 값이 없거나 손상된 경우 기본값 사용
       } finally {
         if (active) setLoaded(true);
+      }
+      // 2) 서버 설정으로 갱신 — 알 수 없는 key는 무시
+      try {
+        const server = await getNotificationSettings();
+        if (active) {
+          const merged = { ...DEFAULT_SETTINGS };
+          for (const k of ALL_KEYS) {
+            if (typeof server[k] === 'boolean') merged[k] = server[k];
+          }
+          setSettings(merged);
+          AsyncStorage.setItem(storageKey(userUuid), JSON.stringify(merged)).catch(() => {});
+        }
+      } catch {
+        // 서버 실패 시 캐시/기본값 유지
       }
     })();
     return () => {
@@ -308,31 +350,59 @@ export default function NotificationSettingsScreen(): React.JSX.Element {
     [userUuid],
   );
 
-  // 함수형 업데이트 + useCallback으로 콜백 참조를 고정 → 토글한 행만 리렌더됨
-  const toggle = useCallback(
-    (key: SettingKey) => {
+  // 서버가 돌려준 전체 맵을 권위 있는 값으로 state·캐시에 반영 (모르는 key 무시)
+  const applyServerMap = useCallback(
+    (server: Record<string, boolean>) => {
       setSettings(prev => {
-        const next = { ...prev, [key]: !prev[key] };
-        writeStorage(next);
-        return next;
+        const merged = { ...prev };
+        for (const k of ALL_KEYS) {
+          if (typeof server[k] === 'boolean') merged[k] = server[k];
+        }
+        writeStorage(merged);
+        return merged;
       });
     },
     [writeStorage],
   );
 
+  const toggle = useCallback(
+    (key: SettingKey) => {
+      const prev = settingsRef.current;
+      const nextVal = !prev[key];
+      // 1) 낙관적 반영
+      const optimistic = { ...prev, [key]: nextVal };
+      setSettings(optimistic);
+      writeStorage(optimistic);
+      // 2) 서버 부분 변경 → 응답(전체 맵)으로 확정. 실패 시 직전 상태 롤백
+      patchNotificationSettings({ [key]: nextVal })
+        .then(applyServerMap)
+        .catch(() => {
+          setSettings(prev);
+          writeStorage(prev);
+        });
+    },
+    [applyServerMap, writeStorage],
+  );
+
   const allEnabled = useMemo(() => ALL_KEYS.every(k => settings[k]), [settings]);
 
   const toggleAll = useCallback(() => {
-    setSettings(prev => {
-      const next = !ALL_KEYS.every(k => prev[k]);
-      const updated = ALL_KEYS.reduce(
-        (acc, k) => ({ ...acc, [k]: next }),
-        {} as Record<SettingKey, boolean>,
-      );
-      writeStorage(updated);
-      return updated;
-    });
-  }, [writeStorage]);
+    const prev = settingsRef.current;
+    const nextVal = !ALL_KEYS.every(k => prev[k]);
+    const updated = ALL_KEYS.reduce(
+      (acc, k) => ({ ...acc, [k]: nextVal }),
+      {} as Record<SettingKey, boolean>,
+    );
+    setSettings(updated);
+    writeStorage(updated);
+    // 15개 key 전체를 동일 값으로 전송 → 응답으로 확정. 실패 시 롤백
+    patchNotificationSettings(updated)
+      .then(applyServerMap)
+      .catch(() => {
+        setSettings(prev);
+        writeStorage(prev);
+      });
+  }, [applyServerMap, writeStorage]);
 
   return (
     <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={['top']}>
