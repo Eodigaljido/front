@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import { getFriendRequests, respondToFriendRequest, type FriendRequest } from '../api/auth/friends';
+import { getFriendRequests, respondToFriendRequest, type FriendRequest } from '../api/friend/friends';
 import ResultModal from '../components/ResultModal';
 
 type ModalState = { visible: boolean; type: 'success' | 'error'; title: string; message: string };

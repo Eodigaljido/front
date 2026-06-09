@@ -26,7 +26,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { Asset } from 'expo-asset';
 import { useAuthStore } from '@/store/authStore';
-import { getFriends, getFriendsRecent } from '@/api/auth/friends';
+import { getFriends, getFriendsRecent } from '@/api/friend/friends';
 import { createChatRoom, updateChatRoomImage } from '@/api/chat/chat';
 import { CHAT_PRESET_IMAGES } from '@/constants/chatPresetAvatars';
 

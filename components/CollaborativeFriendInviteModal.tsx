@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getFriends, type Friends } from '../api/auth/friends';
+import { getFriends, type Friends } from '../api/friend/friends';
 
 type Props = {
   visible: boolean;

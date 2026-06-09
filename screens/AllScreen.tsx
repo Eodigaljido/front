@@ -11,7 +11,7 @@ import {
   getFriends,
   getFriendRequests,
   getMyFriendCode,
-} from '../api/auth/friends';
+} from '../api/friend/friends';
 import { shareFriendInvite } from '../utils/shareFriend';
 import { useAuthStore } from '../store/authStore';
 import { useTabStore } from '../store/tabStore';

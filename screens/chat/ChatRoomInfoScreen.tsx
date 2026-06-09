@@ -38,7 +38,7 @@ import {
   renameChatRoom,
   updateChatRoomImage,
 } from '@/api/chat/chat';
-import { getFriends } from '@/api/auth/friends';
+import { getFriends } from '@/api/friend/friends';
 import { getUserProfileByUuid } from '@/api/users';
 import { useAuthStore } from '@/store/authStore';
 import { CHAT_PRESET_IMAGES } from '@/constants/chatPresetAvatars';
