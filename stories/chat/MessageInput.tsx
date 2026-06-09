@@ -81,6 +81,11 @@ export const MessageInput = ({
     if (editingText != null) {
       setText(editingText);
       currentTextRef.current = editingText;
+      clearTypingTimers();
+      if (isTypingActiveRef.current) {
+        onTypingChangeRef.current?.(false);
+        isTypingActiveRef.current = false;
+      }
     } else {
       setText("");
       currentTextRef.current = "";
@@ -91,7 +96,7 @@ export const MessageInput = ({
     setText(newText);
     currentTextRef.current = newText;
 
-    if (!onTypingChangeRef.current) return;
+    if (!onTypingChangeRef.current || isEditing) return;
 
     clearTypingTimers();
 
@@ -157,8 +162,7 @@ export const MessageInput = ({
     });
 
     if (!result.canceled) {
-      console.log(result);
-      setSelectedImage(result.assets[0].uri); // 선택한 이미지의 URI를 상태에 저장
+      setSelectedImage(result.assets[0].uri);
       onImageSend?.(result.assets[0].uri);
     } else {
       console.log("이미지를 선택하지 않았습니다.");

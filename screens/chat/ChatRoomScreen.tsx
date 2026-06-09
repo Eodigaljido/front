@@ -33,6 +33,7 @@ import { RootStackParamList } from "@/App";
 import { StatusBar } from "expo-status-bar";
 import { MessageInput } from "@/stories/chat/MessageInput";
 import React from "react";
+import { ArrowDown } from "lucide-react-native";
 
 type ChatRoomRouteProp = RouteProp<RootStackParamList, "ChatRoomScreen">;
 
@@ -56,6 +57,7 @@ export const ChatRoomScreen = () => {
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(
     null,
   );
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
   const { handleTypingEvent, typingUsers } = useTypingIndicator(userUuid);
 
@@ -278,6 +280,11 @@ export const ChatRoomScreen = () => {
       await fetchMessages(messages[0].uuid);
       setLoadingMore(false);
     }
+
+    const { contentOffset, layoutMeasurement, contentSize } = nativeEvent;
+    const distanceFromBottom =
+      contentSize.height - contentOffset.y - layoutMeasurement.height;
+    setShowScrollToBottom(distanceFromBottom > 100);
   };
 
   if (loading) {
@@ -293,6 +300,7 @@ export const ChatRoomScreen = () => {
       <StatusBar style="dark" />
       <View className="flex-1 bg-white">
         <RoomHeader roomName={roomName} roomUuid={roomUuid} />
+        <View style={{ flex: 1 }}>
         <KeyboardAwareScrollView
           ref={scrollViewRef}
           className="flex-1"
@@ -301,7 +309,7 @@ export const ChatRoomScreen = () => {
             paddingBottom: 20,
           }}
           onScroll={handleScroll}
-          scrollEventThrottle={400}
+          scrollEventThrottle={100}
         >
           {loadingMore && (
             <ActivityIndicator size="small" style={{ marginBottom: 8 }} />
@@ -391,6 +399,15 @@ export const ChatRoomScreen = () => {
             />
           ))}
         </KeyboardAwareScrollView>
+        {showScrollToBottom && (
+          <TouchableOpacity
+            style={chatStyles.scrollToBottomBtn}
+            onPress={() => scrollViewRef.current?.scrollToEnd({ animated: false })}
+          >
+            <ArrowDown size={26} color="#333" />
+          </TouchableOpacity>
+        )}
+        </View>
         <KeyboardStickyView offset={{ closed: 0, opened: 15 }}>
           <MessageInput
             onSend={handleSend}
@@ -443,6 +460,25 @@ export const ChatRoomScreen = () => {
     </>
   );
 };
+
+const chatStyles = StyleSheet.create({
+  scrollToBottomBtn: {
+    position: "absolute",
+    bottom: 12,
+    right: 16,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+});
 
 const modalStyles = StyleSheet.create({
   backdrop: {
