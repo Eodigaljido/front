@@ -66,6 +66,7 @@ export function useCollaborativeRouteSync({
   setServerVersion: (v: number) => void;
   isCourseSocketConnected: boolean;
   reloadFromServer: () => Promise<void>;
+  flushPendingPush: () => Promise<void>;
 } {
   const [serverVersion, setServerVersion] = useState(initialVersion);
   const serverVersionRef = useRef(serverVersion);
@@ -73,6 +74,12 @@ export function useCollaborativeRouteSync({
   const isApplyingRemoteRef = useRef(false);
   const patchInFlightRef = useRef(false);
   const patchQueuedRef = useRef(false);
+  const syncDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const titleDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const lastReloadVersionRef = useRef(-1);
   const buildPayloadRef = useRef(buildPayload);
   const onApplyRemoteRef = useRef(onApplyRemote);
@@ -262,12 +269,25 @@ export function useCollaborativeRouteSync({
     }
   }, [courseId, enabled, canPush, healConflictAndRetry]);
 
+  const flushPendingPush = useCallback(async () => {
+    if (syncDebounceTimerRef.current) {
+      clearTimeout(syncDebounceTimerRef.current);
+      syncDebounceTimerRef.current = null;
+    }
+    if (titleDebounceTimerRef.current) {
+      clearTimeout(titleDebounceTimerRef.current);
+      titleDebounceTimerRef.current = null;
+    }
+    await pushLocalChanges();
+  }, [pushLocalChanges]);
+
   const handleSocketEvent = useCallback(
     (event: CourseSocketEvent) => {
       if (!enabled) return;
       if (
         event.eventType === 'COURSE_MEMBER_JOINED' ||
-        event.eventType === 'COURSE_MEMBER_LEFT'
+        event.eventType === 'COURSE_MEMBER_LEFT' ||
+        event.eventType === 'COURSE_PRESENCE'
       ) {
         const id = String(courseId ?? '').trim();
         if (!id || event.payload.courseUuid !== id) return;
@@ -324,11 +344,20 @@ export function useCollaborativeRouteSync({
     }
     if (isApplyingRemoteRef.current) return;
 
-    const t = setTimeout(() => {
+    if (syncDebounceTimerRef.current) {
+      clearTimeout(syncDebounceTimerRef.current);
+    }
+    syncDebounceTimerRef.current = setTimeout(() => {
+      syncDebounceTimerRef.current = null;
       void pushLocalChanges();
     }, debounceMs);
 
-    return () => clearTimeout(t);
+    return () => {
+      if (syncDebounceTimerRef.current) {
+        clearTimeout(syncDebounceTimerRef.current);
+        syncDebounceTimerRef.current = null;
+      }
+    };
   }, [syncKey, enabled, canPush, courseId, debounceMs, pushLocalChanges]);
 
   useEffect(() => {
@@ -338,12 +367,27 @@ export function useCollaborativeRouteSync({
     if (suppressPatchRef.current) return;
     if (isApplyingRemoteRef.current) return;
 
-    const t = setTimeout(() => {
+    if (titleDebounceTimerRef.current) {
+      clearTimeout(titleDebounceTimerRef.current);
+    }
+    titleDebounceTimerRef.current = setTimeout(() => {
+      titleDebounceTimerRef.current = null;
       void pushLocalChanges();
     }, TITLE_DEBOUNCE_MS);
 
-    return () => clearTimeout(t);
+    return () => {
+      if (titleDebounceTimerRef.current) {
+        clearTimeout(titleDebounceTimerRef.current);
+        titleDebounceTimerRef.current = null;
+      }
+    };
   }, [titleSyncKey, enabled, canPush, courseId, pushLocalChanges]);
+
+  useEffect(() => {
+    return () => {
+      void flushPendingPush();
+    };
+  }, [flushPendingPush]);
 
   useEffect(() => {
     if (!enabled || !courseId) return;
@@ -370,5 +414,6 @@ export function useCollaborativeRouteSync({
     setServerVersion,
     isCourseSocketConnected,
     reloadFromServer,
+    flushPendingPush,
   };
 }

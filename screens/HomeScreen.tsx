@@ -918,6 +918,7 @@ export default function HomeScreen(): React.JSX.Element {
         title,
         accessToken,
         myUuid: authUser?.uuid,
+        introOnly: true,
       });
     },
     [accessToken, authUser?.uuid],

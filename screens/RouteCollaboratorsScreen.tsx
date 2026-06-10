@@ -5,6 +5,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useCollaborativeRouteMembers } from '../hooks/useCollaborativeRouteMembers';
+import { useCollaborativeRoutePresence } from '../hooks/useCollaborativeRoutePresence';
+import {
+  isRouteMemberOnline,
+  memberPresenceLabel,
+} from '../data/collaborativeRoute';
 import { safeGoBack } from '../navigation/rootNavigation';
 
 const CARD = {
@@ -20,10 +25,18 @@ export default function RouteCollaboratorsScreen(): React.JSX.Element {
   const routeId = String(route.params?.routeId ?? '').trim();
   const routeTitle = String(route.params?.routeTitle ?? '루트').trim() || '루트';
   const chatRoomUuid = route.params?.chatRoomUuid ?? null;
-  const { members, loading } = useCollaborativeRouteMembers({
+  const { members, loading, refresh } = useCollaborativeRouteMembers({
     routeId: routeId || 'new',
     chatRoomUuid,
     enabled: Boolean(routeId),
+    pollMembers: Boolean(routeId) && !routeId.startsWith('ur-'),
+  });
+
+  useCollaborativeRoutePresence({
+    courseId: routeId || null,
+    enabled: Boolean(routeId) && !routeId.startsWith('ur-'),
+    isEditorFocused: true,
+    onAfterPing: refresh,
   });
 
   const host = members.find((m) => m.role === 'host');
@@ -79,9 +92,15 @@ export default function RouteCollaboratorsScreen(): React.JSX.Element {
                   <Text className="text-[10px] font-bold text-blue-700">방장</Text>
                 </View>
               </View>
-              <Text className="mt-1 text-xs text-gray-500">루트 편집·멤버 초대 권한</Text>
+              <Text className="mt-1 text-xs text-gray-500">
+                루트 편집·멤버 초대 권한 · {memberPresenceLabel(host)}
+              </Text>
             </View>
-            <View className="h-2 w-2 rounded-full bg-green-500" />
+            <View
+              className={`h-2.5 w-2.5 rounded-full ${
+                isRouteMemberOnline(host) ? 'bg-green-500' : 'bg-gray-300'
+              }`}
+            />
           </View>
         ) : null}
 
@@ -105,14 +124,16 @@ export default function RouteCollaboratorsScreen(): React.JSX.Element {
               <View className="flex-1 ml-3">
                 <Text className="text-[15px] font-semibold text-gray-900">{m.name}</Text>
                 <Text className="mt-0.5 text-xs text-gray-500">
-                  {m.online !== false ? '편집 가능' : '오프라인'}
+                  {isRouteMemberOnline(m)
+                    ? '온라인 · 편집 화면 접속 중'
+                    : '오프라인'}
                 </Text>
               </View>
-              {m.online !== false ? (
-                <View className="h-2 w-2 rounded-full bg-green-500" />
-              ) : (
-                <View className="h-2 w-2 rounded-full bg-gray-300" />
-              )}
+              <View
+                className={`h-2.5 w-2.5 rounded-full ${
+                  isRouteMemberOnline(m) ? 'bg-green-500' : 'bg-gray-300'
+                }`}
+              />
             </View>
           ))
         )}

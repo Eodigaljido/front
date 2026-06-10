@@ -211,9 +211,37 @@ function buildGoogleBootstrapHtml(
         var defaultCenter = { lat: spec.lat, lng: spec.lng };
         var gZoom = typeof spec.zoom === 'number' ? spec.zoom : 14;
         var anyLine = false;
+        function addRoutePolyline(segPath, color, weight, dashed) {
+          var poly = new google.maps.Polyline({
+            path: segPath,
+            geodesic: true,
+            strokeColor: color,
+            strokeOpacity: dashed ? 0.88 : 0.96,
+            strokeWeight: weight,
+            icons: dashed
+              ? [
+                  {
+                    icon: {
+                      path: 'M 0,-1 0,1',
+                      strokeOpacity: 1,
+                      scale: 4,
+                      strokeColor: color,
+                    },
+                    offset: '0',
+                    repeat: '18px',
+                  },
+                ]
+              : [],
+            map: map,
+          });
+          polylines.push(poly);
+        }
         if (segments.length >= 1) {
-          for (var i = 0; i < segments.length; i++) {
-            var seg = segments[i];
+          var sortedSegs = segments.slice().sort(function (a, b) {
+            return (Number(a.zIndex) || 0) - (Number(b.zIndex) || 0);
+          });
+          for (var i = 0; i < sortedSegs.length; i++) {
+            var seg = sortedSegs[i];
             var segPath = (seg.points || []).map(function (c) {
               return { lat: Number(c.lat), lng: Number(c.lng) };
             });
@@ -222,37 +250,17 @@ function buildGoogleBootstrapHtml(
             }
             if (segPath.length < 2) continue;
             anyLine = true;
-            var poly = new google.maps.Polyline({
-              path: segPath,
-              geodesic: true,
-              strokeColor: seg.color || '#2563eb',
-              strokeOpacity: seg.dashed ? 0 : 0.94,
-              strokeWeight: Number(seg.width) || 4,
-              icons: seg.dashed
-                ? [
-                    {
-                      icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 4, strokeColor: seg.color || '#f59e0b' },
-                      offset: '0',
-                      repeat: '20px',
-                    },
-                  ]
-                : [],
-              map: map,
-            });
-            polylines.push(poly);
+            addRoutePolyline(
+              segPath,
+              seg.color || '#2563eb',
+              Number(seg.width) || 4,
+              Boolean(seg.dashed),
+            );
           }
         } else if (linePath.length >= 2) {
           anyLine = true;
-          var polyline = new google.maps.Polyline({
-            path: linePath,
-            geodesic: true,
-            strokeColor: '#2563eb',
-            strokeOpacity: 0.92,
-            strokeWeight: 4,
-            icons: [],
-            map: map,
-          });
-          polylines.push(polyline);
+          addRoutePolyline(linePath, '#ffffff', 6, false);
+          addRoutePolyline(linePath, '#2563eb', 4, false);
         }
         if (anyLine) {
           var markerSource = markPts.length

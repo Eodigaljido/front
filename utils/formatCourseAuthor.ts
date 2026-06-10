@@ -29,10 +29,10 @@ function labelForUser(
   const myNick = String(ctx?.myNickname ?? '').trim();
   const selfLabel = role === 'modifier' ? '내가 수정' : '내가 제작';
   if (myUuid && uuid && uuid === myUuid) {
-    return myNick ? `${myNick} (나)` : selfLabel;
+    return myNick || selfLabel;
   }
   if (myUserId && userId && userId === myUserId) {
-    return myNick ? `${myNick} (나)` : selfLabel;
+    return myNick || selfLabel;
   }
   if (userId) return `@${userId}`;
   return role === 'modifier' ? '수정자 미표시' : '제작자 미표시';
@@ -45,7 +45,7 @@ export function getCourseAuthorLabel(
 ): string {
   if (ctx?.isLocalOwnRoute) {
     const nick = String(ctx.myNickname ?? '').trim();
-    return nick ? `${nick} (나)` : '내가 제작';
+    return nick || '내가 제작';
   }
 
   const myUuid = String(ctx?.myUuid ?? '').trim();
@@ -55,10 +55,10 @@ export function getCourseAuthorLabel(
   const myNick = String(ctx?.myNickname ?? '').trim();
 
   if (myUuid && authorUuid && authorUuid === myUuid) {
-    return myNick ? `${myNick} (나)` : '내가 제작';
+    return myNick || '내가 제작';
   }
   if (myUserId && authorUserId && authorUserId === myUserId) {
-    return myNick ? `${myNick} (나)` : '내가 제작';
+    return myNick || '내가 제작';
   }
   return labelForUser(authorUserId, authorUuid, ctx, 'creator');
 }

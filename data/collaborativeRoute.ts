@@ -13,6 +13,7 @@ export type RouteMember = {
   role: RouteMemberRole;
   avatarUri: string;
   online?: boolean;
+  lastSeenAt?: string;
 };
 
 const DEFAULT_HOST_AVATAR =
@@ -36,7 +37,7 @@ function formatMemberDisplayName(
   const uid = String(userId ?? '').trim();
   const isMe = Boolean(me && userUuid === me);
   if (isMe) {
-    return nick ? `${nick} (나)` : '나';
+    return nick || '나';
   }
   if (nick) return nick;
   if (uid) return `@${uid}`;
@@ -53,6 +54,7 @@ export function courseMembersToRouteMembers(
     role: m.role === 'OWNER' ? 'host' : 'member',
     avatarUri: avatarForName(m.nickname ?? m.userId ?? 'M', m.profileImageUrl),
     online: m.online,
+    lastSeenAt: m.lastSeenAt,
   }));
 }
 
@@ -72,7 +74,7 @@ export function chatMembersToRouteMembers(
       name: formatMemberDisplayName(m.nickname, m.userId, id, myUuid),
       role: isOwner || isMe ? 'host' : 'member',
       avatarUri: avatarForName(m.nickname ?? m.userId ?? 'M', m.profileImageUrl),
-      online: true,
+      online: undefined,
     };
   });
 }
@@ -146,11 +148,40 @@ export function routeMemberDisplayNames(members: RouteMember[]): string[] {
   return members.map((m) => m.name).filter(Boolean);
 }
 
+export function isRouteMemberOnline(member: RouteMember): boolean {
+  return member.online === true;
+}
+
 export function getOnlineMembers(members: RouteMember[]): RouteMember[] {
-  return members.filter((m) => m.online !== false);
+  return members.filter((m) => isRouteMemberOnline(m));
+}
+
+export function memberPresenceLabel(member: RouteMember): string {
+  if (isRouteMemberOnline(member)) return '온라인';
+  return '오프라인';
 }
 
 /** 방장 외 참여자가 있을 때만 멤버 UI 표시 */
 export function hasCollaboratorPeers(members: RouteMember[]): boolean {
-  return members.some((m) => m.role !== 'host');
+  const list = (members ?? []).filter((m) => String(m.id ?? '').trim());
+  if (list.length <= 1) return false;
+  return list.some((m) => m.role !== 'host');
+}
+
+/** collaborative 플래그만으로는 부족 — 실제 공유·참여가 있을 때만 공동 루트 */
+export function isEffectivelyCollaborativeRoute(opts?: {
+  collaborative?: boolean;
+  members?: RouteMember[];
+  memberCount?: number;
+  chatRoomUuid?: string | null;
+  /** 초대 링크로 들어온 편집 세션 */
+  forceCollaborative?: boolean;
+}): boolean {
+  if (opts?.forceCollaborative) return true;
+  if (hasCollaboratorPeers(opts?.members ?? [])) return true;
+  if (typeof opts?.memberCount === 'number' && opts.memberCount > 1) return true;
+  if (opts?.collaborative === true && String(opts?.chatRoomUuid ?? '').trim()) {
+    return true;
+  }
+  return false;
 }
