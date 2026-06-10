@@ -4,6 +4,7 @@ import { Platform } from "react-native";
 import Constants, { ExecutionEnvironment } from "expo-constants";
 import GoogleMapWebView from "./GoogleMapWebView";
 import type { MapMarkerPoint, MapPathPoint, MapRouteSegment } from "./mapTypes";
+import { sortMapSegmentsForRender } from "../utils/mapRouteSegmentStyle";
 
 type Props = {
   latitude?: number;
@@ -127,12 +128,14 @@ function AppMapViewExpoGoogleMapsImpl({
   const pts = useMemo(() => validPoints(path), [path]);
   const segs = useMemo(
     () =>
-      (segments ?? [])
-        .map((s) => ({
-          ...s,
-          points: validPoints(s.points),
-        }))
-        .filter((s) => s.points.length >= 2),
+      sortMapSegmentsForRender(
+        (segments ?? [])
+          .map((s) => ({
+            ...s,
+            points: validPoints(s.points),
+          }))
+          .filter((s) => s.points.length >= 2),
+      ),
     [segments],
   );
   const stopPts = useMemo(() => validPoints(stops), [stops]);
@@ -219,11 +222,18 @@ function AppMapViewExpoGoogleMapsImpl({
         color: s.color || ROUTE_COLOR,
         width: s.width ?? 4,
         geodesic: true,
-        lineDashPattern: s.dashed ? [8, 8] : undefined,
+        lineDashPattern: s.dashed ? [10, 7] : undefined,
       }));
     }
     if (lineCoords.length < 2) return [];
     return [
+      {
+        id: "route-casing",
+        coordinates: lineCoords,
+        color: "#ffffff",
+        width: 6,
+        geodesic: true,
+      },
       {
         id: "route",
         coordinates: lineCoords,

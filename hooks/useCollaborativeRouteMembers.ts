@@ -7,18 +7,34 @@ import {
 } from '../data/collaborativeRoute';
 import { useAuthStore } from '../store/authStore';
 
+const MEMBERS_POLL_MS = 12_000;
+
 type Options = {
   routeId: string;
   chatRoomUuid?: string | null;
   enabled?: boolean;
   refreshKey?: number;
+  /** 편집·멤버 화면에서 주기적으로 members API 재조회 */
+  pollMembers?: boolean;
 };
+
+function markSelfOnline(
+  members: RouteMember[],
+  myUuid: string | null | undefined,
+): RouteMember[] {
+  const me = String(myUuid ?? '').trim();
+  if (!me) return members;
+  return members.map((m) =>
+    m.id === me ? { ...m, online: true } : m,
+  );
+}
 
 export function useCollaborativeRouteMembers({
   routeId,
   chatRoomUuid,
   enabled = true,
   refreshKey = 0,
+  pollMembers = false,
 }: Options): {
   members: RouteMember[];
   memberNames: string[];
@@ -46,7 +62,7 @@ export function useCollaborativeRouteMembers({
     routeId !== 'new' &&
     !routeId.startsWith('ur-');
 
-  useEffect(() => {
+  const loadMembers = useCallback(async () => {
     if (!canFetch) {
       setMembers(
         getRouteMembers(routeId, {
@@ -57,27 +73,15 @@ export function useCollaborativeRouteMembers({
       return;
     }
 
-    let cancelled = false;
-    setLoading(true);
-
-    void fetchRouteMembers({
+    const next = await fetchRouteMembers({
       routeId,
       chatRoomUuid,
       accessToken,
       myUuid: authUser?.uuid,
       hostName: authUser?.nickname ?? '나',
       hostAvatarUri: authUser?.profileImageUrl,
-    })
-      .then((next) => {
-        if (!cancelled) setMembers(next);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
+    });
+    setMembers(markSelfOnline(next, authUser?.uuid));
   }, [
     canFetch,
     routeId,
@@ -86,9 +90,39 @@ export function useCollaborativeRouteMembers({
     authUser?.uuid,
     authUser?.nickname,
     authUser?.profileImageUrl,
-    refreshKey,
-    tick,
   ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+
+    void loadMembers()
+      .catch(() => {
+        if (!cancelled) {
+          setMembers(
+            getRouteMembers(routeId, {
+              hostName: authUser?.nickname ?? '나',
+              hostAvatarUri: authUser?.profileImageUrl,
+            }),
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadMembers, refreshKey, tick]);
+
+  useEffect(() => {
+    if (!canFetch || !pollMembers) return;
+    const interval = setInterval(() => {
+      void loadMembers();
+    }, MEMBERS_POLL_MS);
+    return () => clearInterval(interval);
+  }, [canFetch, pollMembers, loadMembers]);
 
   const memberNames = useMemo(
     () => routeMemberDisplayNames(members),

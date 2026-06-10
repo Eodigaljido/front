@@ -20,6 +20,9 @@ export type TmapDirectionsLegResult = {
 
 const TMAP_CAR_URL = 'https://apis.openapi.sk.com/tmap/routes?version=1&format=json';
 const TMAP_WALK_URL = 'https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json';
+const TMAP_RATE_LIMIT_COOLDOWN_MS = 90_000;
+
+let tmapCooldownUntilMs = 0;
 
 function getTmapAppKey(): string {
   return String(process.env.EXPO_PUBLIC_TMAP_APP_KEY ?? '').trim();
@@ -165,6 +168,9 @@ async function fetchTmapJson(
   body: Record<string, string>,
   signal?: AbortSignal,
 ): Promise<any | null> {
+  if (Date.now() < tmapCooldownUntilMs) {
+    return null;
+  }
   try {
     const res = await fetch(url, {
       method: 'POST',
@@ -176,7 +182,10 @@ async function fetchTmapJson(
       signal,
     });
     if (!res.ok) {
-      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      if (res.status === 429) {
+        tmapCooldownUntilMs = Date.now() + TMAP_RATE_LIMIT_COOLDOWN_MS;
+      }
+      if (typeof __DEV__ !== 'undefined' && __DEV__ && res.status !== 429) {
         console.warn(`[Tmap] 요청 실패 status=${res.status}`);
       }
       return null;

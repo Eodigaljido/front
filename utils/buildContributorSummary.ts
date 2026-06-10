@@ -19,7 +19,7 @@ function contributorDisplayLabel(
   if (!s || s.includes('미표시')) return '';
   if (s === '내가 제작' || s === '내가 수정') {
     const nick = String(authorCtx?.myNickname ?? '').trim();
-    return nick ? `${nick} (나)` : '나';
+    return nick || '나';
   }
   return s;
 }

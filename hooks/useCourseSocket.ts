@@ -26,6 +26,15 @@ export type CourseSocketEvent =
   | {
       eventType: 'COURSE_MEMBER_LEFT';
       payload: { courseUuid: string; userUuid: string };
+    }
+  | {
+      eventType: 'COURSE_PRESENCE';
+      payload: {
+        courseUuid: string;
+        userUuid: string;
+        online?: boolean;
+        lastSeenAt?: string;
+      };
     };
 
 export function useCourseSocket(

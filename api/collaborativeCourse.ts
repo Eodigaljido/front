@@ -10,6 +10,7 @@ import {
 } from './courses';
 import type { CourseItem } from '../data/mockData';
 import { collabSyncLog, collabSyncWarn } from '../utils/collabRouteDebugLog';
+import { resolveMemberOnlineFromRaw } from '../utils/courseMemberPresence';
 
 export type CourseMemberRole = 'OWNER' | 'EDITOR' | 'VIEWER';
 
@@ -20,6 +21,7 @@ export type CourseMemberDto = {
   profileImageUrl?: string | null;
   role: CourseMemberRole;
   online?: boolean;
+  lastSeenAt?: string;
 };
 
 export type CollaborativeAccess = {
@@ -76,6 +78,12 @@ function normalizeCourseMember(raw: Record<string, unknown>): CourseMemberDto | 
   const roleRaw = String(raw.role ?? 'EDITOR').toUpperCase();
   const role: CourseMemberRole =
     roleRaw === 'OWNER' || roleRaw === 'VIEWER' ? roleRaw : 'EDITOR';
+  const lastSeenAt =
+    raw.lastSeenAt != null
+      ? String(raw.lastSeenAt)
+      : raw.last_seen_at != null
+        ? String(raw.last_seen_at)
+        : undefined;
   return {
     userUuid,
     userId: raw.userId != null ? String(raw.userId) : undefined,
@@ -83,8 +91,44 @@ function normalizeCourseMember(raw: Record<string, unknown>): CourseMemberDto | 
     profileImageUrl:
       raw.profileImageUrl != null ? String(raw.profileImageUrl) : null,
     role,
-    online: raw.online === true,
+    online: resolveMemberOnlineFromRaw(raw),
+    lastSeenAt,
   };
+}
+
+const PRESENCE_ENDPOINT_SUFFIXES = ['presence', 'heartbeat'] as const;
+
+/** 편집 화면 체류 시 서버에 온라인 신호 (엔드포인트 미구현이면 조용히 무시) */
+export async function sendCoursePresenceHeartbeat(
+  courseUuid: string,
+): Promise<boolean> {
+  const id = normalizeCourseId(courseUuid);
+  if (!id || id.startsWith('ur-')) return false;
+
+  for (const suffix of PRESENCE_ENDPOINT_SUFFIXES) {
+    try {
+      await instance.post(
+        `/api/courses/my/${encodeURIComponent(id)}/${suffix}`,
+        {},
+      );
+      collabSyncLog('presence_heartbeat_ok', { courseId: id, suffix });
+      return true;
+    } catch (e: any) {
+      const status = e?.response?.status;
+      if (status === 404 || status === 405) continue;
+      if (__DEV__) {
+        console.warn(
+          '[sendCoursePresenceHeartbeat]',
+          id,
+          suffix,
+          status,
+          e?.response?.data,
+        );
+      }
+      return false;
+    }
+  }
+  return false;
 }
 
 /** GET /api/courses/my/{courseId}/members */
