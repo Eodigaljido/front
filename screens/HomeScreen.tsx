@@ -1144,7 +1144,7 @@ export default function HomeScreen(): React.JSX.Element {
                   shadowOffset: { width: 0, height: 1 },
                   shadowOpacity: 0.06,
                   shadowRadius: 3,
-                  elevation: 2,
+                  elevation: Platform.OS === 'android' ? 0 : 2,
                 }}
               >
                 <Ionicons name="location" size={18} color="#2563eb" />
@@ -1165,7 +1165,7 @@ export default function HomeScreen(): React.JSX.Element {
                   shadowOffset: { width: 0, height: 1 },
                   shadowOpacity: 0.06,
                   shadowRadius: 3,
-                  elevation: 2,
+                  elevation: Platform.OS === 'android' ? 0 : 2,
                 }}
                 onPress={toggleSearchExpand}
                 hitSlop={8}
@@ -1183,7 +1183,7 @@ export default function HomeScreen(): React.JSX.Element {
                   shadowOffset: { width: 0, height: 1 },
                   shadowOpacity: 0.06,
                   shadowRadius: 3,
-                  elevation: 2,
+                  elevation: Platform.OS === 'android' ? 0 : 2,
                 }}
                 onPress={() =>
                   (navigation.getParent() as any)?.navigate("NotificationCenter")
@@ -1215,7 +1215,7 @@ export default function HomeScreen(): React.JSX.Element {
                   shadowOffset: { width: 0, height: 2 },
                   shadowOpacity: 0.06,
                   shadowRadius: 8,
-                  elevation: 3,
+                  elevation: Platform.OS === 'android' ? 0 : 3,
                 }}
               >
                 <Pressable
@@ -1256,7 +1256,7 @@ export default function HomeScreen(): React.JSX.Element {
                   shadowOffset: { width: 0, height: 1 },
                   shadowOpacity: 0.06,
                   shadowRadius: 3,
-                  elevation: 2,
+                  elevation: Platform.OS === 'android' ? 0 : 2,
                 }}
                 onPress={executeRouteSearch}
                 hitSlop={8}
@@ -1272,7 +1272,7 @@ export default function HomeScreen(): React.JSX.Element {
                   shadowOffset: { width: 0, height: 1 },
                   shadowOpacity: 0.06,
                   shadowRadius: 3,
-                  elevation: 2,
+                  elevation: Platform.OS === 'android' ? 0 : 2,
                 }}
                 onPress={() =>
                   (navigation.getParent() as any)?.navigate("NotificationCenter")

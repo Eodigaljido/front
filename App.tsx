@@ -3,7 +3,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 import { useAuthStore } from './store/authStore';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, type NavigatorScreenParams } from '@react-navigation/native';
 import { navigationRef } from './navigation/rootNavigation';
 import { BottomTabBar, createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -32,22 +32,30 @@ import ChatRoomInfoScreen from './screens/chat/ChatRoomInfoScreen';
 import RouteCreateScreen from './screens/RouteCreateScreen';
 import RouteCollaboratorsScreen from './screens/RouteCollaboratorsScreen';
 import ProfileSettingsScreen from './screens/ProfileSettingsScreen';
+import GuideScreen from './screens/GuideScreen';
 import FindAccountScreen from './screens/FindAccountScreen';
 import FollowingNewsScreen from './screens/FollowingNewsScreen';
 import NotificationCenterScreen from './screens/NotificationCenterScreen';
 import CourseGuideScreen from './screens/CourseGuideScreen';
 import AppSettingsScreen from './screens/AccountSettingsScreen';
+import NotificationSettingsScreen from './screens/NotificationSettingsScreen';
 import FriendRequestsScreen from './screens/FriendRequestsScreen';
 import { appLinking } from './constants/shareLinking';
 import UserProfileScreen from './screens/UserProfileScreen';
 import { ChatRouteHistory } from './screens/chat/ChatRouteHistory';
 import { useTabStore } from './store/tabStore';
+import SwipeTabWrapper from './components/SwipeTabWrapper';
+import MeetHomeScreen from './screens/meet/MeetHomeScreen';
+import MeetDetailScreen from './screens/meet/MeetDetailScreen';
+import MeetCreateScreen from './screens/meet/MeetCreateScreen';
+import MeetManageScreen from './screens/meet/MeetManageScreen';
 import { restorePendingShareLinkFromStorage } from './utils/pendingShareLink';
 
 export type RootTabParamList = {
   Home: undefined;
   Route: RouteTabParams | undefined;
   Chat: undefined;
+  Meet: undefined;
   All: { friendCode?: string } | undefined;
 
   // 온보드 관련
@@ -62,10 +70,16 @@ export type RootTabParamList = {
   ChatRoomScreen: undefined;
   ChatCreatingScreen: undefined;
   ChatRouteHistory: undefined;
+
+  // 모임 관련
+  MeetHome: undefined;
+  MeetDetail: { groupUuid: string; groupName: string };
+  MeetCreate: undefined;
+  MeetManage: { groupUuid: string; groupName: string };
 };
 
 export type RootStackParamList = {
-  Tabs: undefined;
+  Tabs: NavigatorScreenParams<RootTabParamList>;
   RouteStack: RouteTabParams | undefined;
   RouteCreate:
     | {
@@ -75,6 +89,7 @@ export type RootStackParamList = {
       }
     | undefined;
   ProfileSettings: undefined;
+  FriendRequests: undefined;
   UserProfile: {
     uuid?: string;
     userUuid?: string;
@@ -100,6 +115,12 @@ export type RootStackParamList = {
   ChatRouteHistory: undefined;
   ChatRoomInfoScreen: { roomUuid: string; roomName: string };
 
+  // 모임 관련
+  MeetHome: undefined;
+  MeetDetail: { groupUuid: string; groupName: string };
+  MeetCreate: undefined;
+  MeetManage: { groupUuid: string; groupName: string };
+
   FollowingNews: undefined;
   NotificationCenter: undefined;
   /** 내 코스 카드 「안내」 — 지도 중심, 턴바이턴 없음 (방향성.md) */
@@ -116,7 +137,7 @@ const Tab = createBottomTabNavigator<RootTabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const AllStack = createNativeStackNavigator();
 
-const TAB_ORDER = ['Home', 'Route', 'Chat', 'All'] as const;
+const TAB_ORDER = ['Home', 'Route', 'Chat', 'Meet', 'All'] as const;
 
 function CustomTabBar(props: any) {
   const forcedActiveTab = useTabStore(s => s.forcedActiveTab);
@@ -131,10 +152,28 @@ function AllStackNavigator() {
       <AllStack.Screen name="AllMain" component={AllScreen} />
       <AllStack.Screen name="AllRoute" component={RouteScreen} />
       <AllStack.Screen name="AllAppSettings" component={AppSettingsScreen} />
-      <AllStack.Screen name="AllFriendRequests" component={FriendRequestsScreen} />
+      <AllStack.Screen name="AllGuide" component={GuideScreen} />
+      <AllStack.Screen name="AllNotificationSettings" component={NotificationSettingsScreen} />
     </AllStack.Navigator>
   );
 }
+
+function withSwipeTab<P extends object>(Component: React.ComponentType<P>): React.ComponentType<P> {
+  function SwipeTabScreen(props: P) {
+    return (
+      <SwipeTabWrapper>
+        <Component {...props} />
+      </SwipeTabWrapper>
+    );
+  }
+  return SwipeTabScreen;
+}
+
+const HomeScreenSwipe = withSwipeTab(HomeScreen);
+const RouteScreenSwipe = withSwipeTab(RouteScreen);
+const ChatHomeScreenSwipe = withSwipeTab(ChatHomeScreen);
+const MeetHomeScreenSwipe = withSwipeTab(MeetHomeScreen);
+const AllStackNavigatorSwipe = withSwipeTab(AllStackNavigator);
 
 const TAB_ACCENT = '#2563eb';
 const TAB_INACTIVE = '#9ca3af';
@@ -143,10 +182,11 @@ const TAB_GLASS_BORDER = 'rgba(148, 163, 184, 0.35)';
 
 type IonIconName = NonNullable<ComponentProps<typeof Ionicons>['name']>;
 
-const TAB_ICONS: Record<'Home' | 'Route' | 'Chat' | 'All', IonIconName> = {
+const TAB_ICONS: Record<'Home' | 'Route' | 'Chat' | 'Meet' | 'All', IonIconName> = {
   Home: 'home',
   Route: 'map',
   Chat: 'chatbubble',
+  Meet: 'people',
   All: 'menu',
 };
 
@@ -209,7 +249,7 @@ function TabNavigator() {
             }}
           >
             <Ionicons
-              name={TAB_ICONS[route.name as 'Home' | 'Route' | 'Chat' | 'All']}
+              name={TAB_ICONS[route.name as 'Home' | 'Route' | 'Chat' | 'Meet' | 'All']}
               size={24}
               color={color}
             />
@@ -263,22 +303,27 @@ function TabNavigator() {
     >
       <Tab.Screen
         name="Home"
-        component={HomeScreen}
+        component={HomeScreenSwipe}
         options={{ headerShown: false, tabBarLabel: '홈' }}
       />
       <Tab.Screen
         name="Route"
-        component={RouteScreen}
+        component={RouteScreenSwipe}
         options={{ headerShown: false, tabBarLabel: '루트' }}
       />
       <Tab.Screen
         name="Chat"
-        component={ChatHomeScreen}
+        component={ChatHomeScreenSwipe}
         options={{ headerShown: false, title: '채팅', tabBarLabel: '채팅' }}
       />
       <Tab.Screen
+        name="Meet"
+        component={MeetHomeScreenSwipe}
+        options={{ headerShown: false, title: '모임', tabBarLabel: '모임' }}
+      />
+      <Tab.Screen
         name="All"
-        component={AllStackNavigator}
+        component={AllStackNavigatorSwipe}
         options={{ headerShown: false, title: '전체', tabBarLabel: '전체' }}
       />
     </Tab.Navigator>
@@ -323,6 +368,7 @@ export default function App(): React.JSX.Element {
                   <Stack.Screen name="RouteCollaborators" component={RouteCollaboratorsScreen} />
                   <Stack.Screen name="CourseGuide" component={CourseGuideScreen} />
                   <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
+                  <Stack.Screen name="FriendRequests" component={FriendRequestsScreen} />
                   <Stack.Screen name="UserProfile" component={UserProfileScreen} />
                   <Stack.Screen name="OnBoardStart" component={OnBoardStart} />
                   <Stack.Screen name="AreaOnBoard" component={AreaOnBoard} />
@@ -337,6 +383,10 @@ export default function App(): React.JSX.Element {
                   <Stack.Screen name="NotificationCenter" component={NotificationCenterScreen} />
                   <Stack.Screen name="ChatRoomScreen" component={ChatRoomScreen} />
                   <Stack.Screen name="ChatRoomInfoScreen" component={ChatRoomInfoScreen} />
+                  <Stack.Screen name="MeetHome" component={MeetHomeScreen} />
+                  <Stack.Screen name="MeetDetail" component={MeetDetailScreen} />
+                  <Stack.Screen name="MeetCreate" component={MeetCreateScreen} />
+                  <Stack.Screen name="MeetManage" component={MeetManageScreen} />
                 </Stack.Navigator>
               </KeyboardProvider>
             </NavigationContainer>

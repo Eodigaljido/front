@@ -25,8 +25,8 @@ export default function FollowingNewsScreen(): React.JSX.Element {
 
   return (
     <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={["top"]}>
-      <View className="px-4 py-3 flex-row items-center">
-        <Pressable onPress={() => safeGoBack(navigation)} className="mr-2 p-1">
+      <View className="flex-row items-center px-4 py-3">
+        <Pressable onPress={() => safeGoBack(navigation)} className="p-1 mr-2">
           <Ionicons name="chevron-back" size={24} color="#111827" />
         </Pressable>
         <Text className="text-lg font-semibold text-gray-900">친구 소식</Text>
@@ -49,7 +49,7 @@ export default function FollowingNewsScreen(): React.JSX.Element {
               profileImageUrl={item.profileImageUrl}
               size={40}
             />
-            <View className="min-w-0 flex-1">
+            <View className="flex-1 min-w-0">
               <Text style={{ fontSize: 13, fontWeight: "400", color: "#1A1A2E" }} numberOfLines={1}>
                 <Text style={{ fontWeight: "600" }}>{item.user}</Text>님이 {item.action}
               </Text>
@@ -63,8 +63,8 @@ export default function FollowingNewsScreen(): React.JSX.Element {
           </View>
         )}
         ListEmptyComponent={
-          <View className="mt-12 items-center px-4">
-            <Text className="text-center text-sm leading-5 text-gray-600">
+          <View className="items-center px-4 mt-12">
+            <Text className="text-sm leading-5 text-center text-gray-600">
               친구가 없어 표시할 소식이 없어요. 채팅 탭의 친구 목록에서 맺을 수 있어요.
             </Text>
             <Pressable

@@ -43,10 +43,10 @@ function formatPhoneNumber(value: string): string {
 export default function ProfileSettingsScreen(): React.JSX.Element {
   const navigation = useNavigation<any>();
   const { showToast } = useToast();
-  const refreshProfile = useAuthStore(s => s.refreshProfile);
-  const bumpProfileImageCache = useAuthStore(s => s.bumpProfileImageCache);
-  const profileImageCacheBust = useAuthStore(s => s.profileImageCacheBust);
-  const setUser = useAuthStore(s => s.setUser);
+  const refreshProfile = useAuthStore((s) => s.refreshProfile);
+  const bumpProfileImageCache = useAuthStore((s) => s.bumpProfileImageCache);
+  const profileImageCacheBust = useAuthStore((s) => s.profileImageCacheBust);
+  const setUser = useAuthStore((s) => s.setUser);
 
   const [avatarUri, setAvatarUri] = useState<string>(DEFAULT_AVATAR_URI);
   const [pickingImage, setPickingImage] = useState(false);
@@ -113,7 +113,9 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
     } catch (e: any) {
       Alert.alert(
         '오류',
-        e?.response?.data?.message ?? e?.message ?? '프로필을 불러오지 못했습니다.',
+        e?.response?.data?.message ??
+          e?.message ??
+          '프로필을 불러오지 못했습니다.',
       );
     } finally {
       setLoadingProfile(false);
@@ -128,7 +130,8 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
     if (pickingImage) return;
     setPickingImage(true);
     try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert(
           '권한 필요',
@@ -163,7 +166,9 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
     } catch (e: any) {
       Alert.alert(
         '오류',
-        e?.response?.data?.message ?? e?.message ?? '이미지를 변경하지 못했습니다.',
+        e?.response?.data?.message ??
+          e?.message ??
+          '이미지를 변경하지 못했습니다.',
       );
     } finally {
       setPickingImage(false);
@@ -174,7 +179,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
     if (timerRef.current) clearInterval(timerRef.current);
     setCodeTimer(seconds);
     timerRef.current = setInterval(() => {
-      setCodeTimer(prev => {
+      setCodeTimer((prev) => {
         if (prev <= 1) {
           clearInterval(timerRef.current!);
           return 0;
@@ -200,7 +205,10 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
     }
     setPhoneSending(true);
     try {
-      const res = await sendPhoneCode({ phone: trimmed, purpose: 'CHANGE_PHONE' });
+      const res = await sendPhoneCode({
+        phone: trimmed,
+        purpose: 'CHANGE_PHONE',
+      });
       setPhoneCodeSent(true);
       setPhoneVerified(false);
       setPhoneCode('');
@@ -208,7 +216,9 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
     } catch (e: any) {
       Alert.alert(
         '오류',
-        e?.response?.data?.message ?? e?.message ?? '인증번호 발송에 실패했습니다.',
+        e?.response?.data?.message ??
+          e?.message ??
+          '인증번호 발송에 실패했습니다.',
       );
     } finally {
       setPhoneSending(false);
@@ -223,24 +233,32 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
     }
     setPhoneVerifying(true);
     try {
+      const phoneTrimmed = phone.replace(/-/g, '').trim();
       await verifyPhoneCode({
-        phone: phone.replace(/-/g, '').trim(),
+        phone: phoneTrimmed,
         code: phoneCode.trim(),
         purpose: 'CHANGE_PHONE',
       });
+      // 인증 직후 바로 번호 변경 반영 — 이미 사용 중인 번호면 여기서 에러가 떠서
+      // 저장 시점까지 가지 않고 사용자에게 즉시 알려준다.
+      await patchMyPhone(phoneTrimmed);
+      setOriginalPhone(formatPhoneNumber(phoneTrimmed));
       setPhoneVerified(true);
       setPhoneCodeSent(false);
       if (timerRef.current) clearInterval(timerRef.current);
       setCodeTimer(0);
+      showToast('전화번호가 변경되었습니다.');
     } catch (e: any) {
       Alert.alert(
         '오류',
-        e?.response?.data?.message ?? e?.message ?? '인증번호 확인에 실패했습니다.',
+        e?.response?.data?.message ??
+          e?.message ??
+          '인증번호 확인에 실패했습니다.',
       );
     } finally {
       setPhoneVerifying(false);
     }
-  }, [phoneVerifying, phone, phoneCode]);
+  }, [phoneVerifying, phone, phoneCode, showToast]);
 
   const handleSave = useCallback(async () => {
     if (saving) return;
@@ -254,29 +272,28 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
         nickname: nickname.trim(),
         bio: bio.trim(),
       });
+      // 전화번호 변경은 인증번호 확인 시점에 즉시 반영되므로 여기서는
+      // 인증 안 된 변경 번호가 남아 있는 경우만 막는다.
       const phoneTrimmed = phone.replace(/-/g, '').trim();
       const originalPhoneTrimmed = originalPhone.replace(/-/g, '').trim();
       if (phoneTrimmed && phoneTrimmed !== originalPhoneTrimmed) {
-        if (!phoneVerified) {
-          Alert.alert('인증 필요', '변경된 전화번호는 인증 후 저장할 수 있습니다.');
-          setSaving(false);
-          return;
-        }
-        await patchMyPhone(phoneTrimmed);
-        setOriginalPhone(formatPhoneNumber(phoneTrimmed));
-        setPhoneVerified(false);
-      } else if (phoneTrimmed && phoneTrimmed === originalPhoneTrimmed) {
-        // 번호 변경 없음 — 그대로 유지
+        Alert.alert(
+          '인증 필요',
+          '변경된 전화번호는 인증 후 저장할 수 있습니다.',
+        );
+        setSaving(false);
+        return;
       }
       await refreshProfile();
       showToast('저장 완료');
     } catch (e: any) {
-      const msg = e?.response?.data?.message ?? e?.message ?? '저장하지 못했어요';
+      const msg =
+        e?.response?.data?.message ?? e?.message ?? '저장하지 못했어요';
       showToast(msg);
     } finally {
       setSaving(false);
     }
-  }, [saving, nickname, bio, phone, originalPhone, phoneVerified, refreshProfile, showToast]);
+  }, [saving, nickname, bio, phone, originalPhone, refreshProfile, showToast]);
 
   const handleDeleteProfileImage = useCallback(async () => {
     try {
@@ -292,13 +309,18 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
     } catch (e: any) {
       Alert.alert(
         '오류',
-        e?.response?.data?.message ?? e?.message ?? '프로필 이미지를 삭제하지 못했습니다.',
+        e?.response?.data?.message ??
+          e?.message ??
+          '프로필 이미지를 삭제하지 못했습니다.',
       );
     }
   }, [bumpProfileImageCache, refreshProfile, showToast]);
 
   return (
-    <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={['top', 'left', 'right']}>
+    <SafeAreaView
+      className="flex-1 bg-[#F0F5FF]"
+      edges={['top', 'left', 'right']}
+    >
       <KeyboardAvoidingView
         className="flex-1"
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -311,17 +333,26 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
           >
             <Ionicons name="chevron-back" size={22} color="#f97316" />
           </Pressable>
-          <Text className="flex-1 text-lg font-bold text-gray-900">프로필 설정</Text>
+          <Text className="flex-1 text-lg font-bold text-gray-900">
+            프로필 설정
+          </Text>
         </View>
 
         <ScrollView
-          contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 40 }}
+          contentContainerStyle={{
+            paddingHorizontal: 18,
+            paddingTop: 16,
+            paddingBottom: 40,
+          }}
           keyboardShouldPersistTaps="handled"
         >
           <View className="items-center px-4 py-6 bg-white border border-gray-200 rounded-2xl">
             <View className="relative">
               {avatarUri ? (
-                <Image source={{ uri: avatarUri }} className="w-24 h-24 bg-gray-100 rounded-full" />
+                <Image
+                  source={{ uri: avatarUri }}
+                  className="w-24 h-24 bg-gray-100 rounded-full"
+                />
               ) : (
                 <View className="items-center justify-center w-24 h-24 bg-gray-100 rounded-full">
                   <Ionicons name="person" size={42} color="#9ca3af" />
@@ -361,10 +392,17 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
               disabled={pickingImage}
               className="mt-3 active:opacity-70 disabled:opacity-50"
             >
-              <Text className="text-sm font-semibold text-blue-600">갤러리에서 사진 선택</Text>
+              <Text className="text-sm font-semibold text-blue-600">
+                갤러리에서 사진 선택
+              </Text>
             </Pressable>
-            <Pressable onPress={handleDeleteProfileImage} className="mt-2 active:opacity-70">
-              <Text className="text-xs font-semibold text-gray-500">기본 이미지로 변경</Text>
+            <Pressable
+              onPress={handleDeleteProfileImage}
+              className="mt-2 active:opacity-70"
+            >
+              <Text className="text-xs font-semibold text-gray-500">
+                기본 이미지로 변경
+              </Text>
             </Pressable>
             <Text className="mt-2 text-xs text-center text-gray-500">
               사진은 다른 유저에게 프로필에 표시됩니다.
@@ -403,7 +441,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
                 placeholder="다른 사람에게 보여줄 짧은 소개를 입력해 보세요."
                 placeholderTextColor="#9ca3af"
                 multiline
-                onContentSizeChange={e =>
+                onContentSizeChange={(e) =>
                   setBioHeight(Math.max(40, e.nativeEvent.contentSize.height))
                 }
                 style={{ height: bioHeight, textAlignVertical: 'top' }}
@@ -416,7 +454,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
               <View className="flex-row items-center gap-2">
                 <TextInput
                   value={phone}
-                  onChangeText={v => {
+                  onChangeText={(v) => {
                     setPhone(formatPhoneNumber(v));
                     setPhoneVerified(false);
                     setPhoneCodeSent(false);
@@ -429,13 +467,22 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
                   keyboardType="phone-pad"
                   className="flex-1 text-base font-semibold text-gray-900"
                 />
-                {phoneVerified || (!!originalPhone && phone.replace(/-/g, '').trim() === originalPhone.replace(/-/g, '').trim()) ? (
+                {phoneVerified ||
+                (!!originalPhone &&
+                  phone.replace(/-/g, '').trim() ===
+                    originalPhone.replace(/-/g, '').trim()) ? (
                   <View
                     className="flex-row items-center gap-1 px-3 py-1.5 rounded-lg"
                     style={{ backgroundColor: '#dcfce7' }}
                   >
-                    <Ionicons name="checkmark-circle" size={14} color="#16a34a" />
-                    <Text className="text-xs font-semibold text-green-700">인증완료</Text>
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={14}
+                      color="#16a34a"
+                    />
+                    <Text className="text-xs font-semibold text-green-700">
+                      인증완료
+                    </Text>
                   </View>
                 ) : (
                   <Pressable
@@ -468,7 +515,8 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
                   />
                   {codeTimer > 0 && (
                     <Text className="text-xs text-gray-400 min-w-[36px] text-right">
-                      {Math.floor(codeTimer / 60)}:{String(codeTimer % 60).padStart(2, '0')}
+                      {Math.floor(codeTimer / 60)}:
+                      {String(codeTimer % 60).padStart(2, '0')}
                     </Text>
                   )}
                   <Pressable
@@ -480,7 +528,9 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
                     {phoneVerifying ? (
                       <ActivityIndicator size="small" color="#fff" />
                     ) : (
-                      <Text className="text-xs font-semibold text-white">확인</Text>
+                      <Text className="text-xs font-semibold text-white">
+                        확인
+                      </Text>
                     )}
                   </Pressable>
                 </View>
@@ -503,7 +553,9 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
 
             <View className="flex-row items-center justify-between border-b border-gray-100 py-3.5">
               <View className="flex-1 pr-3">
-                <Text className="text-base font-semibold text-gray-900">공개 프로필</Text>
+                <Text className="text-base font-semibold text-gray-900">
+                  공개 프로필
+                </Text>
                 <Text className="mt-0.5 text-xs text-gray-500">
                   꺼두면 다른 유저에게 프로필이 노출되지 않습니다.
                 </Text>
@@ -518,8 +570,12 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
 
             <View className="flex-row items-center justify-between py-3.5">
               <View className="flex-1 pr-3">
-                <Text className="text-base font-semibold text-gray-900">이메일 알림</Text>
-                <Text className="mt-0.5 text-xs text-gray-500">이벤트·공지 등 메일로 받기</Text>
+                <Text className="text-base font-semibold text-gray-900">
+                  이메일 알림
+                </Text>
+                <Text className="mt-0.5 text-xs text-gray-500">
+                  이벤트·공지 등 메일로 받기
+                </Text>
               </View>
               <Switch
                 value={emailNotif}
@@ -538,7 +594,9 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
             {saving ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text className="text-base font-semibold text-white">변경 사항 저장</Text>
+              <Text className="text-base font-semibold text-white">
+                변경 사항 저장
+              </Text>
             )}
           </Pressable>
         </ScrollView>

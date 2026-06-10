@@ -60,3 +60,12 @@ docs/*
 
 
 .api-docs-temp.json
+
+
+# claude
+CLAUDE.local.md
+.claude/*
+.claude/settings.local.json
+
+# prettierrc
+.prettierrc

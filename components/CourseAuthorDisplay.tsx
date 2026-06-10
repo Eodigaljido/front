@@ -167,7 +167,7 @@ export function CourseAuthorDetailChip({
   if (!creatorShown && !showModifier) return null;
 
   return (
-    <View className="mb-2 flex-row flex-wrap items-center gap-2">
+    <View className="flex-row flex-wrap items-center gap-2 mb-2">
       {creatorShown ? (
         <AuthorRoleChip
           roleLabel="제작자"

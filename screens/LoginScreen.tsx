@@ -58,7 +58,34 @@ export default function LoginScreen() {
   const loginStore = useAuthStore(s => s.login);
   const setTokens = useAuthStore(s => s.setTokens);
   const setUser = useAuthStore(s => s.setUser);
+  const refreshProfile = useAuthStore(s => s.refreshProfile);
   const passwordRef = useRef<TextInput>(null);
+
+  async function handleLogin() {
+    setLoginError('');
+    if (!identifier.trim() || !realPasswordRef.current) {
+      setLoginError('아이디 혹은 비밀번호가 틀렸습니다.');
+      return;
+    }
+    setIsLoading(true);
+    try {
+      await loginStore({
+        identifier: identifier.trim(),
+        password: realPasswordRef.current,
+      });
+      const accessToken = useAuthStore.getState().accessToken!;
+      const { completed } = await getOnboardingStatus(accessToken);
+      if (!completed) {
+        navigation.reset({ index: 0, routes: [{ name: 'OnBoardStart' }] });
+      } else {
+        resetToMainAfterAuth(navigation);
+      }
+    } catch {
+      setLoginError('아이디 혹은 비밀번호가 틀렸습니다.');
+    } finally {
+      setIsLoading(false);
+    }
+  }
 
   async function handleOAuthCode(provider: 'kakao' | 'google', code: string) {
     setOauthModal(null);
@@ -75,6 +102,7 @@ export default function LoginScreen() {
       await tokenStorage.saveUserUuid(res.user.uuid);
       await setTokens(res.accessToken, res.refreshToken);
       setUser(res.user);
+      await refreshProfile().catch(() => {});
 
       const { completed } = await getOnboardingStatus(res.accessToken);
       if (!completed) {
@@ -168,6 +196,7 @@ export default function LoginScreen() {
                 onBlur={maskAll}
                 placeholder="비밀번호 입력"
                 returnKeyType="done"
+                onSubmitEditing={handleLogin}
                 className="w-full h-auto px-5 py-4 bg-gray-100 rounded-full"
               />
             </View>
@@ -184,34 +213,7 @@ export default function LoginScreen() {
             <TouchableOpacity
               activeOpacity={0.7}
               disabled={isLoading}
-              onPress={async () => {
-                setLoginError('');
-                if (!identifier.trim() || !realPasswordRef.current) {
-                  setLoginError('아이디 혹은 비밀번호가 틀렸습니다.');
-                  return;
-                }
-                setIsLoading(true);
-                try {
-                  await loginStore({
-                    identifier: identifier.trim(),
-                    password: realPasswordRef.current,
-                  });
-                  const accessToken = useAuthStore.getState().accessToken!;
-                  const { completed } = await getOnboardingStatus(accessToken);
-                  if (!completed) {
-                    navigation.reset({
-                      index: 0,
-                      routes: [{ name: 'OnBoardStart' }],
-                    });
-                  } else {
-                    resetToMainAfterAuth(navigation);
-                  }
-                } catch {
-                  setLoginError('아이디 혹은 비밀번호가 틀렸습니다.');
-                } finally {
-                  setIsLoading(false);
-                }
-              }}
+              onPress={handleLogin}
               className="items-center justify-center w-full h-12 mt-2 bg-blue-500 rounded-full"
             >
               {isLoading ? (

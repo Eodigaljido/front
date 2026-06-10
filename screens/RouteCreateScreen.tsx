@@ -3965,19 +3965,19 @@ export default function RouteCreateScreen(): React.JSX.Element {
   const renderTimelineDot = (stop: RouteStop) => {
     if (stop.kind === "start")
       return (
-        <View className="h-8 w-8 items-center justify-center rounded-full bg-blue-600">
+        <View className="items-center justify-center w-8 h-8 bg-blue-600 rounded-full">
           <Text className="text-xs font-bold text-white">P</Text>
         </View>
       );
     if (stop.kind === "end")
       return (
-        <View className="h-8 w-8 items-center justify-center rounded-full bg-red-500">
+        <View className="items-center justify-center w-8 h-8 bg-red-500 rounded-full">
           <Text className="text-[10px] font-bold text-white">P</Text>
         </View>
       );
     const vn = viaStops.findIndex((v) => v.id === stop.id) + 1;
     return (
-      <View className="h-8 w-8 items-center justify-center rounded-full bg-blue-100">
+      <View className="items-center justify-center w-8 h-8 bg-blue-100 rounded-full">
         <Text className="text-xs font-semibold text-blue-800">{vn}</Text>
       </View>
     );
@@ -4035,10 +4035,10 @@ export default function RouteCreateScreen(): React.JSX.Element {
           }}
           pointerEvents="box-none"
         >
-          <View className="shrink-0 items-center" pointerEvents="box-none">
+          <View className="items-center shrink-0" pointerEvents="box-none">
             <Pressable
               onPress={() => safeGoBack(navigation)}
-              className="z-10 h-12 w-12 items-center justify-center rounded-full bg-white shadow-md active:opacity-90"
+              className="z-10 items-center justify-center w-12 h-12 bg-white rounded-full shadow-md active:opacity-90"
               style={{
                 shadowColor: "#000",
                 shadowOffset: { width: 0, height: 2 },
@@ -4050,7 +4050,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
               <Ionicons name="chevron-back" size={24} color="#2563eb" />
             </Pressable>
             {showCollabMemberStack ? (
-              <View className="mt-2 items-center">
+              <View className="items-center mt-2">
                 <CollaboratorAvatarStack
                   members={collabMembers}
                   size={34}
@@ -4068,7 +4068,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
 
           <Pressable
             onPress={() => openSearch()}
-            className="flex-1 flex-row items-center rounded-2xl bg-white px-4 py-0 shadow-md active:opacity-95"
+            className="flex-row items-center flex-1 px-4 py-0 bg-white shadow-md rounded-2xl active:opacity-95"
             style={{
               shadowColor: "#000",
               shadowOffset: { width: 0, height: 2 },
@@ -4085,10 +4085,10 @@ export default function RouteCreateScreen(): React.JSX.Element {
             <Ionicons name="search-outline" size={22} color="#6b7280" />
           </Pressable>
 
-          <View className="shrink-0 items-center" pointerEvents="box-none">
+          <View className="items-center shrink-0" pointerEvents="box-none">
             <Pressable
               onPress={handleTopSharePress}
-              className="h-12 w-12 items-center justify-center rounded-full bg-white shadow-md active:opacity-90"
+              className="items-center justify-center w-12 h-12 bg-white rounded-full shadow-md active:opacity-90"
               style={{
                 shadowColor: "#000",
                 shadowOffset: { width: 0, height: 2 },
@@ -4124,10 +4124,24 @@ export default function RouteCreateScreen(): React.JSX.Element {
           </View>
         </View>
 
+        {showCollabMemberBar ? (
+          <View className="px-3 mt-2" pointerEvents="box-none">
+            <CollaboratorAvatarStack
+              members={collabMembers}
+              onPress={() =>
+                rootNavigate("RouteCollaborators", {
+                  routeId: activeRouteId,
+                  routeTitle: routeTitle.trim() || "루트",
+                })
+              }
+            />
+          </View>
+        ) : null}
+
         <View style={{ flex: 1, minHeight: 0 }} pointerEvents="none" />
 
         <View
-          className="rounded-t-3xl border-t border-gray-200 bg-white"
+          className="bg-white border-t border-gray-200 rounded-t-3xl"
           style={{
             height: bottomSheetPanelHeightPx,
             flexShrink: 0,
@@ -4162,26 +4176,26 @@ export default function RouteCreateScreen(): React.JSX.Element {
               }}
             />
           </View>
-          <View className="border-b border-gray-50 px-4 pt-3 pb-2">
+          <View className="px-4 pt-3 pb-2 border-b border-gray-50">
             <View className="flex-row items-center">
               <Pressable
                 onPress={() => void pickRouteCoverImage()}
-                className="mr-3 h-14 w-14 overflow-hidden rounded-xl bg-slate-100 active:opacity-90"
+                className="mr-3 overflow-hidden h-14 w-14 rounded-xl bg-slate-100 active:opacity-90"
                 accessibilityLabel="루트 대표 이미지 설정"
               >
                 {routeCoverImageUri ? (
                   <Image
                     source={{ uri: routeCoverImageUri }}
-                    className="h-full w-full"
+                    className="w-full h-full"
                     resizeMode="cover"
                   />
                 ) : (
-                  <View className="h-full w-full items-center justify-center">
+                  <View className="items-center justify-center w-full h-full">
                     <Ionicons name="camera-outline" size={22} color="#94a3b8" />
                   </View>
                 )}
               </Pressable>
-              <View className="min-w-0 flex-1 flex-row items-center">
+              <View className="flex-row items-center flex-1 min-w-0">
                 <TextInput
                   value={routeTitle}
                   onChangeText={(text) => {
@@ -4211,7 +4225,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
             </Text>
           </View>
 
-          <View className="border-b border-gray-100 px-4 pb-3">
+          <View className="px-4 pb-3 border-b border-gray-100">
             <Text className="mb-1.5 text-[11px] font-semibold text-gray-700">
               태그 (최대 {MAX_ROUTE_TAGS}개)
             </Text>
@@ -4244,7 +4258,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
           {isCollaborative &&
           collabCourseIdForSync &&
           (!collabCanEdit || isCourseSocketConnected) ? (
-            <View className="border-b border-blue-50 px-4 pb-2">
+            <View className="px-4 pb-2 border-b border-blue-50">
               <Text
                 className={`text-[10px] font-medium ${
                   !collabCanEdit ? "text-slate-500" : "text-blue-600"
@@ -4259,7 +4273,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
 
           <View className="border-b border-gray-100 px-3 py-2.5">
             <View className="flex-row items-center gap-2">
-              <View className="min-w-0 flex-1" />
+              <View className="flex-1 min-w-0" />
               <View className="flex-row items-center gap-2 shrink-0">
                 {isCollaborative ? (
                   <Pressable
@@ -4358,7 +4372,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                     }}
                   >
                     <View className="flex-row">
-                      <View className="w-10 items-center">
+                      <View className="items-center w-10">
                         {index > 0 ? (
                           <View
                             style={{
@@ -4384,7 +4398,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                       </View>
 
                       <View
-                        className="mb-2 ml-2 flex-1 rounded-xl bg-gray-50/80 p-3"
+                        className="flex-1 p-3 mb-2 ml-2 rounded-xl bg-gray-50/80"
                         style={{
                           opacity: cardOpacity,
                           ...(isDragRow
@@ -4397,7 +4411,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                         }}
                       >
                         <View className="flex-row items-start justify-between">
-                          <View className="min-w-0 flex-1">
+                          <View className="flex-1 min-w-0">
                             <View className="flex-row flex-wrap items-center gap-2">
                               {renderStopBadge(stop.kind)}
                               <Text
@@ -4492,7 +4506,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                     {index < stops.length - 1 && legs[index] && (
                       <Pressable
                         onPress={() => setEditingLegId(legs[index].id)}
-                        className="ml-12 mb-2 py-1 pl-2 active:opacity-70"
+                        className="py-1 pl-2 mb-2 ml-12 active:opacity-70"
                         style={{
                           borderLeftWidth: 3,
                           borderLeftColor: "rgba(37, 99, 235, 0.35)",
@@ -4504,7 +4518,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                             size={18}
                             color="#2563eb"
                           />
-                          <Text className="ml-2 flex-1 text-xs font-medium text-blue-900/80">
+                          <Text className="flex-1 ml-2 text-xs font-medium text-blue-900/80">
                             {legTransportLabel(
                               legs[index].mode,
                               legs[index].transitType,
@@ -4578,7 +4592,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                     legs[index]?.mode === "transit" &&
                     legs[index].transitCandidates &&
                     legs[index].transitCandidates!.length > 0 ? (
-                      <View className="mb-2 ml-12 pl-2">
+                      <View className="pl-2 mb-2 ml-12">
                         <Text className="mb-1.5 text-[10px] font-semibold text-sky-800">
                           대중교통 경로 ({legs[index].transitCandidates!.length}
                           개)
@@ -4608,7 +4622,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                               >
                                 {c.summary}
                               </Text>
-                              <View className="mt-1 flex-row flex-wrap gap-2">
+                              <View className="flex-row flex-wrap gap-2 mt-1">
                                 {c.departureLabel ? (
                                   <Text className="text-[11px] font-semibold text-emerald-700">
                                     {c.departureLabel}
@@ -4723,7 +4737,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
             <View className="flex-row items-center gap-2 border-b border-gray-200 px-3 py-2.5">
               <Pressable
                 onPress={closeSearch}
-                className="h-10 w-10 items-center justify-center rounded-full bg-white active:opacity-80"
+                className="items-center justify-center w-10 h-10 bg-white rounded-full active:opacity-80"
               >
                 <Ionicons name="chevron-back" size={22} color="#2563eb" />
               </Pressable>
@@ -4751,7 +4765,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
               <Text className="mb-1 text-[10px] font-semibold text-gray-600">
                 정렬
               </Text>
-              <View className="mb-2 flex-row gap-2">
+              <View className="flex-row gap-2 mb-2">
                 <Pressable
                   onPress={() => setSearchSort("accuracy")}
                   className={`rounded-lg border px-3 py-1.5 ${
@@ -4866,19 +4880,19 @@ export default function RouteCreateScreen(): React.JSX.Element {
               keyboardShouldPersistTaps="handled"
             >
               <>
-                <Text className="mb-2 px-1 text-sm font-bold text-gray-800">
+                <Text className="px-1 mb-2 text-sm font-bold text-gray-800">
                   검색결과
                 </Text>
                 {searchLoading ? (
-                  <Text className="py-8 text-center text-sm text-gray-500">
+                  <Text className="py-8 text-sm text-center text-gray-500">
                     검색 중...
                   </Text>
                 ) : searchError ? (
-                  <Text className="py-8 text-center text-sm text-rose-500">
+                  <Text className="py-8 text-sm text-center text-rose-500">
                     {searchError}
                   </Text>
                 ) : searchResults.length === 0 ? (
-                  <Text className="py-8 text-center text-sm text-gray-500">
+                  <Text className="py-8 text-sm text-center text-gray-500">
                     {searchQuery.trim() === ""
                       ? "필터나 검색을 통해 찾아보세요!"
                       : "검색 결과가 없습니다. 필터나 다른 키워드로 찾아보세요!"}
@@ -4924,8 +4938,8 @@ export default function RouteCreateScreen(): React.JSX.Element {
                           />
                         </View>
                         {expanded && (
-                          <View className="border-t border-gray-100 bg-gray-50 px-3 py-3">
-                            <Text className="text-center text-sm text-gray-700">
+                          <View className="px-3 py-3 border-t border-gray-100 bg-gray-50">
+                            <Text className="text-sm text-center text-gray-700">
                               선택하신 {TRANSPORT_LABELS.transit}(으)로 이동 시
                               약 {estimateMinutes("transit", p.id)}분
                             </Text>
@@ -4989,7 +5003,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
       />
 
       <Modal visible={!!editingLegId} transparent animationType="fade">
-        <View className="flex-1 justify-center px-6">
+        <View className="justify-center flex-1 px-6">
           <Pressable
             style={StyleSheet.absoluteFillObject}
             className="bg-black/40"
@@ -5010,7 +5024,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
               if (!legDetail) return null;
               return (
                 <ScrollView
-                  className="mb-3 max-h-40 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2"
+                  className="px-3 py-2 mb-3 border max-h-40 rounded-xl border-slate-100 bg-slate-50"
                   nestedScrollEnabled
                 >
                   <Text className="text-xs leading-5 text-slate-700">
@@ -5111,7 +5125,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                   <Text className="mb-2 text-sm font-semibold text-gray-800">
                     대중교통 종류 (필터)
                   </Text>
-                  <View className="mb-3 flex-row gap-2">
+                  <View className="flex-row gap-2 mb-3">
                     {(Object.keys(TRANSIT_TYPE_LABELS) as TransitType[]).map(
                       (tt) => {
                         const on = (leg.transitType ?? "subway") === tt;
@@ -5192,7 +5206,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                         );
                       })
                     ) : (
-                      <Text className="py-4 text-center text-xs text-gray-500">
+                      <Text className="py-4 text-xs text-center text-gray-500">
                         대중교통 경로를 조회하는 중이거나, 이 구간에 승차 정보가
                         없습니다.
                       </Text>
@@ -5215,7 +5229,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
           className="items-center justify-center bg-black/35"
         >
           <View
-            className="items-center rounded-2xl bg-white px-8 py-6"
+            className="items-center px-8 py-6 bg-white rounded-2xl"
             style={{
               shadowColor: "#000",
               shadowOffset: { width: 0, height: 4 },
@@ -5236,13 +5250,13 @@ export default function RouteCreateScreen(): React.JSX.Element {
       ) : null}
 
       <Modal visible={!!editingStop} transparent animationType="fade">
-        <View className="flex-1 justify-center px-6">
+        <View className="justify-center flex-1 px-6">
           <Pressable
             style={StyleSheet.absoluteFillObject}
             className="bg-black/40"
             onPress={() => setEditingStop(null)}
           />
-          <View className="rounded-2xl bg-white p-5" style={{ zIndex: 1 }}>
+          <View className="p-5 bg-white rounded-2xl" style={{ zIndex: 1 }}>
             <Text className="text-lg font-bold text-gray-900">표시 이름</Text>
             <Text className="mt-1 text-xs text-gray-500">
               지도·검색에 쓰인 원래 이름은 아래에 그대로 남아요.
@@ -5260,11 +5274,11 @@ export default function RouteCreateScreen(): React.JSX.Element {
             <TextInput
               value={editTitle}
               onChangeText={setEditTitle}
-              className="mt-3 rounded-xl border border-gray-200 px-3 py-3 text-base text-gray-900"
+              className="px-3 py-3 mt-3 text-base text-gray-900 border border-gray-200 rounded-xl"
               placeholder="표시할 이름"
               autoFocus
             />
-            <View className="mt-4 flex-row justify-end gap-2">
+            <View className="flex-row justify-end gap-2 mt-4">
               <Pressable
                 onPress={() => setEditingStop(null)}
                 className="rounded-xl px-4 py-2.5 active:opacity-70"

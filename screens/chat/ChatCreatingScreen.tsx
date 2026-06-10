@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,11 +9,11 @@ import {
   Dimensions,
   ActivityIndicator,
   Alert,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { NavigationProp, useNavigation } from "@react-navigation/native";
-import { RootStackParamList } from "@/App";
-import { safeGoBack } from "@/navigation/rootNavigation";
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { NavigationProp, useNavigation } from '@react-navigation/native';
+import { RootStackParamList } from '@/App';
+import { safeGoBack } from '@/navigation/rootNavigation';
 import {
   X,
   ChevronLeft,
@@ -22,27 +22,27 @@ import {
   Search,
   Image as ImageIcon,
   UserPlus,
-} from "lucide-react-native";
-import * as ImagePicker from "expo-image-picker";
-import { Asset } from "expo-asset";
-import { useAuthStore } from "@/store/authStore";
-import { getFriends, getFriendsRecent } from "@/api/friend/friends";
-import { createChatRoom, updateChatRoomImage } from "@/api/chat/chat";
-import { CHAT_PRESET_IMAGES } from "@/constants/chatPresetAvatars";
+} from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { Asset } from 'expo-asset';
+import { useAuthStore } from '@/store/authStore';
+import { getFriends, getFriendsRecent } from '@/api/friend/friends';
+import { createChatRoom, updateChatRoomImage } from '@/api/chat/chat';
+import { CHAT_PRESET_IMAGES } from '@/constants/chatPresetAvatars';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Friend = { id: string; name: string; uuid: string };
 
 const AVATAR_COLORS = [
-  "#FF6B6B",
-  "#4ECDC4",
-  "#45B7D1",
-  "#96CEB4",
-  "#FFEAA7",
-  "#DDA0DD",
-  "#98D8C8",
-  "#F7DC6F",
+  '#FF6B6B',
+  '#4ECDC4',
+  '#45B7D1',
+  '#96CEB4',
+  '#FFEAA7',
+  '#DDA0DD',
+  '#98D8C8',
+  '#F7DC6F',
 ];
 
 // 19개 프리셋 + 1개 로컬 피커 = 4×5 그리드
@@ -50,33 +50,30 @@ const PRESET_IMAGES = CHAT_PRESET_IMAGES;
 
 // ─── Grid 계산 ────────────────────────────────────────────────────────────────
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GRID_H_PADDING = 16;
 const GRID_COLS = 4;
 const GRID_GAP = 8;
-const CELL_SIZE =
-  (SCREEN_WIDTH - GRID_H_PADDING * 2 - GRID_GAP * (GRID_COLS - 1)) / GRID_COLS;
+const CELL_SIZE = (SCREEN_WIDTH - GRID_H_PADDING * 2 - GRID_GAP * (GRID_COLS - 1)) / GRID_COLS;
 
 // ─── 컴포넌트 ─────────────────────────────────────────────────────────────────
 
 export default function ChatCreatingScreen(): React.JSX.Element {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
-  const accessToken = useAuthStore((s) => s.accessToken);
-  const myUuid = useAuthStore((s) => s.user?.uuid);
+  const accessToken = useAuthStore(s => s.accessToken);
+  const myUuid = useAuthStore(s => s.user?.uuid);
 
-  const [step, setStep] = useState<"invite" | "setup">("invite");
+  const [step, setStep] = useState<'invite' | 'setup'>('invite');
 
   // Step 1
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedFriends, setSelectedFriends] = useState<Set<string>>(
-    new Set(),
-  );
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set());
   const [recentFriends, setRecentFriends] = useState<Friend[]>([]);
   const [allFriends, setAllFriends] = useState<Friend[]>([]);
   const [loadingFriends, setLoadingFriends] = useState(false);
 
   // Step 2
-  const [roomName, setRoomName] = useState("");
+  const [roomName, setRoomName] = useState('');
   const [localImageUri, setLocalImageUri] = useState<string | null>(null);
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -89,14 +86,14 @@ export default function ChatCreatingScreen(): React.JSX.Element {
     Promise.all([getFriendsRecent(accessToken), getFriends(accessToken)])
       .then(([recent, all]) => {
         setRecentFriends(
-          recent.map((f) => ({
+          recent.map(f => ({
             id: String(f.friendId),
             name: f.nickname,
             uuid: f.uuid,
           })),
         );
         setAllFriends(
-          all.map((f) => ({
+          all.map(f => ({
             id: String(f.friendId),
             name: f.nickname,
             uuid: f.uuid,
@@ -108,13 +105,11 @@ export default function ChatCreatingScreen(): React.JSX.Element {
 
   // ── 친구 초대 ────────────────────────────────────────────────────────────────
 
-  const filteredRecent = recentFriends.filter((f) =>
-    f.name.includes(searchQuery),
-  );
-  const filteredAll = allFriends.filter((f) => f.name.includes(searchQuery));
+  const filteredRecent = recentFriends.filter(f => f.name.includes(searchQuery));
+  const filteredAll = allFriends.filter(f => f.name.includes(searchQuery));
 
   const toggleFriend = (id: string) => {
-    setSelectedFriends((prev) => {
+    setSelectedFriends(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -145,29 +140,22 @@ export default function ChatCreatingScreen(): React.JSX.Element {
     if (!accessToken) return;
     const trimedName = roomName.trim();
     if (trimedName.length === 0) {
-      Alert.alert("알림", "채팅방 이름을 입력해주세요.");
+      Alert.alert('알림', '채팅방 이름을 입력해주세요.');
       return;
     }
     const allKnownFriends = [...recentFriends, ...allFriends];
     const selectedUuids = [...selectedFriends]
-      .map((id) => allKnownFriends.find((f) => f.id === id)?.uuid)
+      .map(id => allKnownFriends.find(f => f.id === id)?.uuid)
       .filter((uuid): uuid is string => uuid != null);
-    const memberUuids = myUuid
-      ? [...new Set([myUuid, ...selectedUuids])]
-      : selectedUuids;
+    const memberUuids = myUuid ? [...new Set([myUuid, ...selectedUuids])] : selectedUuids;
     setIsCreating(true);
     try {
-      const room = await createChatRoom(
-        accessToken,
-        memberUuids,
-        trimedName,
-        null,
-      );
+      const room = await createChatRoom(accessToken, memberUuids, trimedName, null);
 
       // 이미지 선택된 경우 별도 업로드
       let uploadUri: string | null = localImageUri;
       if (!uploadUri && selectedPresetId) {
-        const preset = PRESET_IMAGES.find((p) => p.id === selectedPresetId);
+        const preset = PRESET_IMAGES.find(p => p.id === selectedPresetId);
         if (preset) {
           const asset = Asset.fromModule(preset.source);
           await asset.downloadAsync();
@@ -184,25 +172,24 @@ export default function ChatCreatingScreen(): React.JSX.Element {
 
       navigation.goBack();
     } catch {
-      Alert.alert("오류", "채팅방 생성에 실패했습니다.");
+      Alert.alert('오류', '채팅방 생성에 실패했습니다.');
     } finally {
       setIsCreating(false);
     }
   };
 
-  const currentPreset = PRESET_IMAGES.find((p) => p.id === selectedPresetId);
+  const currentPreset = PRESET_IMAGES.find(p => p.id === selectedPresetId);
 
   // ── 공통 서브컴포넌트 ─────────────────────────────────────────────────────────
 
   const FriendRow = ({ friend }: { friend: Friend }) => {
     const isSelected = selectedFriends.has(friend.id);
-    const avatarColor =
-      AVATAR_COLORS[parseInt(friend.id, 10) % AVATAR_COLORS.length];
+    const avatarColor = AVATAR_COLORS[parseInt(friend.id, 10) % AVATAR_COLORS.length];
     return (
       <TouchableOpacity
         style={{
-          flexDirection: "row",
-          alignItems: "center",
+          flexDirection: 'row',
+          alignItems: 'center',
           paddingHorizontal: 16,
           paddingVertical: 12,
         }}
@@ -216,20 +203,16 @@ export default function ChatCreatingScreen(): React.JSX.Element {
             height: 48,
             borderRadius: 24,
             backgroundColor: avatarColor,
-            alignItems: "center",
-            justifyContent: "center",
+            alignItems: 'center',
+            justifyContent: 'center',
             marginRight: 12,
           }}
         >
-          <Text style={{ color: "white", fontSize: 18, fontWeight: "700" }}>
-            {friend.name[0]}
-          </Text>
+          <Text style={{ color: 'white', fontSize: 18, fontWeight: '700' }}>{friend.name[0]}</Text>
         </View>
 
         {/* 이름 */}
-        <Text style={{ flex: 1, fontSize: 15, color: "#111827" }}>
-          {friend.name}
-        </Text>
+        <Text style={{ flex: 1, fontSize: 15, color: '#111827' }}>{friend.name}</Text>
 
         {/* 선택 표시 */}
         <View
@@ -238,10 +221,10 @@ export default function ChatCreatingScreen(): React.JSX.Element {
             height: 24,
             borderRadius: 12,
             borderWidth: 2,
-            borderColor: isSelected ? "#3B82F6" : "#D1D5DB",
-            backgroundColor: isSelected ? "#3B82F6" : "transparent",
-            alignItems: "center",
-            justifyContent: "center",
+            borderColor: isSelected ? '#3B82F6' : '#D1D5DB',
+            backgroundColor: isSelected ? '#3B82F6' : 'transparent',
+            alignItems: 'center',
+            justifyContent: 'center',
           }}
         >
           {isSelected && <Check color="white" size={13} strokeWidth={3} />}
@@ -254,40 +237,34 @@ export default function ChatCreatingScreen(): React.JSX.Element {
   // Step 1: 친구 초대 화면
   // ══════════════════════════════════════════════════════════════════════════════
 
-  if (step === "invite") {
+  if (step === 'invite') {
     return (
-      <SafeAreaView
-        style={{ flex: 1, backgroundColor: "white" }}
-        edges={["top"]}
-      >
+      <SafeAreaView style={{ flex: 1, backgroundColor: 'white' }} edges={['top']}>
         {/* 헤더 */}
         <View
           style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
             paddingHorizontal: 8,
             paddingVertical: 8,
             borderBottomWidth: 1,
-            borderBottomColor: "#F3F4F6",
+            borderBottomColor: '#F3F4F6',
           }}
         >
-          <TouchableOpacity
-            onPress={() => safeGoBack(navigation)}
-            style={{ padding: 8 }}
-          >
+          <TouchableOpacity onPress={() => safeGoBack(navigation)} style={{ padding: 8 }}>
             <X color="#111827" size={22} />
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={() => setStep("setup")}
+            onPress={() => setStep('setup')}
             disabled={selectedFriends.size === 0}
             style={{ paddingHorizontal: 8, paddingVertical: 8 }}
           >
             <Text
               style={{
                 fontSize: 15,
-                fontWeight: "600",
-                color: selectedFriends.size > 0 ? "#3B82F6" : "#D1D5DB",
+                fontWeight: '600',
+                color: selectedFriends.size > 0 ? '#3B82F6' : '#D1D5DB',
               }}
             >
               다음
@@ -300,15 +277,13 @@ export default function ChatCreatingScreen(): React.JSX.Element {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <View
-            style={{ paddingHorizontal: 16, paddingTop: 20, paddingBottom: 40 }}
-          >
+          <View style={{ paddingHorizontal: 16, paddingTop: 20, paddingBottom: 40 }}>
             {/* 제목 */}
             <Text
               style={{
                 fontSize: 20,
-                fontWeight: "700",
-                color: "#111827",
+                fontWeight: '700',
+                color: '#111827',
                 marginBottom: 16,
               }}
             >
@@ -318,9 +293,9 @@ export default function ChatCreatingScreen(): React.JSX.Element {
             {/* 검색바 */}
             <View
               style={{
-                flexDirection: "row",
-                alignItems: "center",
-                backgroundColor: "#F3F4F6",
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: '#F3F4F6',
                 borderRadius: 12,
                 paddingHorizontal: 12,
                 paddingVertical: 10,
@@ -333,7 +308,7 @@ export default function ChatCreatingScreen(): React.JSX.Element {
                   flex: 1,
                   marginLeft: 8,
                   fontSize: 14,
-                  color: "#111827",
+                  color: '#111827',
                 }}
                 placeholder="이름으로 검색"
                 placeholderTextColor="#9CA3AF"
@@ -344,11 +319,7 @@ export default function ChatCreatingScreen(): React.JSX.Element {
 
             {/* 친구 목록 */}
             {loadingFriends ? (
-              <ActivityIndicator
-                size="small"
-                color="#3B82F6"
-                style={{ marginTop: 16 }}
-              />
+              <ActivityIndicator size="small" color="#3B82F6" style={{ marginTop: 16 }} />
             ) : (
               <>
                 {/* 자주 연락한 친구 */}
@@ -357,15 +328,15 @@ export default function ChatCreatingScreen(): React.JSX.Element {
                     <Text
                       style={{
                         fontSize: 12,
-                        fontWeight: "600",
-                        color: "#9CA3AF",
+                        fontWeight: '600',
+                        color: '#9CA3AF',
                         marginBottom: 4,
                         paddingHorizontal: 16,
                       }}
                     >
                       자주 연락한 친구
                     </Text>
-                    {filteredRecent.map((f) => (
+                    {filteredRecent.map(f => (
                       <FriendRow key={f.id} friend={f} />
                     ))}
                   </View>
@@ -377,27 +348,27 @@ export default function ChatCreatingScreen(): React.JSX.Element {
                     <Text
                       style={{
                         fontSize: 12,
-                        fontWeight: "600",
-                        color: "#9CA3AF",
+                        fontWeight: '600',
+                        color: '#9CA3AF',
                         marginBottom: 4,
                         paddingHorizontal: 16,
                       }}
                     >
                       전체 친구
                     </Text>
-                    {filteredAll.map((f) => (
+                    {filteredAll.map(f => (
                       <FriendRow key={f.id} friend={f} />
                     ))}
 
                     {/* 더 많은 친구 초대하기 */}
                     <TouchableOpacity
                       style={{
-                        flexDirection: "row",
-                        alignItems: "center",
+                        flexDirection: 'row',
+                        alignItems: 'center',
                         marginTop: 8,
                         paddingHorizontal: 16,
                         paddingVertical: 16,
-                        backgroundColor: "#F9FAFB",
+                        backgroundColor: '#F9FAFB',
                         borderRadius: 16,
                       }}
                       activeOpacity={0.7}
@@ -407,9 +378,9 @@ export default function ChatCreatingScreen(): React.JSX.Element {
                           width: 40,
                           height: 40,
                           borderRadius: 20,
-                          backgroundColor: "#E5E7EB",
-                          alignItems: "center",
-                          justifyContent: "center",
+                          backgroundColor: '#E5E7EB',
+                          alignItems: 'center',
+                          justifyContent: 'center',
                           marginRight: 12,
                         }}
                       >
@@ -419,8 +390,8 @@ export default function ChatCreatingScreen(): React.JSX.Element {
                         <Text
                           style={{
                             fontSize: 14,
-                            fontWeight: "600",
-                            color: "#111827",
+                            fontWeight: '600',
+                            color: '#111827',
                           }}
                         >
                           더 많은 친구 초대하기
@@ -428,13 +399,12 @@ export default function ChatCreatingScreen(): React.JSX.Element {
                         <Text
                           style={{
                             fontSize: 11,
-                            color: "#9CA3AF",
+                            color: '#9CA3AF',
                             marginTop: 2,
                           }}
                           numberOfLines={2}
                         >
-                          사용자를 검색하거나 링크를 초대하여 친구를
-                          만들어보세요!
+                          사용자를 검색하거나 링크를 초대하여 친구를 만들어보세요!
                         </Text>
                       </View>
                       <ChevronRight color="#9CA3AF" size={18} />
@@ -446,7 +416,7 @@ export default function ChatCreatingScreen(): React.JSX.Element {
                 {filteredRecent.length === 0 && filteredAll.length === 0 && (
                   <View
                     style={{
-                      alignItems: "center",
+                      alignItems: 'center',
                       paddingVertical: 48,
                       gap: 12,
                     }}
@@ -456,9 +426,9 @@ export default function ChatCreatingScreen(): React.JSX.Element {
                         width: 64,
                         height: 64,
                         borderRadius: 32,
-                        backgroundColor: searchQuery ? "#F3F4F6" : "#EFF6FF",
-                        alignItems: "center",
-                        justifyContent: "center",
+                        backgroundColor: searchQuery ? '#F3F4F6' : '#EFF6FF',
+                        alignItems: 'center',
+                        justifyContent: 'center',
                       }}
                     >
                       {searchQuery ? (
@@ -470,25 +440,23 @@ export default function ChatCreatingScreen(): React.JSX.Element {
                     <Text
                       style={{
                         fontSize: 15,
-                        fontWeight: "600",
-                        color: "#374151",
+                        fontWeight: '600',
+                        color: '#374151',
                       }}
                     >
-                      {searchQuery
-                        ? `"${searchQuery}" 검색 결과 없음`
-                        : "아직 친구가 없어요"}
+                      {searchQuery ? `"${searchQuery}" 검색 결과 없음` : '아직 친구가 없어요'}
                     </Text>
                     <Text
                       style={{
                         fontSize: 13,
-                        color: "#9CA3AF",
-                        textAlign: "center",
+                        color: '#9CA3AF',
+                        textAlign: 'center',
                         lineHeight: 20,
                       }}
                     >
                       {searchQuery
-                        ? "다른 이름으로 다시 검색해보세요"
-                        : "친구를 추가하면\n함께 채팅방을 만들 수 있어요"}
+                        ? '다른 이름으로 다시 검색해보세요'
+                        : '친구를 추가하면\n함께 채팅방을 만들 수 있어요'}
                     </Text>
                   </View>
                 )}
@@ -505,23 +473,20 @@ export default function ChatCreatingScreen(): React.JSX.Element {
   // ══════════════════════════════════════════════════════════════════════════════
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "white" }} edges={["top"]}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: 'white' }} edges={['top']}>
       {/* 헤더 */}
       <View
         style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
           paddingHorizontal: 8,
           paddingVertical: 8,
           borderBottomWidth: 1,
-          borderBottomColor: "#F3F4F6",
+          borderBottomColor: '#F3F4F6',
         }}
       >
-        <TouchableOpacity
-          onPress={() => setStep("invite")}
-          style={{ padding: 8 }}
-        >
+        <TouchableOpacity onPress={() => setStep('invite')} style={{ padding: 8 }}>
           <ChevronLeft color="#111827" size={22} />
         </TouchableOpacity>
         <TouchableOpacity
@@ -532,9 +497,7 @@ export default function ChatCreatingScreen(): React.JSX.Element {
           {isCreating ? (
             <ActivityIndicator size="small" color="#3B82F6" />
           ) : (
-            <Text style={{ fontSize: 15, fontWeight: "600", color: "#3B82F6" }}>
-              생성
-            </Text>
+            <Text style={{ fontSize: 15, fontWeight: '600', color: '#3B82F6' }}>생성</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -542,28 +505,22 @@ export default function ChatCreatingScreen(): React.JSX.Element {
       <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
         <View style={{ paddingTop: 32, paddingBottom: 40 }}>
           {/* 채팅방 프로필 이미지 */}
-          <View style={{ alignItems: "center", marginBottom: 32 }}>
+          <View style={{ alignItems: 'center', marginBottom: 32 }}>
             <View
               style={{
                 width: 96,
                 height: 96,
                 borderRadius: 48,
-                backgroundColor: "#E5E7EB",
-                alignItems: "center",
-                justifyContent: "center",
-                overflow: "hidden",
+                backgroundColor: '#E5E7EB',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
               }}
             >
               {localImageUri ? (
-                <Image
-                  source={{ uri: localImageUri }}
-                  style={{ width: 96, height: 96 }}
-                />
+                <Image source={{ uri: localImageUri }} style={{ width: 96, height: 96 }} />
               ) : currentPreset ? (
-                <Image
-                  source={currentPreset.source}
-                  style={{ width: 96, height: 96 }}
-                />
+                <Image source={currentPreset.source} style={{ width: 96, height: 96 }} />
               ) : (
                 <ImageIcon color="#9CA3AF" size={36} />
               )}
@@ -575,7 +532,7 @@ export default function ChatCreatingScreen(): React.JSX.Element {
             <View
               style={{
                 borderWidth: 1,
-                borderColor: "#E5E7EB",
+                borderColor: '#E5E7EB',
                 borderRadius: 16,
                 paddingHorizontal: 16,
                 paddingTop: 12,
@@ -584,22 +541,18 @@ export default function ChatCreatingScreen(): React.JSX.Element {
             >
               <View
                 style={{
-                  flexDirection: "row",
-                  justifyContent: "space-between",
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
                   marginBottom: 4,
                 }}
               >
-                <Text style={{ fontSize: 11, color: "#9CA3AF" }}>
-                  채팅방 이름
-                </Text>
-                <Text style={{ fontSize: 11, color: "#9CA3AF" }}>
-                  {roomName.length}/100
-                </Text>
+                <Text style={{ fontSize: 11, color: '#9CA3AF' }}>채팅방 이름</Text>
+                <Text style={{ fontSize: 11, color: '#9CA3AF' }}>{roomName.length}/100</Text>
               </View>
               <TextInput
-                style={{ fontSize: 15, color: "#111827", paddingVertical: 0 }}
+                style={{ fontSize: 15, color: '#111827', paddingVertical: 0 }}
                 value={roomName}
-                onChangeText={(t) => setRoomName(t.slice(0, 100))}
+                onChangeText={t => setRoomName(t.slice(0, 100))}
                 maxLength={100}
                 placeholder="채팅방 이름을 입력하세요"
                 placeholderTextColor="#9CA3AF"
@@ -611,8 +564,8 @@ export default function ChatCreatingScreen(): React.JSX.Element {
           <View
             style={{
               paddingHorizontal: GRID_H_PADDING,
-              flexDirection: "row",
-              flexWrap: "wrap",
+              flexDirection: 'row',
+              flexWrap: 'wrap',
               gap: GRID_GAP,
             }}
           >
@@ -624,12 +577,12 @@ export default function ChatCreatingScreen(): React.JSX.Element {
                 width: CELL_SIZE,
                 height: CELL_SIZE,
                 borderRadius: CELL_SIZE / 2,
-                backgroundColor: "#F3F4F6",
-                alignItems: "center",
-                justifyContent: "center",
-                overflow: "hidden",
+                backgroundColor: '#F3F4F6',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
                 borderWidth: localImageUri ? 3 : 0,
-                borderColor: "#3B82F6",
+                borderColor: '#3B82F6',
               }}
             >
               {localImageUri ? (
@@ -638,15 +591,12 @@ export default function ChatCreatingScreen(): React.JSX.Element {
                   style={{ width: CELL_SIZE, height: CELL_SIZE }}
                 />
               ) : (
-                <ImageIcon
-                  color="#9CA3AF"
-                  size={Math.round(CELL_SIZE * 0.35)}
-                />
+                <ImageIcon color="#9CA3AF" size={Math.round(CELL_SIZE * 0.35)} />
               )}
             </TouchableOpacity>
 
             {/* 프리셋 이미지 19개 */}
-            {PRESET_IMAGES.map((preset) => {
+            {PRESET_IMAGES.map(preset => {
               const isSelected = selectedPresetId === preset.id;
               return (
                 <TouchableOpacity
@@ -657,18 +607,15 @@ export default function ChatCreatingScreen(): React.JSX.Element {
                     width: CELL_SIZE,
                     height: CELL_SIZE,
                     borderRadius: CELL_SIZE / 2,
-                    backgroundColor: "#E5E7EB",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    overflow: "hidden",
+                    backgroundColor: '#E5E7EB',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    overflow: 'hidden',
                     borderWidth: isSelected ? 3 : 0,
-                    borderColor: "#3B82F6",
+                    borderColor: '#3B82F6',
                   }}
                 >
-                  <Image
-                    source={preset.source}
-                    style={{ width: CELL_SIZE, height: CELL_SIZE }}
-                  />
+                  <Image source={preset.source} style={{ width: CELL_SIZE, height: CELL_SIZE }} />
                 </TouchableOpacity>
               );
             })}
