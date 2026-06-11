@@ -25,6 +25,7 @@ import OAuthWebViewModal from '../components/OAuthWebViewModal';
 import { tokenStorage } from '../utils/tokenStorage';
 import { getOnboardingStatus } from '../api/onboard';
 import { signInWithGoogleNative, formatGoogleOAuthBackendError } from '../utils/googleSignIn';
+import { authInputStyle, authTextInputColorProps } from '../constants/authFormTheme';
 
 const KAKAO_REST_KEY = process.env.EXPO_PUBLIC_KAKAO_REST_API_KEY ?? '';
 const KAKAO_REDIRECT_URI = process.env.EXPO_PUBLIC_OAUTH_REDIRECT_URI ?? '';
@@ -299,7 +300,7 @@ export default function SignupScreen() {
     `w-full px-5 py-4 text-base rounded-full ${errors[field] ? 'bg-red-50' : 'bg-gray-100'}`;
 
   const inputStyle = (field: string) =>
-    errors[field] ? { borderWidth: 1, borderColor: '#fca5a5' } : {};
+    authInputStyle(errors[field] ? { borderWidth: 1, borderColor: '#fca5a5' } : undefined);
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
@@ -325,6 +326,7 @@ export default function SignupScreen() {
             {/* 아이디 */}
             <View>
               <TextInput
+                {...authTextInputColorProps}
                 ref={userIdRef}
                 value={userId}
                 onChangeText={text => handleChange('userId', text, setUserId)}
@@ -345,6 +347,7 @@ export default function SignupScreen() {
             {/* 이메일 */}
             <View>
               <TextInput
+                {...authTextInputColorProps}
                 ref={emailRef}
                 value={email}
                 onChangeText={text => handleChange('email', text, setEmail)}
@@ -366,6 +369,7 @@ export default function SignupScreen() {
             {/* 닉네임 */}
             <View>
               <TextInput
+                {...authTextInputColorProps}
                 ref={nicknameRef}
                 value={nickname}
                 onChangeText={text => handleChange('nickname', text, setNickname)}
@@ -385,6 +389,7 @@ export default function SignupScreen() {
             {/* 비밀번호 */}
             <View>
               <TextInput
+                {...authTextInputColorProps}
                 ref={passwordRef}
                 value={displayPassword}
                 onChangeText={handlePasswordInput}
@@ -413,6 +418,7 @@ export default function SignupScreen() {
                 style={errors.phone ? { borderWidth: 1, borderColor: '#fca5a5' } : {}}
               >
                 <TextInput
+                  {...authTextInputColorProps}
                   ref={phoneRef}
                   value={phone}
                   onChangeText={text => handleChange('phone', text, setPhone)}
@@ -421,6 +427,7 @@ export default function SignupScreen() {
                   keyboardType="phone-pad"
                   returnKeyType="done"
                   className="flex-1 py-4 pl-5 text-base"
+                  style={authInputStyle()}
                 />
                 <TouchableOpacity
                   activeOpacity={0.7}

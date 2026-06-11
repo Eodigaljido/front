@@ -29,6 +29,7 @@ import OAuthWebViewModal from '../components/OAuthWebViewModal';
 import { tokenStorage } from '../utils/tokenStorage';
 import { resetToMainAfterAuth } from '../utils/pendingShareLink';
 import { signInWithGoogleNative, formatGoogleOAuthBackendError } from '../utils/googleSignIn';
+import { authInputStyle, authTextInputColorProps } from '../constants/authFormTheme';
 
 const KAKAO_REST_KEY = process.env.EXPO_PUBLIC_KAKAO_REST_API_KEY ?? '';
 const KAKAO_REDIRECT_URI = process.env.EXPO_PUBLIC_OAUTH_REDIRECT_URI ?? '';
@@ -207,7 +208,7 @@ export default function LoginScreen() {
             />
 
             {/* 타이틀 */}
-            <Text className="mb-12 text-2xl font-bold">
+            <Text className="mb-12 text-2xl font-bold text-gray-900">
               어디
               <Text className="text-blue-500">
                 갈<Text className="text-green-600">지</Text>도
@@ -217,6 +218,7 @@ export default function LoginScreen() {
             {/* 입력 */}
             <View className="w-full gap-6 mb-2">
               <TextInput
+                {...authTextInputColorProps}
                 value={identifier}
                 onChangeText={setIdentifier}
                 placeholder="이메일 또는 아이디 입력"
@@ -226,8 +228,10 @@ export default function LoginScreen() {
                 onSubmitEditing={() => passwordRef.current?.focus()}
                 blurOnSubmit={false}
                 className="w-full h-auto px-5 py-4 bg-gray-100 rounded-full"
+                style={authInputStyle()}
               />
               <TextInput
+                {...authTextInputColorProps}
                 ref={passwordRef}
                 value={displayPassword}
                 onChangeText={handleInput}
@@ -236,6 +240,7 @@ export default function LoginScreen() {
                 returnKeyType="done"
                 onSubmitEditing={handleLogin}
                 className="w-full h-auto px-5 py-4 bg-gray-100 rounded-full"
+                style={authInputStyle()}
               />
             </View>
 

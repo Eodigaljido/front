@@ -46,6 +46,8 @@ module.exports = ({ config }) => ({
   },
   android: {
     ...config.android,
+    /** 시스템 다크 모드와 무관하게 라이트 UI 유지 */
+    userInterfaceStyle: 'light',
     /** EAS production API가 http:// 이므로 릴리스 APK/AAB에서도 요청 허용 */
     usesCleartextTraffic: true,
     intentFilters: [
