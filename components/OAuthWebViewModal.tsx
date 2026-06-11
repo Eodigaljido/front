@@ -1,8 +1,12 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Modal, View, TouchableOpacity, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { WebViewNavigation } from 'react-native-webview';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  oauthRedirectMatches,
+  parseOAuthCodeFromUrl,
+} from '../utils/oauthRedirect';
 
 interface Props {
   visible: boolean;
@@ -15,15 +19,19 @@ interface Props {
 export default function OAuthWebViewModal({ visible, authUrl, redirectUri, onCode, onClose }: Props) {
   const handled = useRef(false);
 
+  useEffect(() => {
+    if (visible) handled.current = false;
+  }, [visible, authUrl, redirectUri]);
+
   function handleNavigation(navState: WebViewNavigation) {
     const { url } = navState;
-    if (!url.startsWith(redirectUri)) return false;
+    if (!oauthRedirectMatches(url, redirectUri)) return false;
 
     if (!handled.current) {
       handled.current = true;
-      const match = url.match(/[?&]code=([^&]+)/);
-      if (match) {
-        onCode(decodeURIComponent(match[1]));
+      const code = parseOAuthCodeFromUrl(url);
+      if (code) {
+        onCode(code);
       } else {
         onClose();
       }
@@ -42,14 +50,14 @@ export default function OAuthWebViewModal({ visible, authUrl, redirectUri, onCod
         <WebView
           source={{ uri: authUrl }}
           onShouldStartLoadWithRequest={navState => {
-            if (navState.url.startsWith(redirectUri)) {
+            if (oauthRedirectMatches(navState.url, redirectUri)) {
               handleNavigation(navState);
               return false;
             }
             return true;
           }}
           onNavigationStateChange={navState => {
-            if (navState.url.startsWith(redirectUri)) {
+            if (oauthRedirectMatches(navState.url, redirectUri)) {
               handleNavigation(navState);
             }
           }}
