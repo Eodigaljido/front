@@ -25,6 +25,7 @@ import {
 } from '../api/auth/find';
 import { OtpModal } from '../components/OtpModal';
 import { authInputStyle, authTextInputColorProps } from '../constants/authFormTheme';
+import React from 'react';
 
 type FindAccountNavProp = NativeStackNavigationProp<RootStackParamList, 'FindAccount'>;
 
