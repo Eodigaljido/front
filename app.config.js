@@ -22,6 +22,7 @@ module.exports = ({ config }) => ({
   },
   plugins: [
     ...(config.plugins ?? []),
+    'expo-web-browser',
     'expo-secure-store',
     '@react-native-community/datetimepicker',
     [
@@ -30,6 +31,12 @@ module.exports = ({ config }) => ({
         android: {
           usesCleartextTraffic: true,
         },
+      },
+    ],
+    [
+      '@react-native-google-signin/google-signin',
+      {
+        iosUrlScheme: 'com.googleusercontent.apps.658554777625-ssds5atn1lpo91sccghm3ph8dvipqhtj',
       },
     ],
   ],
@@ -74,6 +81,29 @@ module.exports = ({ config }) => ({
             scheme: 'https',
             host: shareHost,
             pathPrefix: '/routes/collaborative',
+          },
+        ],
+        category: ['BROWSABLE', 'DEFAULT'],
+      },
+      {
+        action: 'VIEW',
+        data: [
+          {
+            scheme: 'eodigaljido',
+            host: 'oauth',
+            pathPrefix: '/google',
+          },
+        ],
+        category: ['BROWSABLE', 'DEFAULT'],
+      },
+      {
+        action: 'VIEW',
+        autoVerify: true,
+        data: [
+          {
+            scheme: 'https',
+            host: shareHost,
+            pathPrefix: '/oauth/google',
           },
         ],
         category: ['BROWSABLE', 'DEFAULT'],
