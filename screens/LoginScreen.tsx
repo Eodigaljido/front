@@ -10,6 +10,7 @@ import {
   ScrollView,
   Platform,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -27,24 +28,16 @@ import { kakaoOAuth, googleOAuth } from '../api/auth';
 import OAuthWebViewModal from '../components/OAuthWebViewModal';
 import { tokenStorage } from '../utils/tokenStorage';
 import { resetToMainAfterAuth } from '../utils/pendingShareLink';
+import { signInWithGoogleNative, formatGoogleOAuthBackendError } from '../utils/googleSignIn';
 
 const KAKAO_REST_KEY = process.env.EXPO_PUBLIC_KAKAO_REST_API_KEY ?? '';
-const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID ?? '';
 const KAKAO_REDIRECT_URI = process.env.EXPO_PUBLIC_OAUTH_REDIRECT_URI ?? '';
-const GOOGLE_REDIRECT_URI = process.env.EXPO_PUBLIC_OAUTH_REDIRECT_URI ?? '';
 
 const KAKAO_AUTH_URL =
   `https://kauth.kakao.com/oauth/authorize` +
   `?client_id=${KAKAO_REST_KEY}` +
   `&redirect_uri=${encodeURIComponent(KAKAO_REDIRECT_URI)}` +
   `&response_type=code`;
-
-const GOOGLE_AUTH_URL =
-  `https://accounts.google.com/o/oauth2/v2/auth` +
-  `?client_id=${GOOGLE_CLIENT_ID}` +
-  `&redirect_uri=${encodeURIComponent(GOOGLE_REDIRECT_URI)}` +
-  `&response_type=code` +
-  `&scope=${encodeURIComponent('email profile')}`;
 
 type LoginNavProp = NativeStackNavigationProp<RootStackParamList, 'Login'>;
 
@@ -53,6 +46,7 @@ export default function LoginScreen() {
   const [identifier, setIdentifier] = useState('');
   const [loginError, setLoginError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleOAuthPending, setIsGoogleOAuthPending] = useState(false);
   const [oauthModal, setOauthModal] = useState<'kakao' | 'google' | null>(null);
   const { displayPassword, realPasswordRef, handleInput, maskAll } = usePasswordMask();
   const loginStore = useAuthStore(s => s.login);
@@ -87,16 +81,29 @@ export default function LoginScreen() {
     }
   }
 
-  async function handleOAuthCode(provider: 'kakao' | 'google', code: string) {
-    setOauthModal(null);
+  async function handleGooglePress() {
+    if (isLoading || isGoogleOAuthPending) return;
+    setLoginError('');
+    setIsGoogleOAuthPending(true);
+    try {
+      const result = await signInWithGoogleNative();
+      if (!result.ok) {
+        if (result.reason !== 'cancelled') {
+          setLoginError(result.message ?? '구글 로그인에 실패했습니다.');
+        }
+        return;
+      }
+      await handleGoogleIdToken(result.idToken);
+    } finally {
+      setIsGoogleOAuthPending(false);
+    }
+  }
+
+  async function handleGoogleIdToken(idToken: string) {
     setIsLoading(true);
     setLoginError('');
     try {
-      const redirectUri = provider === 'kakao' ? KAKAO_REDIRECT_URI : GOOGLE_REDIRECT_URI;
-      const res =
-        provider === 'kakao'
-          ? await kakaoOAuth({ code, redirectUri })
-          : await googleOAuth({ code, redirectUri });
+      const res = await googleOAuth({ idToken });
 
       await tokenStorage.saveTokens(res.accessToken, res.refreshToken);
       await tokenStorage.saveUserUuid(res.user.uuid);
@@ -110,8 +117,39 @@ export default function LoginScreen() {
       } else {
         resetToMainAfterAuth(navigation);
       }
-    } catch {
-      setLoginError('소셜 로그인에 실패했습니다. 다시 시도해주세요.');
+    } catch (err: unknown) {
+      const backendMsg = (err as { response?: { data?: { message?: string } } })?.response?.data
+        ?.message;
+      setLoginError(formatGoogleOAuthBackendError(backendMsg, idToken));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleOAuthCode(_provider: 'kakao', code: string) {
+    setOauthModal(null);
+    setIsLoading(true);
+    setLoginError('');
+    try {
+      const res = await kakaoOAuth({ code, redirectUri: KAKAO_REDIRECT_URI });
+
+      await tokenStorage.saveTokens(res.accessToken, res.refreshToken);
+      await tokenStorage.saveUserUuid(res.user.uuid);
+      await setTokens(res.accessToken, res.refreshToken);
+      setUser(res.user);
+      await refreshProfile().catch(() => {});
+
+      const { completed } = await getOnboardingStatus(res.accessToken);
+      if (!completed) {
+        navigation.reset({ index: 0, routes: [{ name: 'OnBoardStart' }] });
+      } else {
+        resetToMainAfterAuth(navigation);
+      }
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+        '소셜 로그인에 실패했습니다. 다시 시도해주세요.';
+      setLoginError(msg);
     } finally {
       setIsLoading(false);
     }
@@ -253,8 +291,8 @@ export default function LoginScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 activeOpacity={0.7}
-                disabled={isLoading}
-                onPress={() => setOauthModal('google')}
+                disabled={isLoading || isGoogleOAuthPending}
+                onPress={() => void handleGooglePress()}
                 className="items-center justify-center w-12 h-12 bg-white border border-gray-200 rounded-full"
               >
                 <Image
@@ -277,15 +315,15 @@ export default function LoginScreen() {
           onClose={() => setOauthModal(null)}
         />
       )}
-      {oauthModal === 'google' && (
-        <OAuthWebViewModal
-          visible
-          authUrl={GOOGLE_AUTH_URL}
-          redirectUri={GOOGLE_REDIRECT_URI}
-          onCode={code => handleOAuthCode('google', code)}
-          onClose={() => setOauthModal(null)}
-        />
-      )}
+
+      <Modal visible={isGoogleOAuthPending} transparent animationType="fade">
+        <View className="flex-1 items-center justify-center bg-black/40">
+          <View className="items-center px-8 py-6 bg-white rounded-2xl">
+            <ActivityIndicator size="large" color="#3b82f6" />
+            <Text className="mt-4 text-base font-medium text-gray-800">구글 로그인 중…</Text>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
