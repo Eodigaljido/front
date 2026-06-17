@@ -1,20 +1,32 @@
 import { Platform } from 'react-native';
-import {
-  GoogleSignin,
-  isErrorWithCode,
-  isSuccessResponse,
-  statusCodes,
-} from '@react-native-google-signin/google-signin';
+import type * as GoogleSigninModule from '@react-native-google-signin/google-signin';
 import {
   googleIdTokenAudienceMismatchHint,
   resolveGoogleWebClientId,
 } from './googleOAuthClientIds';
 
+/**
+ * 네이티브 모듈을 lazy require 한다.
+ * Expo Go 처럼 RNGoogleSignin 네이티브 바이너리가 없는 환경에서는
+ * 최상위 import 시 부팅 즉시 Invariant Violation 으로 크래시하므로,
+ * 실제 사용 시점에만 로드하고 없으면 null 을 반환한다.
+ */
+function loadGoogleSignin(): typeof GoogleSigninModule | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('@react-native-google-signin/google-signin');
+  } catch {
+    return null;
+  }
+}
+
 let configured = false;
 
 export function configureGoogleSignIn(): void {
   if (configured) return;
-  GoogleSignin.configure({
+  const mod = loadGoogleSignin();
+  if (!mod) return;
+  mod.GoogleSignin.configure({
     webClientId: resolveGoogleWebClientId(),
     offlineAccess: false,
   });
@@ -33,6 +45,17 @@ export async function signInWithGoogleNative(): Promise<GoogleSignInResult> {
       message: '웹에서는 구글 로그인을 지원하지 않습니다.',
     };
   }
+
+  const mod = loadGoogleSignin();
+  if (!mod) {
+    return {
+      ok: false,
+      reason: 'unavailable',
+      message:
+        '이 빌드에서는 구글 로그인을 사용할 수 없습니다. (Expo Go 미지원 — dev build 필요)',
+    };
+  }
+  const { GoogleSignin, isErrorWithCode, isSuccessResponse, statusCodes } = mod;
 
   try {
     configureGoogleSignIn();
