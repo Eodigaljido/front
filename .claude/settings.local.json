@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python -c \"import json; d=json.load\\(open\\(r'c:\\\\Users\\\\gktra\\\\Desktop\\\\Workout\\\\Coding\\\\Project\\\\Team\\\\Eodigaljido\\\\frontend\\\\.tmp-api.json'\\)\\); paths=[p for p in d.get\\('paths',{}\\) if 'chat' in p.lower\\(\\)]; print\\('\\\\n'.join\\(paths\\)\\)\")"
+      "Bash(python -c \"import json; d=json.load\\(open\\(r'c:\\\\Users\\\\gktra\\\\Desktop\\\\Workout\\\\Coding\\\\Project\\\\Team\\\\Eodigaljido\\\\frontend\\\\.tmp-api.json'\\)\\); paths=[p for p in d.get\\('paths',{}\\) if 'chat' in p.lower\\(\\)]; print\\('\\\\n'.join\\(paths\\)\\)\")",
+      "Bash(Get-ChildItem -Recurse \"c:\\\\Users\\\\gktra\\\\Desktop\\\\Workout\\\\Coding\\\\Project\\\\Team\\\\Eodigaljido\\\\frontend\\\\components\\\\chat\" -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object FullName)",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)"
     ]
   }
 }

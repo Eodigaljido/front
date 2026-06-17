@@ -27,6 +27,7 @@ export function useChatSocket(
 ) {
   const clientRef = useRef<Client | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const readyRef = useRef(false); // true only after onConnect + brief settle delay
   const accessToken = useAuthStore((s) => s.accessToken);
   const onEventRef = useRef(onEvent);
   const onTypingEventRef = useRef(onTypingEvent);
@@ -54,6 +55,9 @@ export function useChatSocket(
       reconnectDelay: 5000,
       onConnect: () => {
         setIsConnected(true);
+        // Small settle delay so the server finishes processing CONNECT before
+        // we publish anything (prevents the "clientInboundChannel" STOMP error).
+        setTimeout(() => { readyRef.current = true; }, 300);
         uuids.forEach((uuid) => {
           console.log("[STOMP] 연결됨 →", `/topic/chat/${uuid}`);
           client.subscribe(`/topic/chat/${uuid}`, (frame) => {
@@ -90,6 +94,7 @@ export function useChatSocket(
 
     return () => {
       setIsConnected(false);
+      readyRef.current = false;
       client.deactivate();
       clientRef.current = null;
     };
@@ -115,7 +120,7 @@ export function useChatSocket(
 
   const sendTyping = useCallback(
     (isTyping: boolean): void => {
-      if (!singleRoomUuid || !clientRef.current?.connected) return;
+      if (!singleRoomUuid || !clientRef.current?.connected || !readyRef.current) return;
       clientRef.current.publish({
         destination: `/app/chat/${singleRoomUuid}/typing`,
         headers: { Authorization: `Bearer ${accessToken}` },

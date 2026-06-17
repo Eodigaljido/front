@@ -44,7 +44,6 @@ import {
   updateChatRoomImage,
 } from "@/api/chat/chat";
 import { getFriends } from "@/api/friend/friends";
-import { getUserProfileByUuid } from "@/api/users";
 import { useAuthStore } from "@/store/authStore";
 import { CHAT_PRESET_IMAGES } from "@/constants/chatPresetAvatars";
 
@@ -63,9 +62,10 @@ type Member = {
 
 type InvitableFriend = {
   id: string;
+  userId: string;
   uuid: string;
   name: string;
-  userId?: string;
+  profileImageUrl?: string;
 };
 
 const PRESET_IMAGES = CHAT_PRESET_IMAGES;
@@ -100,6 +100,7 @@ export default function ChatRoomInfoScreen() {
   const [imageModalVisible, setImageModalVisible] = useState(false);
   const [inviteModalVisible, setInviteModalVisible] = useState(false);
   const [isSavingImage, setIsSavingImage] = useState(false);
+  const [isInviting, setIsInviting] = useState(false);
 
   const [editingName, setEditingName] = useState("");
   const [tempPresetId, setTempPresetId] = useState("");
@@ -139,8 +140,10 @@ export default function ChatRoomInfoScreen() {
         setFriends(
           list.map((f) => ({
             id: String(f.friendId),
+            userId: f.userId,
             uuid: f.uuid,
             name: f.nickname,
+            profileImageUrl: f.profileImageUrl,
           })),
         ),
       )
@@ -231,21 +234,36 @@ export default function ChatRoomInfoScreen() {
       setInviteModalVisible(false);
       return;
     }
-    for (const id of selectedFriends) {
-      const friend = friends.find((f) => f.id === id);
-      if (!friend) continue;
-      try {
-        const profile = await getUserProfileByUuid(friend.uuid);
-        const userId = profile.userId;
-        if (!userId) continue;
-        await inviteChatMember(accessToken, roomUuid, userId);
-      } catch {
-        /* skip failed invite */
+
+    setIsInviting(true);
+    let successCount = 0;
+    let failedCount = 0;
+
+    try {
+      for (const id of selectedFriends) {
+        const friend = friends.find((f) => f.id === id);
+        if (!friend) continue;
+        try {
+          await inviteChatMember(accessToken, roomUuid, String(friend.userId));
+          successCount++;
+        } catch {
+          failedCount++;
+        }
       }
+
+      setSelectedFriends(new Set());
+      setInviteModalVisible(false);
+      void loadRoom();
+
+      if (failedCount > 0) {
+        Alert.alert(
+          "초대 완료",
+          `${successCount}명 초대 성공${failedCount > 0 ? `, ${failedCount}명 초대 실패` : ""}`,
+        );
+      }
+    } finally {
+      setIsInviting(false);
     }
-    setSelectedFriends(new Set());
-    setInviteModalVisible(false);
-    void loadRoom();
   };
 
   const handleLeaveRoom = async () => {
@@ -661,13 +679,15 @@ export default function ChatRoomInfoScreen() {
               <Text style={s.sheetTitle}>멤버 초대</Text>
               <TouchableOpacity
                 onPress={handleConfirmInvite}
-                disabled={selectedFriends.size === 0}
+                disabled={selectedFriends.size === 0 || isInviting}
                 style={[
                   s.sheetConfirmBtn,
-                  { opacity: selectedFriends.size > 0 ? 1 : 0.35 },
+                  { opacity: selectedFriends.size > 0 && !isInviting ? 1 : 0.35 },
                 ]}
               >
-                <Text style={s.sheetConfirmText}>완료</Text>
+                <Text style={s.sheetConfirmText}>
+                  {isInviting ? "초대 중..." : "완료"}
+                </Text>
               </TouchableOpacity>
             </View>
             <ScrollView showsVerticalScrollIndicator={false}>
@@ -688,11 +708,18 @@ export default function ChatRoomInfoScreen() {
                       onPress={() => toggleFriendSelect(friend.id)}
                       activeOpacity={0.7}
                     >
-                      <View
-                        style={[s.memberAvatar, { backgroundColor: color }]}
-                      >
-                        <Text style={s.memberAvatarText}>{friend.name[0]}</Text>
-                      </View>
+                      {friend.profileImageUrl ? (
+                        <Image
+                          source={{ uri: friend.profileImageUrl }}
+                          style={[s.memberAvatar, { backgroundColor: color }]}
+                        />
+                      ) : (
+                        <View
+                          style={[s.memberAvatar, { backgroundColor: color }]}
+                        >
+                          <Text style={s.memberAvatarText}>{friend.name[0]}</Text>
+                        </View>
+                      )}
                       <Text
                         style={{
                           flex: 1,

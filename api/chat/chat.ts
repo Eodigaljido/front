@@ -276,6 +276,66 @@ export async function updateChatRoomImage(
   );
 }
 
+// ── 루트 기록 ──────────────────────────────────────────────────────────────────
+
+export interface RouteHistoryItem {
+  courseUuid: string;
+  routeChatRoomUuid: string;
+  name: string;
+  participantCount: number;
+}
+
+export interface RouteFeedItem {
+  type: "CHAT" | "COURSE";
+  itemId: number;
+  actorUuid: string;
+  actorNickname: string;
+  actorProfileImageUrl: string | null;
+  content: string | null;
+  action: "CHAT" | "CHAT_EDITED" | "CHAT_DELETED" | "ROUTE_UPDATED";
+  editDescription: string | null;
+  createdAt: string;
+}
+
+export interface RouteFeedPage {
+  items: RouteFeedItem[];
+  pageInfo: {
+    page: number;
+    size: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+/** GET /api/route-history?chatRoomUuid=... */
+export async function getRouteHistory(
+  accessToken: string,
+  chatRoomUuid: string,
+): Promise<RouteHistoryItem[]> {
+  const res = await instance.get<RouteHistoryItem[]>("/api/route-history", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    params: { chatRoomUuid },
+  });
+  return Array.isArray(res.data) ? res.data : [];
+}
+
+/** GET /api/route-history/{courseId}/feed */
+export async function getRouteFeed(
+  accessToken: string,
+  courseId: string,
+  page = 0,
+  size = 30,
+): Promise<RouteFeedPage> {
+  const res = await instance.get<RouteFeedPage>(
+    `/api/route-history/${courseId}/feed`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      params: { page, size },
+    },
+  );
+  return res.data;
+}
+
 /** Swagger: POST /chats/{roomUuid}/route — 루트 공유 메시지(ROUTE 타입) */
 export async function shareRouteToChat(
   accessToken: string,

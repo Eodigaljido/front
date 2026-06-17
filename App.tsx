@@ -97,7 +97,7 @@ export type RootStackParamList = {
   // 채팅 관련
   ChatRoomScreen: { roomUuid: string; roomName: string; memberCount?: number };
   ChatCreatingScreen: undefined;
-  ChatRouteHistory: undefined;
+  ChatRouteHistory: { roomUuid: string; roomName: string };
   ChatRoomInfoScreen: { roomUuid: string; roomName: string };
 
   FollowingNews: undefined;
