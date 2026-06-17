@@ -546,6 +546,25 @@ export default function MeetDetailScreen(): React.JSX.Element {
 
               {/* 액션 카드 */}
               <View style={s.actionCard}>
+                <TouchableOpacity
+                  style={s.actionRow}
+                  onPress={() =>
+                    navigation.navigate("MeetMembers", {
+                      groupUuid,
+                      groupName: group.name,
+                    })
+                  }
+                  activeOpacity={0.7}
+                >
+                  <View style={[s.actionIcon, { backgroundColor: "#EFF6FF" }]}>
+                    <Users color="#3B82F6" size={17} />
+                  </View>
+                  <Text style={s.actionText}>멤버 보기</Text>
+                  <Text style={s.actionCount}>{group.memberCount}명</Text>
+                  <ChevronRight color="#CBD5E1" size={17} />
+                </TouchableOpacity>
+                <View style={s.actionDivider} />
+
                 {!isMember ? (
                   <TouchableOpacity
                     style={s.actionRow}
@@ -1211,6 +1230,7 @@ const s = StyleSheet.create({
     justifyContent: "center",
   },
   actionText: { flex: 1, fontSize: 15, fontWeight: "600", color: "#0F172A" },
+  actionCount: { fontSize: 13, fontWeight: "600", color: "#94A3B8" },
 
   emptyBox: {
     backgroundColor: "#fff",
