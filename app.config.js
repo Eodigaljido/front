@@ -22,6 +22,7 @@ module.exports = ({ config }) => ({
   },
   plugins: [
     ...(config.plugins ?? []),
+    'expo-web-browser',
     'expo-secure-store',
     '@react-native-community/datetimepicker',
     [
@@ -32,6 +33,12 @@ module.exports = ({ config }) => ({
         },
       },
     ],
+    [
+      '@react-native-google-signin/google-signin',
+      {
+        iosUrlScheme: 'com.googleusercontent.apps.658554777625-ssds5atn1lpo91sccghm3ph8dvipqhtj',
+      },
+    ],
   ],
   ios: {
     ...(config.ios ?? {}),
@@ -39,6 +46,8 @@ module.exports = ({ config }) => ({
   },
   android: {
     ...config.android,
+    /** 시스템 다크 모드와 무관하게 라이트 UI 유지 */
+    userInterfaceStyle: 'light',
     /** EAS production API가 http:// 이므로 릴리스 APK/AAB에서도 요청 허용 */
     usesCleartextTraffic: true,
     intentFilters: [
@@ -74,6 +83,29 @@ module.exports = ({ config }) => ({
             scheme: 'https',
             host: shareHost,
             pathPrefix: '/routes/collaborative',
+          },
+        ],
+        category: ['BROWSABLE', 'DEFAULT'],
+      },
+      {
+        action: 'VIEW',
+        data: [
+          {
+            scheme: 'eodigaljido',
+            host: 'oauth',
+            pathPrefix: '/google',
+          },
+        ],
+        category: ['BROWSABLE', 'DEFAULT'],
+      },
+      {
+        action: 'VIEW',
+        autoVerify: true,
+        data: [
+          {
+            scheme: 'https',
+            host: shareHost,
+            pathPrefix: '/oauth/google',
           },
         ],
         category: ['BROWSABLE', 'DEFAULT'],

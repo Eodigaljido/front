@@ -38,7 +38,7 @@ export function CollaborativeFriendInviteModal({
     if (!visible || !accessToken) return;
     setLoading(true);
     getFriends(accessToken)
-      .then((list) => setFriends(Array.isArray(list) ? list : []))
+      .then(list => setFriends(Array.isArray(list) ? list : []))
       .catch(() => setFriends([]))
       .finally(() => setLoading(false));
   }, [visible, accessToken]);
@@ -53,11 +53,11 @@ export function CollaborativeFriendInviteModal({
   const filtered = useMemo(() => {
     const q = search.trim();
     if (!q) return friends;
-    return friends.filter((f) => f.nickname.includes(q));
+    return friends.filter(f => f.nickname.includes(q));
   }, [friends, search]);
 
   const toggle = (uuid: string) => {
-    setSelected((prev) => {
+    setSelected(prev => {
       const next = new Set(prev);
       if (next.has(uuid)) next.delete(uuid);
       else next.add(uuid);
@@ -105,7 +105,7 @@ export function CollaborativeFriendInviteModal({
                   초대할 친구가 없어요. 친구 탭에서 먼저 추가해 주세요.
                 </Text>
               ) : (
-                filtered.map((f) => {
+                filtered.map(f => {
                   const on = selected.has(f.uuid);
                   return (
                     <Pressable

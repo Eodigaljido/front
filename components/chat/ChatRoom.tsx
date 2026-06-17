@@ -155,7 +155,7 @@ export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
           <View className="flex-row items-center flex-1">
             <View style={{ position: "relative" }}>
               <View
-                className="rounded-full bg-blue-100 items-center justify-center"
+                className="items-center justify-center bg-blue-100 rounded-full"
                 style={{ width: 50, height: 50 }}
               >
                 <Image
@@ -203,7 +203,7 @@ export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
               </Text>
             </View>
           </View>
-          <Text className="text-xs text-gray-700 ml-2">
+          <Text className="ml-2 text-xs text-gray-700">
             {formatTime(room.lastMessageAt)}
           </Text>
         </TouchableOpacity>

@@ -10,10 +10,16 @@ import {
   ActivityIndicator,
   Image,
   TouchableOpacity,
+  Dimensions,
+  Platform,
+  StyleSheet,
   ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import {
   KeyboardAwareScrollView,
   KeyboardStickyView,
@@ -33,6 +39,10 @@ import {
 import { ChatScrollToBottomFab } from "./chat/ChatScrollToBottomFab";
 import { RouteShareMessageCard } from "./chat/RouteShareMessageCard";
 import { useChatScrollToBottom } from "../hooks/useChatScrollToBottom";
+import {
+  RouteChatRoomPickerPanel,
+  type SelectedRouteChatRoom,
+} from "./RouteChatRoomPickerModal";
 
 const SHEET_SLIDE = 420;
 const MESSAGE_POLL_MS = 4000;
@@ -47,7 +57,8 @@ type Props = {
   routeTitle: string;
   roomName?: string;
   memberCount?: number;
-  onOpenChatList?: () => void;
+  linkedChatRoom?: SelectedRouteChatRoom | null;
+  onSelectChatRoom?: (room: SelectedRouteChatRoom) => void;
 };
 
 function messageBody(msg: ChatMessage): string {
@@ -122,9 +133,15 @@ export function RouteCollaborativeChatSheet({
   routeTitle,
   roomName,
   memberCount = 2,
-  onOpenChatList,
+  linkedChatRoom = null,
+  onSelectChatRoom,
 }: Props): React.JSX.Element {
   const insets = useSafeAreaInsets();
+  const windowH = Dimensions.get("window").height;
+  const sheetMaxHeight = Math.min(
+    windowH * 0.92,
+    windowH - Math.max(insets.top, 8),
+  );
   const backdrop = useRef(new Animated.Value(0)).current;
   const sheetY = useRef(new Animated.Value(SHEET_SLIDE)).current;
   const scrollRef = useRef<ScrollView>(null);
@@ -137,6 +154,7 @@ export function RouteCollaborativeChatSheet({
   const [showSyncBanner, setShowSyncBanner] = useState(false);
   const [expandedImageUrl, setExpandedImageUrl] = useState<string | null>(null);
   const [roomUnavailable, setRoomUnavailable] = useState(false);
+  const [chatListPickerOpen, setChatListPickerOpen] = useState(false);
 
   const roomId = String(chatRoomUuid ?? "").trim();
   const useApi = Boolean(accessToken && roomId);
@@ -316,6 +334,7 @@ export function RouteCollaborativeChatSheet({
     if (!visible) {
       messageCountRef.current = 0;
       setRoomUnavailable(false);
+      setChatListPickerOpen(false);
       return;
     }
     if (!useApi || !accessToken) return;
@@ -395,7 +414,7 @@ export function RouteCollaborativeChatSheet({
 
   const backdropOpacity = backdrop.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, 0.48],
+    outputRange: [0, 1],
   });
 
   const displayRoomName =
@@ -410,72 +429,86 @@ export function RouteCollaborativeChatSheet({
       visible={rendered || visible}
       transparent
       animationType="none"
-      statusBarTranslucent
+      statusBarTranslucent={Platform.OS === "android"}
+      onRequestClose={handleClose}
     >
-      <View className="flex-1 justify-end">
+      <SafeAreaView style={styles.modalRoot} edges={["bottom"]}>
         <Animated.View
           pointerEvents="none"
-          style={{
-            ...StyleSheetAbsolute,
-            backgroundColor: "#000",
-            opacity: backdropOpacity,
-          }}
-        />
-        <Animated.View
-          style={{
-            transform: [{ translateY: sheetY }],
-            maxHeight: "88%",
-            borderTopLeftRadius: 24,
-            borderTopRightRadius: 24,
-            backgroundColor: "#fff",
-            shadowColor: "#000",
-            shadowOffset: { width: 0, height: -6 },
-            shadowOpacity: 0.12,
-            shadowRadius: 16,
-            elevation: 24,
-            zIndex: 1,
-            overflow: "hidden",
-          }}
+          style={[StyleSheet.absoluteFillObject, { opacity: backdropOpacity }]}
         >
-          <View className="flex-row items-center justify-between border-b border-gray-100 px-3 py-3">
-            <View className="min-w-0 flex-1 pr-1">
-              <Text className="text-lg font-bold text-gray-900">루트 채팅</Text>
-              <Text
-                className="mt-0.5 text-[11px] text-gray-500"
-                numberOfLines={1}
-              >
-                {displayRoomName}
-                {useApi ? ` · ${memberCount}명` : " · 연결 중…"}
-              </Text>
+          <View style={styles.backdropFill} />
+        </Animated.View>
+        <Pressable style={styles.backdropTap} onPress={handleClose} />
+        <Animated.View
+          style={[
+            styles.sheet,
+            {
+              transform: [{ translateY: sheetY }],
+              maxHeight: sheetMaxHeight,
+              zIndex: 2,
+            },
+          ]}
+        >
+          {Platform.OS === "ios" ? (
+            <View className="items-center pb-1 pt-2">
+              <View className="h-1 w-10 rounded-full bg-gray-200" />
             </View>
-            <View className="flex-row items-center shrink-0">
-              {onOpenChatList ? (
-                <Pressable
-                  onPress={onOpenChatList}
-                  className="relative mr-2 rounded-lg bg-sky-100 px-2.5 py-1.5 active:opacity-85"
-                  accessibilityRole="button"
-                  accessibilityLabel="채팅 목록"
+          ) : (
+            <View style={styles.androidSheetTopPad} />
+          )}
+          <View style={styles.chatHeader}>
+            <View className="flex-row items-center">
+              <View className="min-w-0 flex-1 pr-2">
+                <Text className="text-lg font-bold text-gray-900">
+                  루트 채팅
+                </Text>
+                <Text
+                  className="mt-0.5 text-[11px] text-gray-500"
+                  numberOfLines={1}
                 >
-                  <Text className="text-[11px] font-semibold text-sky-800">
-                    채팅 목록
-                  </Text>
-                  {chatListBadge ? (
-                    <View
-                      className="absolute -right-1 -top-1 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1"
-                      style={{ minHeight: 16 }}
-                    >
-                      <Text className="text-[9px] font-bold text-white">
-                        {chatListBadge}
-                      </Text>
-                    </View>
-                  ) : null}
+                  {displayRoomName}
+                  {useApi ? ` · ${memberCount}명` : " · 연결 중…"}
+                </Text>
+              </View>
+              <View className="flex-row items-center gap-1.5">
+                {onSelectChatRoom && accessToken ? (
+                  <Pressable
+                    onPress={() => setChatListPickerOpen(true)}
+                    hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+                    style={styles.headerListBtn}
+                    accessibilityRole="button"
+                    accessibilityLabel="채팅 목록"
+                  >
+                    <Text className="text-xs font-semibold text-sky-700">
+                      목록
+                    </Text>
+                    {chatListBadge ? (
+                      <View
+                        pointerEvents="none"
+                        className="absolute -right-1 -top-1 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1"
+                        style={{ minHeight: 16 }}
+                      >
+                        <Text className="text-[9px] font-bold text-white">
+                          {chatListBadge}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </Pressable>
+                ) : null}
+                <Pressable
+                  onPress={handleClose}
+                  hitSlop={10}
+                  style={styles.headerCloseBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel="채팅 닫기"
+                >
+                  <Ionicons name="close" size={22} color="#64748b" />
                 </Pressable>
-              ) : null}
-              <Pressable onPress={handleClose} hitSlop={8} className="ml-1 p-1">
-                <Ionicons name="close" size={26} color="#64748b" />
-              </Pressable>
+              </View>
             </View>
           </View>
+          <View style={styles.headerDivider} />
 
           {useApi && showSyncBanner ? (
             <View className="flex-row items-center border-b border-gray-50 bg-sky-50 px-3 py-2">
@@ -659,6 +692,32 @@ export function RouteCollaborativeChatSheet({
           </KeyboardStickyView>
         </Animated.View>
 
+        {chatListPickerOpen && onSelectChatRoom && accessToken ? (
+          <View
+            style={[
+              StyleSheetAbsolute,
+              { backgroundColor: "rgba(0,0,0,0.35)", zIndex: 80 },
+            ]}
+          >
+            <Pressable
+              style={StyleSheetAbsolute}
+              onPress={() => setChatListPickerOpen(false)}
+              accessibilityLabel="채팅방 선택 닫기"
+            />
+            <RouteChatRoomPickerPanel
+              embedded
+              accessToken={accessToken}
+              currentRoomUuid={roomId}
+              linkedRoom={linkedChatRoom}
+              onClose={() => setChatListPickerOpen(false)}
+              onSelectRoom={(room) => {
+                setChatListPickerOpen(false);
+                onSelectChatRoom(room);
+              }}
+            />
+          </View>
+        ) : null}
+
         {expandedImageUrl ? (
           <View
             style={[
@@ -667,7 +726,7 @@ export function RouteCollaborativeChatSheet({
                 backgroundColor: "rgba(0,0,0,0.72)",
                 justifyContent: "center",
                 alignItems: "center",
-                zIndex: 50,
+                zIndex: 90,
               },
             ]}
           >
@@ -691,7 +750,7 @@ export function RouteCollaborativeChatSheet({
             </View>
           </View>
         ) : null}
-      </View>
+      </SafeAreaView>
     </Modal>
   );
 }
@@ -703,3 +762,74 @@ const StyleSheetAbsolute = {
   top: 0,
   bottom: 0,
 };
+
+const styles = StyleSheet.create({
+  modalRoot: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  backdropFill: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.58)",
+  },
+  backdropTap: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  sheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: "#ffffff",
+    overflow: "hidden",
+    ...Platform.select({
+      android: {
+        borderTopWidth: StyleSheet.hairlineWidth,
+        borderTopColor: "#e2e8f0",
+      },
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.12,
+        shadowRadius: 12,
+      },
+    }),
+  },
+  androidSheetTopPad: {
+    height: 10,
+    backgroundColor: "#ffffff",
+  },
+  chatHeader: {
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 12,
+    paddingBottom: 10,
+    paddingTop: Platform.OS === "android" ? 4 : 2,
+  },
+  headerListBtn: {
+    position: "relative",
+    minHeight: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: "#f0f9ff",
+    ...Platform.select({
+      android: {},
+      default: {
+        borderWidth: 1,
+        borderColor: "#bae6fd",
+      },
+    }),
+  },
+  headerCloseBtn: {
+    height: 40,
+    width: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 20,
+    backgroundColor: "#f3f4f6",
+  },
+  headerDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: "#e5e7eb",
+  },
+});

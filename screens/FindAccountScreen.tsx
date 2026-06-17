@@ -24,6 +24,8 @@ import {
   FindIdResult,
 } from '../api/auth/find';
 import { OtpModal } from '../components/OtpModal';
+import { authInputStyle, authTextInputColorProps } from '../constants/authFormTheme';
+import React from 'react';
 
 type FindAccountNavProp = NativeStackNavigationProp<RootStackParamList, 'FindAccount'>;
 
@@ -113,6 +115,7 @@ function FindIdSection({ onLoginPress }: { onLoginPress: () => void }) {
             style={phoneError ? { borderWidth: 1, borderColor: '#fca5a5' } : {}}
           >
             <TextInput
+              {...authTextInputColorProps}
               value={phone}
               onChangeText={text => {
                 setPhone(text);
@@ -126,6 +129,7 @@ function FindIdSection({ onLoginPress }: { onLoginPress: () => void }) {
               editable={!otpVerified}
               onSubmitEditing={!otpVerified ? handleSendCode : undefined}
               className="flex-1 py-4 pl-5 text-base"
+              style={authInputStyle()}
             />
             {otpVerified ? (
               <View className="self-stretch justify-center px-5 bg-green-500 rounded-full">
@@ -297,6 +301,7 @@ function FindPasswordSection({ onLoginPress }: { onLoginPress: () => void }) {
             style={identifierError ? { borderWidth: 1, borderColor: '#fca5a5' } : {}}
           >
             <TextInput
+              {...authTextInputColorProps}
               value={identifier}
               onChangeText={text => {
                 setIdentifier(text);
@@ -308,6 +313,7 @@ function FindPasswordSection({ onLoginPress }: { onLoginPress: () => void }) {
               returnKeyType="next"
               editable={!otpVerified}
               className="flex-1 py-4 pl-5 text-base"
+              style={authInputStyle()}
             />
           </View>
           <Text className="mt-1 ml-2 text-sm text-red-400" style={{ minHeight: 20 }}>
@@ -322,6 +328,7 @@ function FindPasswordSection({ onLoginPress }: { onLoginPress: () => void }) {
             style={phoneError ? { borderWidth: 1, borderColor: '#fca5a5' } : {}}
           >
             <TextInput
+              {...authTextInputColorProps}
               value={phone}
               onChangeText={text => {
                 setPhone(text);
@@ -333,6 +340,7 @@ function FindPasswordSection({ onLoginPress }: { onLoginPress: () => void }) {
               editable={!otpVerified}
               onSubmitEditing={!otpVerified ? handleSendCode : undefined}
               className="flex-1 py-4 pl-5 text-base"
+              style={authInputStyle()}
             />
             {otpVerified ? (
               <View className="self-stretch justify-center px-5 bg-green-500 rounded-full">
@@ -362,6 +370,7 @@ function FindPasswordSection({ onLoginPress }: { onLoginPress: () => void }) {
         {otpVerified && (
           <View className="gap-3">
             <TextInput
+              {...authTextInputColorProps}
               value={newPassword}
               onChangeText={text => {
                 setNewPassword(text);
@@ -373,8 +382,10 @@ function FindPasswordSection({ onLoginPress }: { onLoginPress: () => void }) {
               onSubmitEditing={() => confirmPasswordRef.current?.focus()}
               blurOnSubmit={false}
               className="w-full px-5 py-4 text-base bg-gray-100 rounded-full"
+              style={authInputStyle()}
             />
             <TextInput
+              {...authTextInputColorProps}
               ref={confirmPasswordRef}
               value={confirmPassword}
               onChangeText={text => {
@@ -386,6 +397,7 @@ function FindPasswordSection({ onLoginPress }: { onLoginPress: () => void }) {
               returnKeyType="done"
               onSubmitEditing={handleResetPassword}
               className="w-full px-5 py-4 text-base bg-gray-100 rounded-full"
+              style={authInputStyle()}
             />
             <Text className="ml-2 text-sm text-red-400" style={{ minHeight: 20 }}>
               {passwordError}
@@ -439,7 +451,7 @@ export default function FindAccountScreen() {
         >
           <Ionicons name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
-        <Text className="ml-3 text-lg font-bold">계정 찾기</Text>
+        <Text className="ml-3 text-lg font-bold text-gray-900">계정 찾기</Text>
       </View>
 
       {/* 탭 */}

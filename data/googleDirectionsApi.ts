@@ -2,6 +2,11 @@ import { getGoogleMapsWebServiceKey } from '../constants/googleMaps';
 import { ROUTE_USER_MESSAGES } from '../utils/routeCopy';
 import type { MapRouteSegment } from '../components/mapTypes';
 import {
+  buildStyledMapSegments,
+  directionsSegmentsToMapSegments,
+  sortMapSegmentsForRender,
+} from '../utils/mapRouteSegmentStyle';
+import {
   fetchKakaoNaviCarDirectionsLeg,
 } from './kakaoNaviDirectionsApi';
 import { fetchTmapDirectionsLeg } from './tmapDirectionsApi';
@@ -225,6 +230,7 @@ export type DirectionsLegResult = {
     mode: 'walk' | 'ride';
     points: LatLng[];
     lineLabel?: string;
+    vehicleType?: string;
   }>;
   durationMinutes: number;
   distanceMeters: number;
@@ -237,6 +243,49 @@ export type DirectionsLegResult = {
 
 function travelModeToSegmentMode(mode: string): 'walk' | 'ride' {
   return mode === 'WALKING' ? 'walk' : 'ride';
+}
+
+function nearestIndexOnPath(path: LatLng[], target: LatLng): number {
+  let best = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < path.length; i++) {
+    const d = haversineMeters(path[i], target);
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/** 승차 구간 step 폴리라인이 짧을 때 overview 경로에서 구간을 잘라 실제 노선 형태 유지 */
+function slicePolylineBetween(path: LatLng[], from: LatLng, to: LatLng): LatLng[] {
+  if (path.length < 2) return [];
+  const i0 = nearestIndexOnPath(path, from);
+  const i1 = nearestIndexOnPath(path, to);
+  if (i0 === i1) return [from, to];
+  const start = Math.min(i0, i1);
+  const end = Math.max(i0, i1);
+  const slice = path.slice(start, end + 1).map((p) => ({ ...p }));
+  slice[0] = { latitude: from.latitude, longitude: from.longitude };
+  slice[slice.length - 1] = { latitude: to.latitude, longitude: to.longitude };
+  return slice;
+}
+
+function enrichDegenerateTransitRideSegments(
+  segments: DirectionsLegResult['segments'],
+  overviewPath: LatLng[],
+): DirectionsLegResult['segments'] {
+  if (overviewPath.length < 4 || segments.length === 0) return segments;
+  return segments.map((seg) => {
+    if (seg.mode !== 'ride' || seg.points.length >= 4) return seg;
+    const a = seg.points[0];
+    const b = seg.points[seg.points.length - 1];
+    if (haversineMeters(a, b) < 220) return seg;
+    const sub = slicePolylineBetween(overviewPath, a, b);
+    if (sub.length >= 3) return { ...seg, points: sub };
+    return seg;
+  });
 }
 
 function mergeSegmentsToPath(
@@ -356,6 +405,7 @@ export function parseDirectionsRoute(route: any): DirectionsLegResult {
           mode: 'ride',
           points: segPts,
           lineLabel: base,
+          vehicleType: String(line.vehicle?.type ?? '').trim() || undefined,
         });
       }
     } else {
@@ -418,7 +468,22 @@ export function parseDirectionsRoute(route: any): DirectionsLegResult {
     };
   }
 
-  return { path, segments, durationMinutes, distanceMeters, summary, detail, source: 'google' };
+  const enrichedSegments =
+    segments.some((s) => s.mode === 'ride')
+      ? enrichDegenerateTransitRideSegments(segments, path)
+      : segments;
+  const enrichedPath = mergeSegmentsToPath(enrichedSegments);
+  const finalPath = pickRicherPolylinePath(enrichedPath, path);
+
+  return {
+    path: finalPath.length >= 2 ? finalPath : path,
+    segments: enrichedSegments,
+    durationMinutes,
+    distanceMeters,
+    summary,
+    detail,
+    source: 'google',
+  };
 }
 
 export function parseDirectionsLeg(body: any): DirectionsLegResult {
@@ -455,7 +520,8 @@ async function fetchDirectionsJson(
 }
 
 /**
- * ZERO_RESULTS 시 보조 재시도. 도보↔자전거 후에도 안 되면 운전 경로로 폴리라인 확보(지도는 여전히 도보/자전거 스타일).
+ * ZERO_RESULTS 시 보조 재시도.
+ * 자전거는 고속도로가 포함될 수 있는 운전 경로로 내리지 않고, 도보 경로까지만 시도한다.
  */
 const DIRECTIONS_ZERO_FALLBACKS: Record<
   Exclude<DirectionsMode, 'transit'>,
@@ -468,10 +534,10 @@ const DIRECTIONS_ZERO_FALLBACKS: Record<
     { mode: 'driving', region: undefined },
   ],
   bicycling: [
+    { mode: 'bicycling', region: 'kr' },
     { mode: 'bicycling', region: undefined },
     { mode: 'walking', region: 'kr' },
-    { mode: 'driving', region: 'kr' },
-    { mode: 'driving', region: undefined },
+    { mode: 'walking', region: undefined },
   ],
   driving: [
     { mode: 'driving', region: undefined },
@@ -495,6 +561,14 @@ export async function fetchGoogleDirectionsLeg(params: {
 
   if (haversineMeters(from, to) < 12) {
     return trivialDirectionsLeg(from, to, params.mode);
+  }
+
+  if (params.mode === 'bicycling') {
+    return fetchBicycleDirectionsLeg({
+      from,
+      to,
+      signal: params.signal,
+    });
   }
 
   /** Tmap 우선: 도보/자동차는 한국 경로 품질이 좋아 우선 시도 */
@@ -718,39 +792,187 @@ export async function fetchWalkingRouteAlternatives(params: {
     return [toWalkCandidate('walk-a', '근접 구간', t, 'fallback')];
   }
 
+  try {
+    const googleWalk = await fetchGoogleWalkingLegDirect(from, to, params.signal);
+    if (googleWalk) {
+      return [toWalkCandidate('walk-google', '도보 경로', googleWalk, 'google')];
+    }
+  } catch {
+    /* Google 도보 재시도 */
+  }
+
   const tmapOptions: Array<{ id: string; searchOption: '0' | '2' | '4' }> = [
     { id: 'walk-tmap-0', searchOption: '0' },
     { id: 'walk-tmap-2', searchOption: '2' },
     { id: 'walk-tmap-4', searchOption: '4' },
   ];
-  const settled = await Promise.all(
-    tmapOptions.map(async (opt) => {
-      const t = await fetchTmapDirectionsLeg({
-        from,
-        to,
-        requestedMode: 'walking',
-        searchOption: opt.searchOption,
-        signal: params.signal,
-      });
-      if (!t || t.path.length < 2) return null;
-      return toWalkCandidate(opt.id, '도보 경로', { ...t, source: 'tmap' }, 'walk');
-    }),
-  );
-  const candidates = settled.filter(Boolean) as WalkRouteCandidate[];
-  if (candidates.length > 0) {
-    candidates.sort((a, b) => {
-      if (a.durationMinutes !== b.durationMinutes) {
-        return a.durationMinutes - b.durationMinutes;
-      }
-      return a.distanceMeters - b.distanceMeters;
+  for (const opt of tmapOptions) {
+    const t = await fetchTmapDirectionsLeg({
+      from,
+      to,
+      requestedMode: 'walking',
+      searchOption: opt.searchOption,
+      signal: params.signal,
     });
-    return [candidates[0]];
+    if (t && t.path.length >= 3) {
+      return [toWalkCandidate(opt.id, '도보 경로', { ...t, source: 'tmap' }, 'walk')];
+    }
   }
 
   {
     const fb = straightLineFallbackLeg(from, to, 'walking');
     return [toWalkCandidate('walk-fallback', '도보 경로', fb, 'walk')];
   }
+}
+
+function isDegenerateRoutePath(path: LatLng[] | null | undefined): boolean {
+  return !path || path.length < 3;
+}
+
+const WALKING_GEOMETRY_ONLY_FALLBACKS: Array<{
+  mode: DirectionsMode;
+  region?: string;
+}> = [
+  { mode: 'walking', region: 'kr' },
+  { mode: 'walking', region: undefined },
+];
+
+/** Tmap·카카오 없이 Google 도보만 (자전거 보조·요청 절감용) */
+async function fetchGoogleWalkingLegDirect(
+  from: LatLng,
+  to: LatLng,
+  signal?: AbortSignal,
+): Promise<DirectionsLegResult | null> {
+  const key = getGoogleMapsWebServiceKey();
+  if (!key) return null;
+
+  let body = await fetchDirectionsJson(from, to, 'walking', key, signal, 'kr');
+  if (body?.status === 'ZERO_RESULTS') {
+    for (const fb of WALKING_GEOMETRY_ONLY_FALLBACKS) {
+      const b = await fetchDirectionsJson(
+        from,
+        to,
+        fb.mode,
+        key,
+        signal,
+        fb.region,
+        undefined,
+      );
+      if (b?.status === 'OK') {
+        body = b;
+        break;
+      }
+    }
+  }
+  if (body?.status !== 'OK') return null;
+  const parsed = parseDirectionsLeg(body);
+  return isDegenerateRoutePath(parsed.path) ? null : parsed;
+}
+
+/** Google 자전거만 (운전·카카오 폴백 없음) */
+async function fetchGoogleBicyclingLegDirect(
+  from: LatLng,
+  to: LatLng,
+  signal?: AbortSignal,
+): Promise<DirectionsLegResult | null> {
+  const key = getGoogleMapsWebServiceKey();
+  if (!key) return null;
+
+  let body = await fetchDirectionsJson(from, to, 'bicycling', key, signal, 'kr');
+  if (body?.status === 'ZERO_RESULTS') {
+    for (const fb of DIRECTIONS_ZERO_FALLBACKS.bicycling) {
+      const b = await fetchDirectionsJson(
+        from,
+        to,
+        fb.mode,
+        key,
+        signal,
+        fb.region,
+        undefined,
+      );
+      if (b?.status === 'OK') {
+        body = b;
+        break;
+      }
+    }
+  }
+  if (body?.status !== 'OK') return null;
+  const parsed = parseDirectionsLeg(body);
+  return isDegenerateRoutePath(parsed.path) ? null : parsed;
+}
+
+/** 자전거용 도보 geometry — Google 우선, Tmap은 1회만 */
+async function resolveWalkingGeometryLegForBike(
+  from: LatLng,
+  to: LatLng,
+  signal?: AbortSignal,
+): Promise<DirectionsLegResult | null> {
+  const googleWalk = await fetchGoogleWalkingLegDirect(from, to, signal);
+  if (googleWalk) return googleWalk;
+
+  const tmap = await fetchTmapDirectionsLeg({
+    from,
+    to,
+    requestedMode: 'walking',
+    signal,
+  });
+  if (tmap && tmap.path.length >= 3) {
+    return {
+      path: tmap.path,
+      segments: tmap.segments,
+      durationMinutes: tmap.durationMinutes,
+      distanceMeters: tmap.distanceMeters,
+      summary: tmap.summary,
+      detail: tmap.detail,
+      source: 'tmap',
+    };
+  }
+  return null;
+}
+
+function bikeLegFromWalkGeometry(walkLeg: DirectionsLegResult): DirectionsLegResult {
+  return {
+    path: walkLeg.path,
+    segments: walkLeg.segments.map((s) => ({
+      ...s,
+      mode: 'ride' as const,
+    })),
+    durationMinutes: Math.max(1, Math.round(walkLeg.durationMinutes * 0.35)),
+    distanceMeters: walkLeg.distanceMeters,
+    summary: walkLeg.summary,
+    detail: walkLeg.detail,
+    source: walkLeg.source ?? 'tmap',
+  };
+}
+
+/**
+ * 자전거 경로 — 한국에서는 Google 자전거가 고속도로로 잡히는 경우가 있어
+ * 도보 경로 geometry를 우선 사용한다.
+ */
+export async function fetchBicycleDirectionsLeg(params: {
+  from: LatLng;
+  to: LatLng;
+  signal?: AbortSignal;
+}): Promise<DirectionsLegResult> {
+  const from = normalizeLatLngForDirections(params.from.latitude, params.from.longitude);
+  const to = normalizeLatLngForDirections(params.to.latitude, params.to.longitude);
+
+  if (haversineMeters(from, to) < 12) {
+    return trivialDirectionsLeg(from, to, 'bicycling');
+  }
+
+  const walkLeg = await resolveWalkingGeometryLegForBike(from, to, params.signal);
+  if (walkLeg) {
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      console.log('[Directions] 자전거 → 도보 경로', `points=${walkLeg.path.length}`);
+    }
+    return bikeLegFromWalkGeometry(walkLeg);
+  }
+
+  const bikeLeg = await fetchGoogleBicyclingLegDirect(from, to, params.signal);
+  if (bikeLeg) return bikeLeg;
+
+  return straightLineFallbackLeg(from, to, 'bicycling');
 }
 
 export type TransitRouteCandidate = {
@@ -922,6 +1144,148 @@ function dedupeConsecutivePolyline(pts: LatLng[]): LatLng[] {
  * 정류장(또는 코스 단계) 좌표들 사이마다 Directions를 호출해 이어 붙인 폴리라인.
  * 코스 카드 미리보기 등에서 직선 연결 대신 실제 경로 형태에 가깝게 표시할 때 사용.
  */
+type CourseLegHint = {
+  mode?: string;
+  transitType?: DirectionsTransitType;
+};
+
+async function fetchLegDirectionsForPreview(
+  from: LatLng,
+  to: LatLng,
+  legHint: CourseLegHint | undefined,
+  signal?: AbortSignal,
+): Promise<DirectionsLegResult> {
+  const rawMode = String(legHint?.mode ?? '').trim();
+  const transitType = legHint?.transitType;
+
+  if (rawMode === 'walk') {
+    const candidates = await fetchWalkingRouteAlternatives({ from, to, signal });
+    const pick = candidates[0];
+    return {
+      path: pick.path,
+      segments: pick.segments,
+      durationMinutes: pick.durationMinutes,
+      distanceMeters: pick.distanceMeters,
+      summary: pick.summary,
+      detail: pick.detail,
+      source: pick.source === 'walk' ? 'tmap' : 'fallback',
+    };
+  }
+
+  if (rawMode === 'transit') {
+    const candidates = await fetchTransitRouteAlternatives({
+      from,
+      to,
+      transitType,
+      signal,
+    });
+    const pick = candidates[0];
+    return {
+      path: pick.path,
+      segments: pick.segments,
+      durationMinutes: pick.durationMinutes,
+      distanceMeters: pick.distanceMeters,
+      summary: pick.summary,
+      detail: pick.detail,
+      source: pick.source === 'google' ? 'google' : 'fallback',
+    };
+  }
+
+  if (rawMode === 'bike') {
+    return fetchBicycleDirectionsLeg({ from, to, signal });
+  }
+
+  const modeMap: Record<string, DirectionsMode> = {
+    bike: 'bicycling',
+    car: 'driving',
+    walk: 'walking',
+    transit: 'transit',
+  };
+  const mode = modeMap[rawMode] ?? 'driving';
+  return fetchGoogleDirectionsLeg({
+    from,
+    to,
+    mode,
+    transitType: mode === 'transit' ? transitType : undefined,
+    signal,
+  });
+}
+
+/**
+ * 정류장 사이 구간별 Directions + 교통수단 스타일 세그먼트.
+ * 대중교통은 도보(점선)와 승차(실선·노선 색)를 분리해 지도에 표시한다.
+ */
+export async function fetchMergedDirectionsSegments(opts: {
+  points: LatLng[];
+  routeLegs?: CourseLegHint[];
+  signal?: AbortSignal;
+}): Promise<{ path: LatLng[]; segments: MapRouteSegment[] }> {
+  const pts = (opts.points ?? []).filter(
+    (p) => p && Number.isFinite(p.latitude) && Number.isFinite(p.longitude),
+  );
+  if (pts.length < 2) return { path: pts, segments: [] };
+
+  const merged: LatLng[] = [];
+  const segments: MapRouteSegment[] = [];
+
+  for (let i = 0; i < pts.length - 1; i++) {
+    const from = pts[i];
+    const to = pts[i + 1];
+    const legHint = opts.routeLegs?.[i] ?? opts.routeLegs?.[opts.routeLegs.length - 1];
+    const legMode = String(legHint?.mode ?? 'walk').trim() || 'walk';
+
+    try {
+      const leg = await fetchLegDirectionsForPreview(from, to, legHint, opts.signal);
+      const path = leg.path?.length >= 2 ? leg.path : [from, to];
+      mergeLegPathInto(merged, path, from, to);
+
+      if (leg.segments?.length >= 1 && leg.source !== 'fallback') {
+        segments.push(
+          ...directionsSegmentsToMapSegments(
+            leg.segments,
+            i,
+            legMode as 'walk' | 'transit' | 'car' | 'bike',
+            legHint?.transitType,
+          ),
+        );
+      } else if (path.length >= 2) {
+        segments.push(
+          ...buildStyledMapSegments({
+            idPrefix: `preview-leg-${i}`,
+            points: path.map((p) => ({
+              latitude: p.latitude,
+              longitude: p.longitude,
+            })),
+            legMode,
+            transitType: legHint?.transitType,
+            isWalkSegment: legMode === 'walk',
+          }),
+        );
+      }
+    } catch {
+      const fallback = [from, to];
+      mergeLegPathInto(merged, fallback, from, to);
+      segments.push(
+        ...buildStyledMapSegments({
+          idPrefix: `preview-fallback-${i}`,
+          points: fallback.map((p) => ({
+            latitude: p.latitude,
+            longitude: p.longitude,
+          })),
+          legMode,
+          transitType: legHint?.transitType,
+          isWalkSegment: legMode === 'walk',
+        }),
+      );
+    }
+  }
+
+  return {
+    path: dedupeConsecutivePolyline(merged),
+    segments: sortMapSegmentsForRender(segments),
+  };
+}
+
 export async function fetchMergedDirectionsPolyline(opts: {
   points: LatLng[];
   mode?: DirectionsMode;
@@ -987,6 +1351,11 @@ async function fetchRoadPathBetween(
   transitType: DirectionsTransitType | undefined,
   signal?: AbortSignal,
 ): Promise<LatLng[]> {
+  if (mode === 'bicycling') {
+    const leg = await fetchBicycleDirectionsLeg({ from, to, signal });
+    return leg.path?.length >= 2 ? leg.path : [];
+  }
+
   let effectiveMode: DirectionsMode = mode;
   if (mode === 'transit') {
     const straightMeters = haversineMeters(from, to);
@@ -1025,21 +1394,23 @@ async function fetchRoadPathBetween(
     /* Kakao/Tmap 시도 */
   }
 
-  const kakao = await fetchKakaoNaviCarDirectionsLeg({
-    from,
-    to,
-    requestedMode: effectiveMode === 'walking' ? 'walking' : 'driving',
-    signal,
-  });
-  if (kakao && kakao.path.length >= 2) return kakao.path;
+  {
+    const kakao = await fetchKakaoNaviCarDirectionsLeg({
+      from,
+      to,
+      requestedMode: effectiveMode === 'walking' ? 'walking' : 'driving',
+      signal,
+    });
+    if (kakao && kakao.path.length >= 2) return kakao.path;
 
-  const tmap = await fetchTmapDirectionsLeg({
-    from,
-    to,
-    requestedMode: effectiveMode === 'walking' ? 'walking' : 'driving',
-    signal,
-  });
-  if (tmap && tmap.path.length >= 2) return tmap.path;
+    const tmap = await fetchTmapDirectionsLeg({
+      from,
+      to,
+      requestedMode: effectiveMode === 'walking' ? 'walking' : 'driving',
+      signal,
+    });
+    if (tmap && tmap.path.length >= 2) return tmap.path;
+  }
 
   try {
     const leg = await fetchGoogleDirectionsLeg({
@@ -1080,30 +1451,32 @@ async function walkingLegMapSegment(
         Number.isFinite(p.longitude),
     );
     if (pts.length >= 2) {
-      return {
-        id,
-        points: pts.map((p) => ({
-          latitude: p.latitude,
-          longitude: p.longitude,
-        })),
-        color: COURSE_WALK_PATH_COLOR,
-        width: 5,
-      };
+      return (
+        buildStyledMapSegments({
+          idPrefix: id,
+          points: pts.map((p) => ({
+            latitude: p.latitude,
+            longitude: p.longitude,
+          })),
+          legMode: 'walk',
+          isWalkSegment: true,
+        }).find((s) => !s.id.endsWith('-casing')) ?? null
+      );
     }
   } catch {
     // API 실패 시 직선 폴백
   }
   if (haversineMeters(from, to) < 8) return null;
-  return {
-    id,
+  const fallback = buildStyledMapSegments({
+    idPrefix: id,
     points: [
       { latitude: from.latitude, longitude: from.longitude },
       { latitude: to.latitude, longitude: to.longitude },
     ],
-    color: COURSE_WALK_PATH_COLOR,
-    width: 4,
-    dashed: true,
-  };
+    legMode: 'walk',
+    isWalkSegment: true,
+  });
+  return fallback.find((s) => !s.id.endsWith('-casing')) ?? null;
 }
 
 /**

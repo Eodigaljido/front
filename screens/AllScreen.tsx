@@ -1,7 +1,7 @@
 // @ts-nocheck
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, Pressable, ScrollView, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, Pressable, ScrollView, Alert, Platform } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -25,8 +25,12 @@ type AllRouteParams = { friendCode?: string };
 export default function AllScreen(): React.JSX.Element {
   const navigation = useNavigation<any>();
   const route = useRoute();
+  const insets = useSafeAreaInsets();
+  // 탭바 높이(64) + 탭바 bottom 오프셋 + 여유 16
+  const scrollPaddingBottom = Math.max(insets.bottom, Platform.OS === 'ios' ? 8 : 10) + 64 + 16;
   const authUser = useAuthStore(s => s.user);
   const profileImageCacheBust = useAuthStore(s => s.profileImageCacheBust);
+  const refreshProfile = useAuthStore(s => s.refreshProfile);
   const setForcedActiveTab = useTabStore(s => s.setForcedActiveTab);
   const [friendCount, setFriendCount] = useState<number>(0);
   const [pendingRequestCount, setPendingRequestCount] = useState<number>(0);
@@ -41,13 +45,14 @@ export default function AllScreen(): React.JSX.Element {
       const [friends, reqs] = await Promise.all([
         getFriends().catch(() => []),
         getFriendRequests().catch(() => []),
+        refreshProfile(),
       ]);
       setFriendCount(friends.length);
       setPendingRequestCount(reqs.filter(r => r.direction === 'RECEIVED').length);
     } catch {
       // 무시
     }
-  }, []);
+  }, [refreshProfile]);
 
   useFocusEffect(
     useCallback(() => {
@@ -71,10 +76,7 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'paper-plane-outline',
       iconColor: '#ea580c',
       iconBg: '#ffedd5',
-      onPress: () => {
-        setForcedActiveTab('Route');
-        navigation.navigate('AllRoute', { section: 'shared' });
-      },
+      onPress: () => navigation.getParent()?.navigate('Route', { section: 'shared' }),
     },
     {
       id: 'saved-route',
@@ -82,10 +84,7 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'bookmark-outline',
       iconColor: '#16a34a',
       iconBg: '#dcfce7',
-      onPress: () => {
-        setForcedActiveTab('Route');
-        navigation.navigate('AllRoute', { section: 'my' });
-      },
+      onPress: () => navigation.getParent()?.navigate('Route', { section: 'my' }),
     },
     {
       id: 'near-popular',
@@ -93,10 +92,8 @@ export default function AllScreen(): React.JSX.Element {
       icon: 'location-outline',
       iconColor: '#9333ea',
       iconBg: '#f3e8ff',
-      onPress: () => {
-        setForcedActiveTab('Route');
-        navigation.navigate('AllRoute', { section: 'shared', openAsPopular: true });
-      },
+      onPress: () =>
+        navigation.getParent()?.navigate('Route', { section: 'shared', openAsPopular: true }),
     },
   ];
 
@@ -108,7 +105,7 @@ export default function AllScreen(): React.JSX.Element {
       iconColor: '#2563eb',
       iconBg: '#dbeafe',
       badge: pendingRequestCount,
-      onPress: () => navigation.navigate('AllFriendRequests'),
+      onPress: () => navigation.getParent()?.navigate('FriendRequests'),
     },
   ];
 
@@ -122,20 +119,20 @@ export default function AllScreen(): React.JSX.Element {
       onPress: () => navigation.navigate('AllAppSettings'),
     },
     {
-      id: 'help',
-      title: '도움말',
-      icon: 'help-circle-outline',
-      iconColor: '#4b5563',
-      iconBg: '#f3f4f6',
-      onPress: () => {},
-    },
-    {
       id: 'alarm',
       title: '알림 설정',
       icon: 'notifications-outline',
       iconColor: '#6b7280',
       iconBg: '#e5e7eb',
-      onPress: () => {},
+      onPress: () => navigation.navigate('AllNotificationSettings'),
+    },
+    {
+      id: 'help',
+      title: '가이드',
+      icon: 'help-circle-outline',
+      iconColor: '#4b5563',
+      iconBg: '#f3f4f6',
+      onPress: () => navigation.navigate('AllGuide'),
     },
   ];
 
@@ -225,7 +222,7 @@ export default function AllScreen(): React.JSX.Element {
           shadowOffset: { width: 0, height: 1 },
           shadowOpacity: 0.06,
           shadowRadius: 3,
-          elevation: 2,
+          elevation: Platform.OS === 'android' ? 0 : 2,
         }}
         hitSlop={8}
       >
@@ -236,6 +233,7 @@ export default function AllScreen(): React.JSX.Element {
         contentContainerStyle={{
           paddingHorizontal: 16,
           paddingTop: 50,
+          paddingBottom: scrollPaddingBottom,
         }}
       >
         <Text className="mb-2 ml-1 text-xs font-semibold tracking-wide text-gray-400 uppercase">

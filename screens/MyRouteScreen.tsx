@@ -17,6 +17,7 @@ import {
   Animated,
   Dimensions,
   PanResponder,
+  Platform,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -133,13 +134,13 @@ function CourseCard({
 }) {
   return (
     <View
-      className="mx-4 mb-3 overflow-hidden rounded-2xl bg-white"
+      className="mx-4 mb-3 overflow-hidden bg-white rounded-2xl"
       style={CARD_STYLE}
     >
       <View className="flex-row border-b border-gray-100 p-3.5">
         <Pressable
           onPress={onPressCard}
-          className="min-w-0 flex-1 flex-row active:opacity-95"
+          className="flex-row flex-1 min-w-0 active:opacity-95"
           accessibilityRole="button"
           accessibilityLabel={`${item.title} 코스 상세`}
         >
@@ -147,16 +148,16 @@ function CourseCard({
             {item.thumbnail ? (
               <Image
                 source={{ uri: item.thumbnail }}
-                className="h-full w-full"
+                className="w-full h-full"
                 resizeMode="cover"
               />
             ) : (
-              <View className="h-full w-full items-center justify-center bg-blue-50">
+              <View className="items-center justify-center w-full h-full bg-blue-50">
                 <Ionicons name="image-outline" size={24} color="#60a5fa" />
               </View>
             )}
           </View>
-          <View className="ml-3 min-w-0 flex-1 justify-center">
+          <View className="justify-center flex-1 min-w-0 ml-3">
             <View className="flex-row flex-wrap items-start gap-1">
               {isCollaborative ? (
                 <View className="mr-1 rounded-md bg-orange-100 px-1.5 py-0.5">
@@ -196,7 +197,7 @@ function CourseCard({
             ) : null}
           </View>
         </Pressable>
-        <View className="ml-1 shrink-0 items-center justify-center pl-1">
+        <View className="items-center justify-center pl-1 ml-1 shrink-0">
           <View className="flex-row items-center">
             <TouchableOpacity onPress={onEdit} hitSlop={8} accessibilityLabel="수정">
               <Ionicons name="create-outline" size={20} color="#3b82f6" />
@@ -227,14 +228,14 @@ function CourseCard({
         accessibilityRole="button"
         accessibilityLabel="출발·도착 보기"
       >
-        <View className="rounded-md bg-blue-600 px-2 py-1">
+        <View className="px-2 py-1 bg-blue-600 rounded-md">
           <Text className="text-[11px] font-semibold text-white">출발</Text>
         </View>
         <Text className="ml-2 min-w-0 flex-1 text-[13px] text-gray-900" numberOfLines={1}>
           {item.departure}
         </Text>
-        <View className="mx-2 h-3 w-px bg-gray-300" />
-        <View className="rounded-md bg-slate-500 px-2 py-1">
+        <View className="w-px h-3 mx-2 bg-gray-300" />
+        <View className="px-2 py-1 rounded-md bg-slate-500">
           <Text className="text-[11px] font-semibold text-white">도착</Text>
         </View>
         <Text className="ml-2 min-w-0 flex-1 text-[13px] text-gray-900" numberOfLines={1}>
@@ -955,7 +956,7 @@ export default function MyRouteScreen({
           }}
         >
           <View
-            className="mr-2 h-9 w-9 items-center justify-center rounded-xl"
+            className="items-center justify-center mr-2 h-9 w-9 rounded-xl"
             style={{ backgroundColor: "rgba(37,99,235,0.08)" }}
           >
             <Ionicons name="search" size={20} color="#2563EB" />
@@ -974,7 +975,7 @@ export default function MyRouteScreen({
           onPress={() => setFilterVisible(true)}
           activeOpacity={0.85}
           accessibilityLabel="필터"
-          className="items-center justify-center rounded-2xl bg-white"
+          className="items-center justify-center bg-white rounded-2xl"
           style={{
             width: 46,
             height: 46,
@@ -1146,7 +1147,7 @@ export default function MyRouteScreen({
               }}
             >
               <View
-                className="overflow-hidden rounded-t-3xl flex-1"
+                className="flex-1 overflow-hidden rounded-t-3xl"
                 style={{
                   height: "100%",
                   backgroundColor: "#F8FBFF",
@@ -1399,7 +1400,7 @@ export default function MyRouteScreen({
 
                       <ScrollView
                         showsVerticalScrollIndicator={false}
-                        className="bg-white flex-1"
+                        className="flex-1 bg-white"
                         style={{ flexGrow: 1 }}
                         contentContainerStyle={{
                           paddingHorizontal: 20,
@@ -1411,7 +1412,7 @@ export default function MyRouteScreen({
                           <Text className="text-xl font-bold text-gray-900">
                             코스 상세
                           </Text>
-                          <View className="flex-row items-center gap-2 flex-wrap justify-end">
+                          <View className="flex-row flex-wrap items-center justify-end gap-2">
                             {ur?.collaborative === true ? (
                               <TouchableOpacity
                                 onPress={() => {
@@ -1420,7 +1421,7 @@ export default function MyRouteScreen({
                                     title: course.title,
                                   });
                                 }}
-                                className="flex-row items-center gap-1 rounded-xl bg-orange-50 px-3 py-2"
+                                className="flex-row items-center gap-1 px-3 py-2 rounded-xl bg-orange-50"
                               >
                                 <Ionicons
                                   name="share-social-outline"
@@ -1450,7 +1451,7 @@ export default function MyRouteScreen({
                                   }
                                 });
                               }}
-                              className="flex-row items-center gap-1 rounded-xl bg-blue-50 px-3 py-2"
+                              className="flex-row items-center gap-1 px-3 py-2 rounded-xl bg-blue-50"
                             >
                               <Ionicons
                                 name="create-outline"
@@ -1465,7 +1466,7 @@ export default function MyRouteScreen({
                               onPress={() => {
                                 closeCourseDetail(() => handleRemove(course));
                               }}
-                              className="flex-row items-center gap-1 rounded-xl bg-red-50 px-3 py-2"
+                              className="flex-row items-center gap-1 px-3 py-2 rounded-xl bg-red-50"
                             >
                               <Ionicons
                                 name="trash-outline"

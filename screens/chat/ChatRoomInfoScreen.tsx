@@ -279,7 +279,7 @@ export default function ChatRoomInfoScreen() {
               return;
             }
             await leaveChatRoom(accessToken, roomUuid);
-            navigation.navigate("Tabs");
+            navigation.reset({ index: 0, routes: [{ name: "Tabs" }] });
           } catch (err) {
             console.error("채팅방 나가기 실패:", err);
             Alert.alert("오류", "채팅방 나가기에 실패했습니다.");
@@ -302,7 +302,7 @@ export default function ChatRoomInfoScreen() {
               return;
             }
             await deleteChatRoom(accessToken, roomUuid);
-            navigation.navigate("Tabs");
+            navigation.reset({ index: 0, routes: [{ name: "Tabs" }] });
           } catch (err) {
             console.error("채팅방 삭제 실패:", err);
             Alert.alert("오류", "채팅방 삭제에 실패했습니다.");
@@ -679,10 +679,10 @@ export default function ChatRoomInfoScreen() {
               <Text style={s.sheetTitle}>멤버 초대</Text>
               <TouchableOpacity
                 onPress={handleConfirmInvite}
-                disabled={selectedFriends.size === 0 || isInviting}
+                disabled={selectedFriends.size === 0}
                 style={[
                   s.sheetConfirmBtn,
-                  { opacity: selectedFriends.size > 0 && !isInviting ? 1 : 0.35 },
+                  { opacity: selectedFriends.size > 0 ? 1 : 0.35 },
                 ]}
               >
                 <Text style={s.sheetConfirmText}>
@@ -717,7 +717,9 @@ export default function ChatRoomInfoScreen() {
                         <View
                           style={[s.memberAvatar, { backgroundColor: color }]}
                         >
-                          <Text style={s.memberAvatarText}>{friend.name[0]}</Text>
+                          <Text style={s.memberAvatarText}>
+                            {friend.name[0]}
+                          </Text>
                         </View>
                       )}
                       <Text
