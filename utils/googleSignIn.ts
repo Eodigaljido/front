@@ -1,24 +1,40 @@
 import { Platform } from 'react-native';
-import {
-  GoogleSignin,
-  isErrorWithCode,
-  isSuccessResponse,
-  statusCodes,
-} from '@react-native-google-signin/google-signin';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import {
   googleIdTokenAudienceMismatchHint,
   resolveGoogleWebClientId,
 } from './googleOAuthClientIds';
 
+type GoogleSignInModule = typeof import('@react-native-google-signin/google-signin');
+
 let configured = false;
 
-export function configureGoogleSignIn(): void {
-  if (configured) return;
-  GoogleSignin.configure({
-    webClientId: resolveGoogleWebClientId(),
-    offlineAccess: false,
-  });
-  configured = true;
+function isGoogleSignInNativeAvailable(): boolean {
+  if (Platform.OS === 'web') return false;
+  return Constants.executionEnvironment !== ExecutionEnvironment.StoreClient;
+}
+
+async function loadGoogleSignInModule(): Promise<GoogleSignInModule | null> {
+  if (!isGoogleSignInNativeAvailable()) return null;
+  try {
+    return await import('@react-native-google-signin/google-signin');
+  } catch (err) {
+    console.warn('Google Sign-In native module unavailable', err);
+    return null;
+  }
+}
+
+async function configureGoogleSignIn(): Promise<GoogleSignInModule | null> {
+  const mod = await loadGoogleSignInModule();
+  if (!mod) return null;
+  if (!configured) {
+    mod.GoogleSignin.configure({
+      webClientId: resolveGoogleWebClientId(),
+      offlineAccess: false,
+    });
+    configured = true;
+  }
+  return mod;
 }
 
 export type GoogleSignInResult =
@@ -26,17 +42,32 @@ export type GoogleSignInResult =
   | { ok: false; reason: 'cancelled' | 'unavailable' | 'error'; message?: string };
 
 export async function signInWithGoogleNative(): Promise<GoogleSignInResult> {
-  if (Platform.OS === 'web') {
+  if (!isGoogleSignInNativeAvailable()) {
     return {
       ok: false,
       reason: 'unavailable',
-      message: '웹에서는 구글 로그인을 지원하지 않습니다.',
+      message:
+        Platform.OS === 'web'
+          ? '웹에서는 구글 로그인을 지원하지 않습니다.'
+          : 'Expo Go에서는 구글 로그인을 사용할 수 없습니다. 개발 빌드(npx expo run:ios)에서 테스트해 주세요.',
     };
   }
 
   try {
-    configureGoogleSignIn();
-    await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+    const mod = await configureGoogleSignIn();
+    if (!mod) {
+      return {
+        ok: false,
+        reason: 'unavailable',
+        message: '구글 로그인 모듈을 불러오지 못했습니다.',
+      };
+    }
+
+    const { GoogleSignin, isErrorWithCode, isSuccessResponse, statusCodes } = mod;
+
+    if (Platform.OS === 'android') {
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+    }
     const response = await GoogleSignin.signIn();
     if (!isSuccessResponse(response)) {
       return { ok: false, reason: 'cancelled' };
@@ -62,11 +93,12 @@ export async function signInWithGoogleNative(): Promise<GoogleSignInResult> {
 
     return { ok: true, idToken };
   } catch (err: unknown) {
-    if (isErrorWithCode(err)) {
-      if (err.code === statusCodes.SIGN_IN_CANCELLED) {
+    const mod = await loadGoogleSignInModule();
+    if (mod?.isErrorWithCode(err)) {
+      if (err.code === mod.statusCodes.SIGN_IN_CANCELLED) {
         return { ok: false, reason: 'cancelled' };
       }
-      if (err.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+      if (err.code === mod.statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
         return {
           ok: false,
           reason: 'unavailable',
