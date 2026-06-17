@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -14,7 +15,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ChevronLeft, Lock, Unlock } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { Camera, ChevronLeft, Lock, Unlock, X } from 'lucide-react-native';
 
 import { RootStackParamList } from '@/App';
 import { safeGoBack } from '@/navigation/rootNavigation';
@@ -30,9 +32,27 @@ export default function MeetCreateScreen(): React.JSX.Element {
   const [description, setDescription] = useState('');
   const [groupType, setGroupType] = useState<GroupType>('PUBLIC');
   const [requiresApproval, setRequiresApproval] = useState(false);
+  const [imageUri, setImageUri] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const isPrivate = groupType === 'PRIVATE';
+
+  const pickImage = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('', '사진 접근 권한이 필요해요.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    });
+    if (!result.canceled && result.assets[0]?.uri) {
+      setImageUri(result.assets[0].uri);
+    }
+  };
 
   const handleSubmit = async () => {
     const trimmedName = name.trim();
@@ -47,12 +67,16 @@ export default function MeetCreateScreen(): React.JSX.Element {
 
     setSubmitting(true);
     try {
-      const group = await createGroup(accessToken, {
-        name: trimmedName,
-        description: description.trim(),
-        type: groupType,
-        requiresApproval: isPrivate ? true : requiresApproval,
-      });
+      const group = await createGroup(
+        accessToken,
+        {
+          name: trimmedName,
+          description: description.trim(),
+          type: groupType,
+          requiresApproval: isPrivate ? true : requiresApproval,
+        },
+        imageUri,
+      );
       navigation.replace('MeetDetail', {
         groupUuid: group.uuid,
         groupName: group.name,
@@ -83,6 +107,35 @@ export default function MeetCreateScreen(): React.JSX.Element {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
+          {/* 프로필 이미지 */}
+          <View style={s.imageSection}>
+            <TouchableOpacity
+              style={s.imagePicker}
+              onPress={pickImage}
+              activeOpacity={0.8}
+            >
+              {imageUri ? (
+                <>
+                  <Image source={{ uri: imageUri }} style={s.imagePreview} />
+                  <TouchableOpacity
+                    style={s.imageRemove}
+                    onPress={() => setImageUri(null)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <X color="#fff" size={14} strokeWidth={2.5} />
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <View style={s.imagePlaceholder}>
+                  <Camera color="#94A3B8" size={26} />
+                </View>
+              )}
+            </TouchableOpacity>
+            <Text style={s.imageHint}>
+              {imageUri ? '눌러서 변경' : '모임 대표 이미지 (선택)'}
+            </Text>
+          </View>
+
           {/* 기본 정보 */}
           <Text style={s.sectionLabel}>기본 정보</Text>
           <View style={s.card}>
@@ -219,6 +272,39 @@ const s = StyleSheet.create({
     marginTop: 20,
     paddingHorizontal: 4,
   },
+
+  imageSection: { alignItems: 'center', marginTop: 12, gap: 8 },
+  imagePicker: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#EEF2FF',
+    ...cardShadow,
+  },
+  imagePlaceholder: {
+    flex: 1,
+    borderRadius: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8FAFF',
+  },
+  imagePreview: { width: 100, height: 100, borderRadius: 50 },
+  imageRemove: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  imageHint: { fontSize: 12, color: '#94A3B8', fontWeight: '500' },
 
   card: {
     backgroundColor: '#fff',

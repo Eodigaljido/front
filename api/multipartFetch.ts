@@ -47,7 +47,12 @@ export async function fetchMultipart(
   path: string,
   method: "POST" | "PATCH",
   parts: { field: string; file: MultipartFilePart }[],
-  options?: { accessToken?: string | null; silent?: boolean },
+  options?: {
+    accessToken?: string | null;
+    silent?: boolean;
+    /** 파일 외에 함께 보낼 텍스트/JSON 파트 (예: Spring @RequestPart 객체) */
+    fields?: { field: string; value: string }[];
+  },
 ): Promise<{ status: number; data: unknown }> {
   const base = getApiBaseUrl();
   if (!base) {
@@ -59,6 +64,9 @@ export async function fetchMultipart(
   const url = joinUrl(base, path);
 
   const form = new FormData();
+  for (const { field, value } of options?.fields ?? []) {
+    form.append(field, value);
+  }
   for (const { field, file } of parts) {
     form.append(field, {
       uri: file.uri,
