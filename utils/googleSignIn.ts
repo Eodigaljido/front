@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import * as Constants from 'expo-constants';
 import {
   GoogleSignin,
   isErrorWithCode,
@@ -14,10 +15,14 @@ let configured = false;
 
 export function configureGoogleSignIn(): void {
   if (configured) return;
-  GoogleSignin.configure({
-    webClientId: resolveGoogleWebClientId(),
-    offlineAccess: false,
-  });
+  try {
+    GoogleSignin.configure({
+      webClientId: resolveGoogleWebClientId(),
+      offlineAccess: false,
+    });
+  } catch (e) {
+    console.warn('Failed to configure GoogleSignin (expected in Expo Go)', e);
+  }
   configured = true;
 }
 
@@ -31,6 +36,14 @@ export async function signInWithGoogleNative(): Promise<GoogleSignInResult> {
       ok: false,
       reason: 'unavailable',
       message: '웹에서는 구글 로그인을 지원하지 않습니다.',
+    };
+  }
+
+  if (Constants.appOwnership === 'expo') {
+    return {
+      ok: false,
+      reason: 'unavailable',
+      message: 'Expo Go에서는 구글 로그인을 지원하지 않습니다. Development Build를 사용해 주세요.',
     };
   }
 
