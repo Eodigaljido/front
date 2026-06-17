@@ -37,6 +37,7 @@ import {
   pickCourseSavedByMe,
   saveSharedCourse,
   fetchMySharingCourseIds,
+  fetchMyCourses,
 } from "../api/courses";
 import { getChatRooms, type ChatRoom as ChatRoomType } from "../api/chat/chat";
 import { useMockData } from "../context/MockDataContext";
@@ -276,6 +277,7 @@ export default function HomeScreen(): React.JSX.Element {
     userSavedRoutes,
   } = useMockData();
   const [homeCourses, setHomeCourses] = useState<any[]>([]);
+  const [myApiCourses, setMyApiCourses] = useState<any[]>([]);
   const [sharingCourseIds, setSharingCourseIds] = useState<string[]>([]);
   const [popularCourses, setPopularCourses] = useState<any[]>([]);
   const [popularBookmarkBusyId, setPopularBookmarkBusyId] = useState<string | null>(
@@ -361,17 +363,42 @@ export default function HomeScreen(): React.JSX.Element {
     applyHomeFeed(payload);
   }, [applyHomeFeed, fetchHomeFeedData]);
 
+  const authUuid = String(authUser?.uuid ?? "").trim();
+
   useEffect(() => {
+    if (!authUuid) {
+      setHomeCourses([]);
+      setPopularCourses([]);
+      setFollowingNewsApi([]);
+      setSharingCourseIds([]);
+      setMyApiCourses([]);
+      return;
+    }
+
     let mounted = true;
-    fetchHomeFeedData()
+    void fetchHomeFeedData()
       .then((payload) => {
         if (mounted) applyHomeFeed(payload);
       })
       .catch(() => {});
+    void fetchMyCourses()
+      .then((courses) => {
+        if (mounted) {
+          setMyApiCourses(
+            mergeLocalThumbnailsIntoCourses(
+              normalizeCourseList(courses),
+              userSavedRoutes,
+            ),
+          );
+        }
+      })
+      .catch(() => {
+        if (mounted) setMyApiCourses([]);
+      });
     return () => {
       mounted = false;
     };
-  }, [applyHomeFeed, fetchHomeFeedData]);
+  }, [authUuid, applyHomeFeed, fetchHomeFeedData, userSavedRoutes]);
 
   const weatherSubtitle = useMemo(
     () => formatFetchedAt(integrated?.fetchedAt),
@@ -458,7 +485,12 @@ export default function HomeScreen(): React.JSX.Element {
       seen.add(id);
       out.push(c);
     }
-    for (const c of homeCourses) {
+    const fromApi = [...myApiCourses].sort((a, b) =>
+      String(b.updatedAt ?? b.createdAt ?? "").localeCompare(
+        String(a.updatedAt ?? a.createdAt ?? ""),
+      ),
+    );
+    for (const c of fromApi) {
       if (out.length >= 3) break;
       const id = String(c?.id ?? "");
       if (!id || seen.has(id)) continue;
@@ -466,7 +498,7 @@ export default function HomeScreen(): React.JSX.Element {
       out.push(c);
     }
     return out;
-  }, [userSavedRoutes, homeCourses]);
+  }, [userSavedRoutes, myApiCourses]);
 
   const isRecentCoursePublic = useCallback(
     (courseId: string) => {
