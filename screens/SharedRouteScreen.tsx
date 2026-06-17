@@ -1,11 +1,5 @@
 // @ts-nocheck - NativeWind(className) 타입이 @types/react-native와 병합되지 않아 일시 비활성화
-import React, {
-  useState,
-  useEffect,
-  useRef,
-  useMemo,
-  useCallback,
-} from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -25,11 +19,7 @@ import {
   Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import {
-  useRoute,
-  useFocusEffect,
-  useNavigation,
-} from "@react-navigation/native";
+import { useRoute, useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useAuthStore } from "../store/authStore";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -83,10 +73,7 @@ import FilterBottomSheet, {
 import { dedupeCoursesById, sameCourseId } from "../utils/sameCourseId";
 import { courseMatchesTagOrCategory } from "../utils/courseTagFilter";
 import { mergeLocalThumbnailsIntoCourses } from "../utils/mergeCourseThumbnails";
-import {
-  enrichCoursesWithForkOriginAuthors,
-  enrichCourseWithForkOriginAuthor,
-} from "../utils/enrichForkOriginAuthor";
+import { enrichCoursesWithForkOriginAuthors, enrichCourseWithForkOriginAuthor } from "../utils/enrichForkOriginAuthor";
 import { mergeCourseAuthorCredits } from "../utils/courseAuthorCredits";
 import { rootNavigate } from "../navigation/rootNavigation";
 import { useRouteSection } from "../context/RouteScreenContext";
@@ -151,7 +138,7 @@ function CourseCard({
   return (
     <Pressable
       onPress={onPress}
-      className="mx-4 mb-3 overflow-hidden rounded-2xl bg-white active:opacity-95"
+      className="mx-4 mb-3 overflow-hidden bg-white rounded-2xl active:opacity-95"
       style={CARD_STYLE}
     >
       <View className="flex-row border-b border-gray-100 p-3.5">
@@ -159,16 +146,16 @@ function CourseCard({
           {item.thumbnail ? (
             <Image
               source={{ uri: item.thumbnail }}
-              className="h-full w-full"
+              className="w-full h-full"
               resizeMode="cover"
             />
           ) : (
-            <View className="h-full w-full items-center justify-center bg-blue-50">
+            <View className="items-center justify-center w-full h-full bg-blue-50">
               <Ionicons name="image-outline" size={24} color="#60a5fa" />
             </View>
           )}
         </View>
-        <View className="ml-3 flex-1 min-w-0 justify-center">
+        <View className="justify-center flex-1 min-w-0 ml-3">
           <Text
             className="text-[15px] font-semibold leading-snug text-gray-900"
             numberOfLines={2}
@@ -183,9 +170,7 @@ function CourseCard({
                   key={`${item.id}-${tag}`}
                   className="rounded-full bg-indigo-50 px-2 py-0.5"
                 >
-                  <Text className="text-[11px] font-medium text-indigo-800">
-                    {tag}
-                  </Text>
+                  <Text className="text-[11px] font-medium text-indigo-800">{tag}</Text>
                 </View>
               ))}
             </View>
@@ -201,14 +186,14 @@ function CourseCard({
       </View>
 
       <View className="flex-row items-center px-3.5 py-2.5">
-        <View className="rounded-md bg-blue-600 px-2 py-1">
+        <View className="px-2 py-1 bg-blue-600 rounded-md">
           <Text className="text-[11px] font-semibold text-white">출발</Text>
         </View>
         <Text className="ml-2 text-[13px] text-gray-900" numberOfLines={1}>
           {item.departure}
         </Text>
-        <View className="mx-2 h-3 w-px bg-gray-300" />
-        <View className="rounded-md bg-slate-500 px-2 py-1">
+        <View className="w-px h-3 mx-2 bg-gray-300" />
+        <View className="px-2 py-1 rounded-md bg-slate-500">
           <Text className="text-[11px] font-semibold text-white">도착</Text>
         </View>
         <Text
@@ -222,7 +207,13 @@ function CourseCard({
   );
 }
 
-export default function SharedRouteScreen(): React.JSX.Element {
+type SharedRouteScreenProps = {
+  embedded?: boolean;
+};
+
+export default function SharedRouteScreen({
+  embedded = false,
+}: SharedRouteScreenProps = {}): React.JSX.Element {
   const route = useRoute();
   const navigation = useNavigation<any>();
   const params = (route.params || {}) as SharedRouteParams;
@@ -234,7 +225,9 @@ export default function SharedRouteScreen(): React.JSX.Element {
     userSavedRoutes,
   } = useMockData();
   const { showToast } = useToast();
+  const routeSection = useRouteSection();
   const authUser = useAuthStore((s) => s.user);
+  const accessToken = useAuthStore((s) => s.accessToken);
   const authorCtx = useMemo(
     () => ({
       myUuid: authUser?.uuid,
@@ -267,9 +260,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
     return (
       (sharedDetailCourseApi?.id === viewingCourseId
         ? sharedDetailCourseApi
-        : null) ??
-      coursesData.find((c) => c.id === viewingCourseId) ??
-      null
+        : null) ?? coursesData.find((c) => c.id === viewingCourseId) ?? null
     );
   }, [viewingCourseId, sharedDetailCourseApi, coursesData]);
   const detailMapStepPoints = useMemo(() => {
@@ -296,8 +287,6 @@ export default function SharedRouteScreen(): React.JSX.Element {
   const [reviewAnonymous, setReviewAnonymous] = useState(false);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewBody, setReviewBody] = useState("");
-  const routeSection = useRouteSection();
-  const embedded = false;
   const [savingMyRoute, setSavingMyRoute] = useState(false);
   const [detailModalMounted, setDetailModalMounted] = useState(false);
   const detailBackdropOpacity = useRef(new Animated.Value(0)).current;
@@ -414,8 +403,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
     if (params?.openFilter) setFilterVisible(true);
     if (params?.openAsPopular) setSelectedSort("인기순");
     if (params?.viewCourseId) setViewingCourseId(params.viewCourseId);
-    if (typeof params?.initialQuery === "string")
-      setSearchQuery(params.initialQuery);
+    if (typeof params?.initialQuery === "string") setSearchQuery(params.initialQuery);
   }, [
     params?.section,
     params?.openFilter,
@@ -481,9 +469,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
       (sharedDetailCourseApi?.id === viewingCourseId
         ? sharedDetailCourseApi
         : null) ?? coursesData.find((c) => c.id === viewingCourseId);
-    const routeSteps = Array.isArray(course?.routeSteps)
-      ? course.routeSteps
-      : [];
+    const routeSteps = Array.isArray(course?.routeSteps) ? course.routeSteps : [];
     if (!course || routeSteps.length < 2) {
       setCourseDetailMergedPath(null);
       setCourseDetailPathLoading(false);
@@ -527,19 +513,16 @@ export default function SharedRouteScreen(): React.JSX.Element {
       list = list.filter((c) => courseMatchesTagOrCategory(c, "데이트"));
     else if (activeTab === "friends")
       list = list.filter((c) => courseMatchesTagOrCategory(c, "친구모임"));
-    else if (activeTab === "popular") list = sortCoursesBySaveCount(list);
+    else if (activeTab === "popular")
+      list = sortCoursesBySaveCount(list);
 
     if (selectedCategory)
-      list = list.filter((c) =>
-        courseMatchesTagOrCategory(c, selectedCategory),
-      );
+      list = list.filter((c) => courseMatchesTagOrCategory(c, selectedCategory));
     if (selectedRegion) {
       const region = selectedRegion.trim();
       list = list.filter((c) => {
         const r = String(c.region ?? "").trim();
-        return (
-          r === region || r.startsWith(`${region} `) || r.startsWith(region)
-        );
+        return r === region || r.startsWith(`${region} `) || r.startsWith(region);
       });
     }
 
@@ -553,25 +536,18 @@ export default function SharedRouteScreen(): React.JSX.Element {
         );
         return (
           tagHit ||
-          String(c.title ?? "")
-            .toLowerCase()
-            .includes(q) ||
-          String(c.meta ?? "")
-            .toLowerCase()
-            .includes(q) ||
-          String(c.departure ?? "")
-            .toLowerCase()
-            .includes(q) ||
-          String(c.arrival ?? "")
-            .toLowerCase()
-            .includes(q)
+          String(c.title ?? "").toLowerCase().includes(q) ||
+          String(c.meta ?? "").toLowerCase().includes(q) ||
+          String(c.departure ?? "").toLowerCase().includes(q) ||
+          String(c.arrival ?? "").toLowerCase().includes(q)
         );
       });
     }
 
     if (selectedSort === "인기순" || selectedSort === "저장순")
       list = sortCoursesBySaveCount(list);
-    else if (selectedSort === "즐겨찾기순") list = sortCoursesBySaveCount(list);
+    else if (selectedSort === "즐겨찾기순")
+      list = sortCoursesBySaveCount(list);
     else if (selectedSort === "최신순")
       list = [...list].sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
     else if (selectedSort === "조회순")
@@ -581,14 +557,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
     }
 
     return dedupeCoursesById(list);
-  }, [
-    activeTab,
-    searchQuery,
-    selectedCategory,
-    selectedRegion,
-    selectedSort,
-    coursesData,
-  ]);
+  }, [activeTab, searchQuery, selectedCategory, selectedRegion, selectedSort, coursesData]);
 
   const handleCategoryToggle = (cat: string) => {
     setSelectedCategory((prev) => (prev === cat ? null : cat));
@@ -609,7 +578,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
     <ScreenRoot {...screenRootProps}>
       {/* 검색 + 필터 — 배경과 분리된 카드형 검색바 */}
       <View
-        className={`flex-row items-center gap-2.5 px-4 ${embedded ? "pb-2 pt-1" : "py-3"}`}
+        className={`flex-row items-center gap-2.5 px-4 ${embedded ? 'pb-2 pt-1' : 'py-3'}`}
       >
         <View
           className="flex-1 flex-row items-center rounded-2xl bg-white px-3.5"
@@ -626,7 +595,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
           }}
         >
           <View
-            className="mr-2 h-9 w-9 items-center justify-center rounded-xl"
+            className="items-center justify-center mr-2 h-9 w-9 rounded-xl"
             style={{ backgroundColor: "rgba(37,99,235,0.08)" }}
           >
             <Ionicons name="search" size={20} color="#2563EB" />
@@ -806,15 +775,10 @@ export default function SharedRouteScreen(): React.JSX.Element {
                         : undefined;
                     // 실경로만 표시 (실패 시 정류장 직선 연결·부채꼴 방지)
                     const polylinePath = simplifyRoutePath(
-                      courseDetailMergedPath &&
-                        courseDetailMergedPath.length >= 2
+                      courseDetailMergedPath && courseDetailMergedPath.length >= 2
                         ? courseDetailMergedPath
                         : undefined,
                     );
-                    const startStepName =
-                      routeSteps[0]?.name ?? course.departure;
-                    const endStepName =
-                      routeSteps[routeSteps.length - 1]?.name ?? course.arrival;
                     const stepNamesForRegionChips = routeSteps
                       .map((s) => String(s?.name ?? "").trim())
                       .filter(Boolean);
@@ -854,7 +818,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
                         ? mapFocus
                         : mapRouteFit
                           ? { lat: mapRouteFit.lat, lng: mapRouteFit.lng }
-                          : (mapFocus ?? fallbackCenter);
+                          : mapFocus ?? fallbackCenter;
                     const mapZoom = mapRouteFit?.zoom;
                     const mapFitToRoute = !mapRouteFit;
 
@@ -874,7 +838,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
                             borderBottomColor: "rgba(37,99,235,0.15)",
                           }}
                         >
-                          <View className="mb-2 flex-row items-center justify-between px-4">
+                          <View className="flex-row items-center justify-between px-4 mb-2">
                             <Text className="text-sm font-semibold text-[#1A1A2E]">
                               코스 위치
                             </Text>
@@ -926,8 +890,8 @@ export default function SharedRouteScreen(): React.JSX.Element {
                               markers={mapMarkers}
                               style={{ width: "100%", height: 200 }}
                             />
-                            {courseDetailPathLoading ||
-                            (stepMapFocused && stepWalkLoading) ? (
+                            {(courseDetailPathLoading ||
+                              (stepMapFocused && stepWalkLoading)) ? (
                               <View
                                 style={{
                                   position: "absolute",
@@ -960,13 +924,6 @@ export default function SharedRouteScreen(): React.JSX.Element {
                               </View>
                             ) : null}
                           </View>
-                          <Text className="mt-2 px-4 text-[11px] font-medium text-slate-500">
-                            {showWalkOnMap
-                              ? "도보 구간: 주황"
-                              : pathPts && pathPts.length >= 2
-                                ? `1(${startStepName}) → ${pathPts.length}(${endStepName})`
-                                : "출발 기준"}
-                          </Text>
                         </View>
 
                         <ScrollView
@@ -978,123 +935,107 @@ export default function SharedRouteScreen(): React.JSX.Element {
                             paddingBottom: 28,
                           }}
                         >
-                          <View className="mb-4 flex-row items-center justify-between gap-2">
+                          <View className="flex-row items-center justify-between gap-2 mb-4">
                             <Text className="flex-1 text-xl font-bold text-gray-900">
                               코스 상세
                             </Text>
                             <View className="flex-row items-center gap-2">
+                            <Pressable
+                              onPress={() =>
+                                void sharePublicCourse({
+                                  courseId: course.id,
+                                  title: course.title,
+                                  accessToken,
+                                  myUuid: authUser?.uuid,
+                                })
+                              }
+                              className="flex-row items-center px-3 py-2 bg-white border border-gray-300 rounded-lg active:opacity-90"
+                            >
+                              <Ionicons name="share-outline" size={18} color="#2563eb" />
+                              <Text className="ml-1 text-xs font-semibold text-blue-600">
+                                공유
+                              </Text>
+                            </Pressable>
+                            {isOwnMyRoute(course) ? (
                               <Pressable
-                                onPress={() =>
-                                  void sharePublicCourse({
-                                    courseId: course.id,
-                                    title: course.title,
-                                  })
-                                }
-                                className="flex-row items-center rounded-lg border border-gray-300 bg-white px-3 py-2 active:opacity-90"
+                                onPress={() => {
+                                  closeCourseDetail();
+                                  const courseId = String(course.id);
+                                  if (routeSection) {
+                                    routeSection.setSection("my");
+                                    navigation.setParams({
+                                      section: "my",
+                                      viewCourseId: courseId,
+                                    });
+                                  } else {
+                                    navigation.navigate("Route", {
+                                      section: "my",
+                                      viewCourseId: courseId,
+                                    });
+                                  }
+                                }}
+                                className="flex-row items-center px-3 py-2 border border-blue-200 rounded-lg bg-blue-50 active:opacity-90"
                               >
-                                <Ionicons
-                                  name="share-outline"
-                                  size={18}
-                                  color="#2563eb"
-                                />
-                                <Text className="ml-1 text-xs font-semibold text-blue-600">
-                                  공유
+                                <Ionicons name="map-outline" size={18} color="#2563eb" />
+                                <Text className="ml-1 text-xs font-bold text-blue-700">
+                                  내 루트에서 보기
                                 </Text>
                               </Pressable>
-                              {isOwnMyRoute(course) ? (
-                                <Pressable
-                                  onPress={() => {
-                                    closeCourseDetail();
-                                    const courseId = String(course.id);
-                                    if (routeSection) {
-                                      routeSection.setSection("my");
-                                      navigation.setParams({
-                                        section: "my",
-                                        viewCourseId: courseId,
-                                      });
+                            ) : (
+                              <Pressable
+                                disabled={
+                                  savingMyRoute || savedCourseIds.includes(course.id)
+                                }
+                                onPress={async () => {
+                                  if (savedCourseIds.includes(course.id)) {
+                                    showToast('이미 저장된 코스예요');
+                                    return;
+                                  }
+                                  setSavingMyRoute(true);
+                                  try {
+                                    const result = await saveSharedCourse(course.id);
+                                    if (result.ok) {
+                                      addSavedCourse(course.id);
+                                      showToast('저장 완료');
+                                    } else if (result.reason === "NOT_ON_SERVER") {
+                                      showToast('코스를 찾을 수 없어요');
                                     } else {
-                                      navigation.navigate("Route", {
-                                        section: "my",
-                                        viewCourseId: courseId,
-                                      });
+                                      showToast('저장하지 못했어요');
                                     }
-                                  }}
-                                  className="flex-row items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 active:opacity-90"
-                                >
-                                  <Ionicons
-                                    name="map-outline"
-                                    size={18}
-                                    color="#2563eb"
-                                  />
-                                  <Text className="ml-1 text-xs font-bold text-blue-700">
-                                    내 루트에서 보기
-                                  </Text>
-                                </Pressable>
-                              ) : (
-                                <Pressable
-                                  disabled={
+                                  } finally {
+                                    setSavingMyRoute(false);
+                                  }
+                                }}
+                                className="flex-row items-center px-3 py-2 rounded-lg active:opacity-90"
+                                style={{
+                                  backgroundColor: savedCourseIds.includes(course.id)
+                                    ? "#93c5fd"
+                                    : "#2563EB",
+                                  opacity:
                                     savingMyRoute ||
                                     savedCourseIds.includes(course.id)
-                                  }
-                                  onPress={async () => {
-                                    if (savedCourseIds.includes(course.id)) {
-                                      showToast("이미 저장된 코스예요");
-                                      return;
-                                    }
-                                    setSavingMyRoute(true);
-                                    try {
-                                      const result = await saveSharedCourse(
-                                        course.id,
-                                      );
-                                      if (result.ok) {
-                                        addSavedCourse(course.id);
-                                        showToast("저장 완료");
-                                      } else if (
-                                        result.reason === "NOT_ON_SERVER"
-                                      ) {
-                                        showToast("코스를 찾을 수 없어요");
-                                      } else {
-                                        showToast("저장하지 못했어요");
-                                      }
-                                    } finally {
-                                      setSavingMyRoute(false);
-                                    }
-                                  }}
-                                  className="flex-row items-center rounded-lg px-3 py-2 active:opacity-90"
-                                  style={{
-                                    backgroundColor: savedCourseIds.includes(
-                                      course.id,
-                                    )
-                                      ? "#93c5fd"
-                                      : "#2563EB",
-                                    opacity:
-                                      savingMyRoute ||
-                                      savedCourseIds.includes(course.id)
-                                        ? 0.85
-                                        : 1,
-                                  }}
-                                >
-                                  {savingMyRoute ? (
-                                    <ActivityIndicator
-                                      size="small"
-                                      color="#fff"
-                                    />
-                                  ) : (
-                                    <Ionicons
-                                      name="add-circle-outline"
-                                      size={18}
-                                      color="#fff"
-                                    />
-                                  )}
-                                  <Text className="ml-1 text-xs font-bold text-white">
-                                    {savedCourseIds.includes(course.id)
-                                      ? "내 루트에 있음"
-                                      : savingMyRoute
-                                        ? "저장 중…"
-                                        : "내 루트 추가"}
-                                  </Text>
-                                </Pressable>
-                              )}
+                                      ? 0.85
+                                      : 1,
+                                }}
+                              >
+                                {savingMyRoute ? (
+                                  <ActivityIndicator size="small" color="#fff" />
+                                ) : (
+                                  <Ionicons
+                                    name="add-circle-outline"
+                                    size={18}
+                                    color="#fff"
+                                  />
+                                )}
+                                <Text className="ml-1 text-xs font-bold text-white">
+                                  {savedCourseIds.includes(course.id)
+                                    ? "내 루트에 있음"
+                                    : savingMyRoute
+                                      ? "저장 중…"
+                                      : "내 루트 추가"}
+                                </Text>
+                              </Pressable>
+                            )}
                             </View>
                           </View>
 
@@ -1147,38 +1088,33 @@ export default function SharedRouteScreen(): React.JSX.Element {
                               });
                             }}
                           />
-                          {Array.isArray(course.tags) &&
-                          course.tags.length > 0 ? (
-                            <View className="mb-2 flex-row flex-wrap gap-1">
+                          {Array.isArray(course.tags) && course.tags.length > 0 ? (
+                            <View className="flex-row flex-wrap gap-1 mb-2">
                               {course.tags.slice(0, 2).map((tag) => (
                                 <View
                                   key={String(tag)}
                                   className="rounded-full bg-indigo-50 px-2.5 py-0.5"
                                 >
-                                  <Text className="text-xs font-medium text-indigo-800">
-                                    {tag}
-                                  </Text>
+                                  <Text className="text-xs font-medium text-indigo-800">{tag}</Text>
                                 </View>
                               ))}
                             </View>
                           ) : (
-                            <Text className="mb-2 text-sm text-gray-500">
-                              {course.meta}
-                            </Text>
+                            <Text className="mb-2 text-sm text-gray-500">{course.meta}</Text>
                           )}
 
-                          <View className="mb-3 flex-row flex-wrap items-center gap-2">
-                            <View className="rounded-full bg-gray-100 px-3 py-1">
+                          <View className="flex-row flex-wrap items-center gap-2 mb-3">
+                            <View className="px-3 py-1 bg-gray-100 rounded-full">
                               <Text className="text-xs text-gray-700">
                                 {regionChipLabel}
                               </Text>
                             </View>
-                            <View className="rounded-full bg-blue-50 px-3 py-1">
+                            <View className="px-3 py-1 rounded-full bg-blue-50">
                               <Text className="text-xs text-blue-700">
                                 예상 소요 약 {hours}시간
                               </Text>
                             </View>
-                            <View className="rounded-full bg-yellow-50 px-3 py-1">
+                            <View className="px-3 py-1 rounded-full bg-yellow-50">
                               <Text className="text-xs text-yellow-700">
                                 ★ {course.rating.toFixed(1)} (
                                 {course.reviewCount}명)
@@ -1187,24 +1123,24 @@ export default function SharedRouteScreen(): React.JSX.Element {
                           </View>
 
                           {/* 출발/도착 요약 */}
-                          <View className="mb-6 rounded-xl bg-gray-50 p-3">
+                          <View className="p-3 mb-6 rounded-xl bg-gray-50">
                             <View className="flex-row items-center">
-                              <View className="rounded bg-green-100 px-2 py-1">
+                              <View className="px-2 py-1 bg-green-100 rounded">
                                 <Text className="text-xs font-medium text-green-700">
                                   출발
                                 </Text>
                               </View>
-                              <Text className="ml-2 flex-1 text-sm text-gray-900">
+                              <Text className="flex-1 ml-2 text-sm text-gray-900">
                                 {course.departure}
                               </Text>
                             </View>
-                            <View className="mt-2 flex-row items-center">
-                              <View className="rounded bg-red-100 px-2 py-1">
+                            <View className="flex-row items-center mt-2">
+                              <View className="px-2 py-1 bg-red-100 rounded">
                                 <Text className="text-xs font-medium text-red-700">
                                   도착
                                 </Text>
                               </View>
-                              <Text className="ml-2 flex-1 text-sm text-gray-900">
+                              <Text className="flex-1 ml-2 text-sm text-gray-900">
                                 {course.arrival}
                               </Text>
                             </View>
@@ -1214,7 +1150,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
                           <Text className="mb-2 text-sm font-semibold text-gray-900">
                             코스 경로
                           </Text>
-                          <View className="mb-6 rounded-xl bg-gray-50 p-3">
+                          <View className="p-3 mb-6 rounded-xl bg-gray-50">
                             {routeSteps.map((step, index) => (
                               <Pressable
                                 key={step.id}
@@ -1274,14 +1210,14 @@ export default function SharedRouteScreen(): React.JSX.Element {
                             이용자 후기
                           </Text>
                           {(course.reviews ?? []).length === 0 ? (
-                            <View className="mb-2 rounded-xl bg-gray-50 p-3">
+                            <View className="p-3 mb-2 rounded-xl bg-gray-50">
                               <Text className="text-xs text-gray-500">
                                 아직 등록된 후기가 없습니다. 코스를 다녀온 후 첫
                                 후기를 남겨 보세요.
                               </Text>
                             </View>
                           ) : (
-                            <View className="mb-2 rounded-xl bg-gray-50 p-3">
+                            <View className="p-3 mb-2 rounded-xl bg-gray-50">
                               {(course.reviews ?? []).map((review) => (
                                 <View
                                   key={review.id}
@@ -1328,6 +1264,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
                               리뷰 남기기
                             </Text>
                           </Pressable>
+
                         </ScrollView>
                       </>
                     );
@@ -1368,7 +1305,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
                 showsVerticalScrollIndicator={false}
                 style={{ flex: 1, width: "100%" }}
               >
-                <View className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+                <View className="w-full max-w-md p-5 bg-white shadow-xl rounded-2xl">
                   <Text className="text-lg font-bold text-gray-900">
                     리뷰 작성
                   </Text>
@@ -1376,14 +1313,13 @@ export default function SharedRouteScreen(): React.JSX.Element {
                     className="mt-1 text-xs text-gray-500"
                     numberOfLines={2}
                   >
-                    {coursesData.find((c) => c.id === reviewCourseId)?.title ??
-                      ""}
+                    {coursesData.find((c) => c.id === reviewCourseId)?.title ?? ""}
                   </Text>
 
                   <Text className="mt-4 text-xs font-semibold text-gray-600">
                     작성자 공개
                   </Text>
-                  <View className="mt-2 flex-row gap-2">
+                  <View className="flex-row gap-2 mt-2">
                     <Pressable
                       onPress={() => setReviewAnonymous(false)}
                       className={`flex-1 rounded-xl border px-3 py-2.5 ${
@@ -1421,7 +1357,7 @@ export default function SharedRouteScreen(): React.JSX.Element {
                   <Text className="mt-3 text-xs font-semibold text-gray-600">
                     별점
                   </Text>
-                  <View className="mt-2 flex-row gap-2">
+                  <View className="flex-row gap-2 mt-2">
                     {[1, 2, 3, 4, 5].map((n) => (
                       <Pressable
                         key={n}
@@ -1451,10 +1387,10 @@ export default function SharedRouteScreen(): React.JSX.Element {
                     maxLength={500}
                   />
 
-                  <View className="mt-5 flex-row gap-2">
+                  <View className="flex-row gap-2 mt-5">
                     <Pressable
                       onPress={() => setReviewComposerOpen(false)}
-                      className="flex-1 items-center rounded-xl border border-gray-200 py-3 active:opacity-80"
+                      className="items-center flex-1 py-3 border border-gray-200 rounded-xl active:opacity-80"
                     >
                       <Text className="text-sm font-semibold text-gray-600">
                         취소
@@ -1468,28 +1404,23 @@ export default function SharedRouteScreen(): React.JSX.Element {
                           ? "익명"
                           : String(reviewUserName ?? "").trim() || "나";
                         if (!t) {
-                          showToast("후기 내용을 입력해 주세요");
+                          showToast('후기 내용을 입력해 주세요');
                           return;
                         }
-                        const ok = await submitSharedCourseReview(
-                          reviewCourseId,
-                          {
-                            userName: displayName,
-                            rating: reviewRating,
-                            text: t,
-                          },
-                        );
+                        const ok = await submitSharedCourseReview(reviewCourseId, {
+                          userName: displayName,
+                          rating: reviewRating,
+                          text: t,
+                        });
                         addSharedCourseReview(reviewCourseId, {
                           userName: displayName,
                           rating: reviewRating,
                           text: t,
                         });
                         setReviewComposerOpen(false);
-                        showToast(
-                          ok ? "후기가 등록됐어요" : "후기를 등록하지 못했어요",
-                        );
+                        showToast(ok ? '후기가 등록됐어요' : '후기를 등록하지 못했어요');
                       }}
-                      className="flex-1 items-center rounded-xl bg-amber-500 py-3 active:opacity-90"
+                      className="items-center flex-1 py-3 rounded-xl bg-amber-500 active:opacity-90"
                     >
                       <Text className="text-sm font-bold text-white">등록</Text>
                     </Pressable>

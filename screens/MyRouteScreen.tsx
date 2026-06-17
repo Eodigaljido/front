@@ -1,11 +1,5 @@
 // @ts-nocheck
-import React, {
-  useState,
-  useEffect,
-  useMemo,
-  useCallback,
-  useRef,
-} from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -23,6 +17,7 @@ import {
   Animated,
   Dimensions,
   PanResponder,
+  Platform,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -84,8 +79,12 @@ import {
   applyMineAuthorToPersonalRoutes,
   dedupeMyCourseList,
   mergeApiAndLocalCourseLists,
+  mergeLocalCourseIntoApiCourse,
+  resolveDetailCourseItem,
+  collapseDuplicateEmptyDrafts,
 } from "../utils/mergeCourseThumbnails";
 import { rootNavigate } from "../navigation/rootNavigation";
+import { CollaborativeMemberSummaryText } from "../components/CollaborativeMemberSummaryText";
 
 type RouteKindFilter = "all" | "personal" | "collaborative";
 const ROUTE_KIND_CHIPS: { key: RouteKindFilter; label: string }[] = [
@@ -115,6 +114,7 @@ function CourseCard({
   onEdit,
   isFavorite,
   isCollaborative,
+  chatRoomUuid,
   authorCtx,
 }: {
   item: CourseItem;
@@ -124,6 +124,7 @@ function CourseCard({
   onEdit: () => void;
   isFavorite?: boolean;
   isCollaborative?: boolean;
+  chatRoomUuid?: string | null;
   authorCtx: {
     myUuid?: string | null;
     myUserId?: string | null;
@@ -133,13 +134,13 @@ function CourseCard({
 }) {
   return (
     <View
-      className="mx-4 mb-3 overflow-hidden rounded-2xl bg-white"
+      className="mx-4 mb-3 overflow-hidden bg-white rounded-2xl"
       style={CARD_STYLE}
     >
       <View className="flex-row border-b border-gray-100 p-3.5">
         <Pressable
           onPress={onPressCard}
-          className="min-w-0 flex-1 flex-row active:opacity-95"
+          className="flex-row flex-1 min-w-0 active:opacity-95"
           accessibilityRole="button"
           accessibilityLabel={`${item.title} 코스 상세`}
         >
@@ -147,22 +148,20 @@ function CourseCard({
             {item.thumbnail ? (
               <Image
                 source={{ uri: item.thumbnail }}
-                className="h-full w-full"
+                className="w-full h-full"
                 resizeMode="cover"
               />
             ) : (
-              <View className="h-full w-full items-center justify-center bg-blue-50">
+              <View className="items-center justify-center w-full h-full bg-blue-50">
                 <Ionicons name="image-outline" size={24} color="#60a5fa" />
               </View>
             )}
           </View>
-          <View className="ml-3 min-w-0 flex-1 justify-center">
+          <View className="justify-center flex-1 min-w-0 ml-3">
             <View className="flex-row flex-wrap items-start gap-1">
               {isCollaborative ? (
                 <View className="mr-1 rounded-md bg-orange-100 px-1.5 py-0.5">
-                  <Text className="text-[10px] font-bold text-orange-700">
-                    공동
-                  </Text>
+                  <Text className="text-[10px] font-bold text-orange-700">공동</Text>
                 </View>
               ) : null}
               {isFavorite ? (
@@ -180,19 +179,27 @@ function CourseCard({
                 {item.title}
               </Text>
             </View>
-            <CourseAuthorCardRow course={item} authorCtx={authorCtx} />
+            {!isCollaborative ? (
+              <CourseAuthorCardRow course={item} authorCtx={authorCtx} />
+            ) : null}
             <Text className="mt-1 text-xs text-gray-500" numberOfLines={1}>
               {item.meta}
             </Text>
+            {isCollaborative ? (
+              <View className="mt-1.5 self-start rounded-md bg-orange-50 px-2 py-0.5">
+                <CollaborativeMemberSummaryText
+                  course={item}
+                  routeId={String(item.id)}
+                  chatRoomUuid={chatRoomUuid}
+                  authorCtx={authorCtx}
+                />
+              </View>
+            ) : null}
           </View>
         </Pressable>
-        <View className="ml-1 shrink-0 items-center justify-center pl-1">
+        <View className="items-center justify-center pl-1 ml-1 shrink-0">
           <View className="flex-row items-center">
-            <TouchableOpacity
-              onPress={onEdit}
-              hitSlop={8}
-              accessibilityLabel="수정"
-            >
+            <TouchableOpacity onPress={onEdit} hitSlop={8} accessibilityLabel="수정">
               <Ionicons name="create-outline" size={20} color="#3b82f6" />
             </TouchableOpacity>
             <TouchableOpacity
@@ -221,23 +228,17 @@ function CourseCard({
         accessibilityRole="button"
         accessibilityLabel="출발·도착 보기"
       >
-        <View className="rounded-md bg-blue-600 px-2 py-1">
+        <View className="px-2 py-1 bg-blue-600 rounded-md">
           <Text className="text-[11px] font-semibold text-white">출발</Text>
         </View>
-        <Text
-          className="ml-2 min-w-0 flex-1 text-[13px] text-gray-900"
-          numberOfLines={1}
-        >
+        <Text className="ml-2 min-w-0 flex-1 text-[13px] text-gray-900" numberOfLines={1}>
           {item.departure}
         </Text>
-        <View className="mx-2 h-3 w-px bg-gray-300" />
-        <View className="rounded-md bg-slate-500 px-2 py-1">
+        <View className="w-px h-3 mx-2 bg-gray-300" />
+        <View className="px-2 py-1 rounded-md bg-slate-500">
           <Text className="text-[11px] font-semibold text-white">도착</Text>
         </View>
-        <Text
-          className="ml-2 min-w-0 flex-1 text-[13px] text-gray-900"
-          numberOfLines={1}
-        >
+        <Text className="ml-2 min-w-0 flex-1 text-[13px] text-gray-900" numberOfLines={1}>
           {item.arrival}
         </Text>
       </Pressable>
@@ -250,9 +251,7 @@ function CourseCard({
           accessibilityLabel="지도 안내"
         >
           <Ionicons name="map-outline" size={16} color="#2563eb" />
-          <Text className="ml-1.5 text-xs font-semibold text-blue-600">
-            안내
-          </Text>
+          <Text className="ml-1.5 text-xs font-semibold text-blue-600">안내</Text>
         </Pressable>
       </View>
     </View>
@@ -272,6 +271,46 @@ const MY_ROUTE_DETAIL_SHEET_HEIGHT_KEY = "MY_ROUTE_DETAIL_SHEET_MAX_HEIGHT_PX";
 const MY_ROUTE_WINDOW_H = Dimensions.get("window").height;
 /** 시트를 화면 밖으로 밀어 닫을 때 이동 거리 */
 const MY_ROUTE_SHEET_HIDE_Y = Math.ceil(MY_ROUTE_WINDOW_H + 120);
+
+function pickViewingCourse(
+  viewingCourseId: string,
+  opts: {
+    ur?: UserSavedRoute;
+    myDetailCourseApi: CourseItem | null;
+    courseFromDisplay?: CourseItem;
+    viewingCourseSnapshot: CourseItem | null;
+    courseFromApi?: CourseItem;
+  },
+): CourseItem | null {
+  const {
+    ur,
+    myDetailCourseApi,
+    courseFromDisplay,
+    viewingCourseSnapshot,
+    courseFromApi,
+  } = opts;
+  const raw =
+    (myDetailCourseApi &&
+    sameCourseId(myDetailCourseApi.id, viewingCourseId)
+      ? myDetailCourseApi
+      : null) ??
+    courseFromDisplay ??
+    (viewingCourseSnapshot &&
+    sameCourseId(viewingCourseSnapshot.id, viewingCourseId)
+      ? viewingCourseSnapshot
+      : null) ??
+    courseFromApi ??
+    null;
+  let course = resolveDetailCourseItem(raw, ur);
+  if (
+    course &&
+    viewingCourseSnapshot &&
+    sameCourseId(viewingCourseSnapshot.id, viewingCourseId)
+  ) {
+    course = mergeLocalCourseIntoApiCourse(course, viewingCourseSnapshot);
+  }
+  return course;
+}
 
 function clampMyRouteDetailSheetHeight(px: number): number {
   const minH = Math.round(MY_ROUTE_WINDOW_H * 0.45);
@@ -315,8 +354,7 @@ export default function MyRouteScreen({
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
   const [selectedSort, setSelectedSort] = useState<string | null>("즐겨찾기순");
-  const [selectedRouteKind, setSelectedRouteKind] =
-    useState<RouteKindFilter>("all");
+  const [selectedRouteKind, setSelectedRouteKind] = useState<RouteKindFilter>("all");
   const [viewingCourseId, setViewingCourseId] = useState<string | null>(null);
   /** 카드에서 연 상세 — 목록 재조회·id 타입 불일치 시에도 동일 코스 표시 */
   const [viewingCourseSnapshot, setViewingCourseSnapshot] =
@@ -372,34 +410,56 @@ export default function MyRouteScreen({
     { latitude: number; longitude: number }[] | null
   >(null);
   const [detailPathLoading, setDetailPathLoading] = useState(false);
-  const [myDetailCourseApi, setMyDetailCourseApi] = useState<CourseItem | null>(
-    null,
-  );
+  const [myDetailCourseApi, setMyDetailCourseApi] = useState<CourseItem | null>(null);
   const [myCourseDetailLoading, setMyCourseDetailLoading] = useState(false);
 
   const isCollaborativeRouteId = useCallback(
-    (id: string) =>
-      userSavedRoutes.some(
-        (r) => sameCourseId(r.id, id) && r.collaborative === true,
-      ),
-    [userSavedRoutes],
+    (id: string) => {
+      if (
+        userSavedRoutes.some(
+          (r) => sameCourseId(r.id, id) && r.collaborative === true,
+        )
+      ) {
+        return true;
+      }
+      if (
+        apiMyCourses.some(
+          (c) => sameCourseId(c.id, id) && c.collaborative === true,
+        )
+      ) {
+        return true;
+      }
+      return enrichedMyCourses.some(
+        (c) => sameCourseId(c.id, id) && c.collaborative === true,
+      );
+    },
+    [userSavedRoutes, apiMyCourses, enrichedMyCourses],
   );
 
   const mergedCourses = useMemo(() => {
     const fromUser = userSavedRoutes.map(userRouteToCourseItem);
     const apiTitles = new Set(
-      apiMyCourses.map((c) => String(c.title ?? "").trim()).filter(Boolean),
+      apiMyCourses
+        .map((c) => String(c.title ?? "").trim())
+        .filter(Boolean),
     );
     const merged = mergeApiAndLocalCourseLists(apiMyCourses, fromUser);
     const filtered = merged.filter((c) => {
       const k = String(c.id ?? "");
-      if (k.startsWith("ur-") && apiTitles.has(String(c.title ?? "").trim())) {
+      if (
+        k.startsWith("ur-") &&
+        apiTitles.has(String(c.title ?? "").trim())
+      ) {
         return false;
       }
       return Boolean(k);
     });
     const deduped = dedupeMyCourseList(filtered, userSavedRoutes);
-    return applyMineAuthorToPersonalRoutes(deduped, userSavedRoutes, authorCtx);
+    return applyMineAuthorToPersonalRoutes(
+      collapseDuplicateEmptyDrafts(deduped),
+      userSavedRoutes,
+      authorCtx,
+    );
   }, [userSavedRoutes, apiMyCourses, authorCtx]);
 
   useEffect(() => {
@@ -425,25 +485,22 @@ export default function MyRouteScreen({
 
   const detailMapCourse = useMemo(() => {
     if (!viewingCourseId) return null;
-    const ur = userSavedRoutes.find((r) => sameCourseId(r.id, viewingCourseId));
+    const ur = userSavedRoutes.find((r) =>
+      sameCourseId(r.id, viewingCourseId),
+    );
     const fromDisplay = displayCourses.find((c) =>
       sameCourseId(c.id, viewingCourseId),
     );
     const courseFromApi = apiMyCourses.find((c) =>
       sameCourseId(c.id, viewingCourseId),
     );
-    return (
-      (myDetailCourseApi && sameCourseId(myDetailCourseApi.id, viewingCourseId)
-        ? myDetailCourseApi
-        : null) ??
-      fromDisplay ??
-      (viewingCourseSnapshot &&
-      sameCourseId(viewingCourseSnapshot.id, viewingCourseId)
-        ? viewingCourseSnapshot
-        : null) ??
-      courseFromApi ??
-      (ur ? userRouteToCourseItem(ur) : null)
-    );
+    return pickViewingCourse(viewingCourseId, {
+      ur,
+      myDetailCourseApi,
+      courseFromDisplay: fromDisplay,
+      viewingCourseSnapshot,
+      courseFromApi,
+    });
   }, [
     viewingCourseId,
     userSavedRoutes,
@@ -454,7 +511,9 @@ export default function MyRouteScreen({
   ]);
   const detailMapStepPoints = useMemo(() => {
     if (!viewingCourseId || !detailMapCourse) return null;
-    const ur = userSavedRoutes.find((r) => sameCourseId(r.id, viewingCourseId));
+    const ur = userSavedRoutes.find((r) =>
+      sameCourseId(r.id, viewingCourseId),
+    );
     if (ur && userRouteMapPath(ur).length >= 2) {
       return userRouteMapPath(ur);
     }
@@ -508,15 +567,12 @@ export default function MyRouteScreen({
     if (!vid) return;
     const fromUser = userSavedRoutes.find((r) => sameCourseId(r.id, vid));
     const fromApi = apiMyCourses.find((c) => sameCourseId(c.id, vid));
-    const snap = fromUser ? userRouteToCourseItem(fromUser) : (fromApi ?? null);
+    const snap = fromUser
+      ? userRouteToCourseItem(fromUser)
+      : fromApi ?? null;
     if (snap) setViewingCourseSnapshot(snap);
     setViewingCourseId(vid);
-  }, [
-    myRouteParams?.section,
-    myRouteParams?.viewCourseId,
-    userSavedRoutes,
-    apiMyCourses,
-  ]);
+  }, [myRouteParams?.section, myRouteParams?.viewCourseId, userSavedRoutes, apiMyCourses]);
 
   useEffect(() => {
     if (viewingCourseId) setDetailModalMounted(true);
@@ -548,9 +604,7 @@ export default function MyRouteScreen({
     let cancelled = false;
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(
-          MY_ROUTE_DETAIL_SHEET_HEIGHT_KEY,
-        );
+        const raw = await AsyncStorage.getItem(MY_ROUTE_DETAIL_SHEET_HEIGHT_KEY);
         if (cancelled || raw == null) return;
         const n = Number(raw);
         if (!Number.isFinite(n)) return;
@@ -611,7 +665,7 @@ export default function MyRouteScreen({
     );
     const courseForCenter = ur
       ? userRouteToCourseItem(ur)
-      : (courseFromApi ?? viewingCourseSnapshot);
+      : courseFromApi ?? viewingCourseSnapshot;
     setMapFocus(
       courseForCenter
         ? {
@@ -665,19 +719,19 @@ export default function MyRouteScreen({
       return;
     }
     const ur = userSavedRoutes.find((r) => sameCourseId(r.id, viewingCourseId));
+    const courseFromDisplay = displayCourses.find((c) =>
+      sameCourseId(c.id, viewingCourseId),
+    );
     const courseFromApi = apiMyCourses.find((c) =>
       sameCourseId(c.id, viewingCourseId),
     );
-    const course =
-      (myDetailCourseApi && sameCourseId(myDetailCourseApi.id, viewingCourseId)
-        ? myDetailCourseApi
-        : null) ??
-      courseFromApi ??
-      (ur ? userRouteToCourseItem(ur) : null) ??
-      (viewingCourseSnapshot &&
-      sameCourseId(viewingCourseSnapshot.id, viewingCourseId)
-        ? viewingCourseSnapshot
-        : null);
+    const course = pickViewingCourse(viewingCourseId, {
+      ur,
+      myDetailCourseApi,
+      courseFromDisplay,
+      viewingCourseSnapshot,
+      courseFromApi,
+    });
     if (!course) {
       setDetailMergedPath(null);
       setDetailPathLoading(false);
@@ -687,10 +741,7 @@ export default function MyRouteScreen({
     let stepPoints: { latitude: number; longitude: number }[] = [];
     if (ur && userRouteMapPath(ur).length >= 2) {
       stepPoints = userRouteMapPath(ur);
-    } else if (
-      Array.isArray(course.routeSteps) &&
-      course.routeSteps.length >= 2
-    ) {
+    } else if (Array.isArray(course.routeSteps) && course.routeSteps.length >= 2) {
       stepPoints = course.routeSteps.map((step, i) => {
         if (step.lat != null && step.lng != null) {
           return { latitude: step.lat, longitude: step.lng };
@@ -739,6 +790,7 @@ export default function MyRouteScreen({
     apiMyCourses,
     myDetailCourseApi,
     viewingCourseSnapshot,
+    displayCourses,
   ]);
 
   const filteredCourses = useMemo(() => {
@@ -752,18 +804,10 @@ export default function MyRouteScreen({
     if (q) {
       list = list.filter(
         (c) =>
-          String(c.title ?? "")
-            .toLowerCase()
-            .includes(q) ||
-          String(c.meta ?? "")
-            .toLowerCase()
-            .includes(q) ||
-          String(c.departure ?? "")
-            .toLowerCase()
-            .includes(q) ||
-          String(c.arrival ?? "")
-            .toLowerCase()
-            .includes(q),
+          String(c.title ?? "").toLowerCase().includes(q) ||
+          String(c.meta ?? "").toLowerCase().includes(q) ||
+          String(c.departure ?? "").toLowerCase().includes(q) ||
+          String(c.arrival ?? "").toLowerCase().includes(q),
       );
     }
 
@@ -816,26 +860,21 @@ export default function MyRouteScreen({
     [apiMyCourses, authorCtx, userSavedRoutes],
   );
 
-  const removeCourseFromUi = useCallback(
-    (courseId: string) => {
-      setApiMyCourses((prev) =>
-        prev.filter((c) => !sameCourseId(c.id, courseId)),
-      );
-      setEnrichedMyCourses((prev) =>
-        prev.filter((c) => !sameCourseId(c.id, courseId)),
-      );
-      setViewingCourseSnapshot((prev) =>
-        prev && sameCourseId(prev.id, courseId) ? null : prev,
-      );
-      setMyDetailCourseApi((prev) =>
-        prev && sameCourseId(prev.id, courseId) ? null : prev,
-      );
-      if (sameCourseId(viewingCourseId, courseId)) {
-        dismissCourseDetailImmediate();
-      }
-    },
-    [viewingCourseId],
-  );
+  const removeCourseFromUi = useCallback((courseId: string) => {
+    setApiMyCourses((prev) => prev.filter((c) => !sameCourseId(c.id, courseId)));
+    setEnrichedMyCourses((prev) =>
+      prev.filter((c) => !sameCourseId(c.id, courseId)),
+    );
+    setViewingCourseSnapshot((prev) =>
+      prev && sameCourseId(prev.id, courseId) ? null : prev,
+    );
+    setMyDetailCourseApi((prev) =>
+      prev && sameCourseId(prev.id, courseId) ? null : prev,
+    );
+    if (sameCourseId(viewingCourseId, courseId)) {
+      dismissCourseDetailImmediate();
+    }
+  }, [viewingCourseId]);
 
   const handleRemove = (item: CourseItem) => {
     Alert.alert(
@@ -872,10 +911,7 @@ export default function MyRouteScreen({
               setViewingCourseSnapshot(prevSnapshot);
               setMyDetailCourseApi(prevDetail);
               if (prevViewingId) setViewingCourseId(prevViewingId);
-              Alert.alert(
-                "오류",
-                "코스 삭제에 실패했어요. 잠시 후 다시 시도해 주세요.",
-              );
+              Alert.alert("오류", "코스 삭제에 실패했어요. 잠시 후 다시 시도해 주세요.");
             }
           },
         },
@@ -903,7 +939,7 @@ export default function MyRouteScreen({
     <ScreenRoot {...screenRootProps}>
       {/* 검색 + 필터 — 배경과 분리된 카드형 검색바 */}
       <View
-        className={`flex-row items-center gap-2.5 px-4 ${embedded ? "pb-2 pt-1" : "py-3"}`}
+        className={`flex-row items-center gap-2.5 px-4 ${embedded ? 'pb-2 pt-1' : 'py-3'}`}
       >
         <View
           className="flex-1 flex-row items-center rounded-2xl bg-white px-3.5"
@@ -920,7 +956,7 @@ export default function MyRouteScreen({
           }}
         >
           <View
-            className="mr-2 h-9 w-9 items-center justify-center rounded-xl"
+            className="items-center justify-center mr-2 h-9 w-9 rounded-xl"
             style={{ backgroundColor: "rgba(37,99,235,0.08)" }}
           >
             <Ionicons name="search" size={20} color="#2563EB" />
@@ -939,7 +975,7 @@ export default function MyRouteScreen({
           onPress={() => setFilterVisible(true)}
           activeOpacity={0.85}
           accessibilityLabel="필터"
-          className="items-center justify-center rounded-2xl bg-white"
+          className="items-center justify-center bg-white rounded-2xl"
           style={{
             width: 46,
             height: 46,
@@ -1015,7 +1051,10 @@ export default function MyRouteScreen({
                 isFavorite={favoriteCourseIds.some((fid) =>
                   sameCourseId(fid, item.id),
                 )}
-                isCollaborative={ur?.collaborative === true}
+                isCollaborative={
+                  ur?.collaborative === true || item.collaborative === true
+                }
+                chatRoomUuid={ur?.chatRoomUuid}
                 onPressCard={() => {
                   setViewingCourseSnapshot(item);
                   setViewingCourseId(String(item.id));
@@ -1103,379 +1142,356 @@ export default function MyRouteScreen({
               style={{
                 width: "100%",
                 height: detailSheetMaxHeightPx,
-                maxHeight: clampMyRouteDetailSheetHeight(
-                  MY_ROUTE_WINDOW_H * 0.94,
-                ),
+                maxHeight: clampMyRouteDetailSheetHeight(MY_ROUTE_WINDOW_H * 0.94),
                 transform: [{ translateY: detailSheetTranslateY }],
               }}
             >
               <View
-                className="overflow-hidden rounded-t-3xl flex-1"
+                className="flex-1 overflow-hidden rounded-t-3xl"
                 style={{
                   height: "100%",
                   backgroundColor: "#F8FBFF",
                 }}
               >
-                {viewingCourseId &&
-                  (() => {
-                    const ur = userSavedRoutes.find((r) =>
-                      sameCourseId(r.id, viewingCourseId),
-                    );
-                    const courseFromDisplay = displayCourses.find((c) =>
-                      sameCourseId(c.id, viewingCourseId),
-                    );
-                    const courseFromApi = apiMyCourses.find((c) =>
-                      sameCourseId(c.id, viewingCourseId),
-                    );
-                    const course =
-                      (myDetailCourseApi &&
-                      sameCourseId(myDetailCourseApi.id, viewingCourseId)
-                        ? myDetailCourseApi
-                        : null) ??
-                      courseFromDisplay ??
-                      (viewingCourseSnapshot &&
-                      sameCourseId(viewingCourseSnapshot.id, viewingCourseId)
-                        ? viewingCourseSnapshot
-                        : null) ??
-                      courseFromApi ??
-                      (ur ? userRouteToCourseItem(ur) : null);
-                    if (!course) {
-                      return (
-                        <View
-                          style={{
-                            paddingVertical: 40,
-                            paddingHorizontal: 24,
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                        >
-                          {myCourseDetailLoading ? (
-                            <>
-                              <ActivityIndicator size="large" color="#2563EB" />
-                              <Text className="mt-4 text-sm text-gray-600">
-                                코스 정보를 불러오는 중…
-                              </Text>
-                            </>
-                          ) : (
-                            <Text className="text-sm text-center text-gray-600">
-                              코스 정보를 불러올 수 없습니다.
+              {viewingCourseId &&
+                (() => {
+                  const ur = userSavedRoutes.find((r) =>
+                    sameCourseId(r.id, viewingCourseId),
+                  );
+                  const courseFromDisplay = displayCourses.find((c) =>
+                    sameCourseId(c.id, viewingCourseId),
+                  );
+                  const courseFromApi = apiMyCourses.find((c) =>
+                    sameCourseId(c.id, viewingCourseId),
+                  );
+                  const course = pickViewingCourse(viewingCourseId, {
+                    ur,
+                    myDetailCourseApi,
+                    courseFromDisplay,
+                    viewingCourseSnapshot,
+                    courseFromApi,
+                  });
+                  if (!course) {
+                    return (
+                      <View
+                        style={{
+                          paddingVertical: 40,
+                          paddingHorizontal: 24,
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        {myCourseDetailLoading ? (
+                          <>
+                            <ActivityIndicator size="large" color="#2563EB" />
+                            <Text className="mt-4 text-sm text-gray-600">
+                              코스 정보를 불러오는 중…
                             </Text>
-                          )}
+                          </>
+                        ) : (
+                          <Text className="text-sm text-center text-gray-600">
+                            코스 정보를 불러올 수 없습니다.
+                          </Text>
+                        )}
+                        <TouchableOpacity
+                          onPress={() => closeCourseDetail()}
+                          className="mt-6 rounded-xl bg-blue-600 px-5 py-2.5"
+                        >
+                          <Text className="text-sm font-semibold text-white">
+                            닫기
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  }
+
+                  const detailIsCollaborative =
+                    ur?.collaborative === true || course.collaborative === true;
+                  const detailAuthorCtx = {
+                    ...authorCtx,
+                    isLocalOwnRoute:
+                      Boolean(ur) &&
+                      !String(ur?.forkedFromSharedId ?? "").trim(),
+                  };
+
+                  const mapBlockHeight = Math.min(
+                    240,
+                    Math.max(110, Math.floor(detailSheetMaxHeightPx * 0.3)),
+                  );
+                  const routeSteps = Array.isArray(course.routeSteps)
+                    ? course.routeSteps
+                    : [];
+                  const midStepNames = routeSteps
+                    .slice(1, -1)
+                    .map((s) => String(s?.name ?? "").trim())
+                    .filter(Boolean);
+                  const regionChip =
+                    resolveCourseRegionLabel(
+                      course.region,
+                      course.departure,
+                      course.arrival,
+                      midStepNames,
+                    ) || null;
+                  let pathPts:
+                    | { latitude: number; longitude: number }[]
+                    | undefined;
+                  if (ur && userRouteMapPath(ur).length >= 1) {
+                    pathPts = userRouteMapPath(ur).map((p) => ({
+                      latitude: p.latitude,
+                      longitude: p.longitude,
+                    }));
+                  } else if (routeSteps.length >= 1) {
+                    pathPts = routeSteps.map((step, i) => {
+                      if (step.lat != null && step.lng != null) {
+                        return { latitude: step.lat, longitude: step.lng };
+                      }
+                      const p = getCourseStepMapPoint(
+                        course.id,
+                        i,
+                        routeSteps.length,
+                      );
+                      return { latitude: p.lat, longitude: p.lng };
+                    });
+                  } else {
+                    pathPts = undefined;
+                  }
+                  const mapMarkers =
+                    pathPts && pathPts.length >= 1
+                      ? buildMapMarkersFromPathPoints(pathPts)
+                      : undefined;
+                  // 실경로만 표시 (실패 시 정류장 직선 연결·부채꼴 방지)
+                  const polylinePath = simplifyRoutePath(
+                    detailMergedPath && detailMergedPath.length >= 2
+                      ? detailMergedPath
+                      : undefined,
+                  );
+                  const fallbackCenter = ur
+                    ? userRouteMapCenter(ur)
+                    : getCourseMapCenter(course.id);
+                  const stepMapFocused = Boolean(selectedStepId);
+                  const showWalkOnMap =
+                    stepMapFocused &&
+                    Boolean(stepWalkSegments && stepWalkSegments.length > 0);
+                  const fitPathForCamera =
+                    showWalkOnMap && stepWalkSegments?.length
+                      ? stepWalkSegments.flatMap((s) => s.points)
+                      : detailMergedPath && detailMergedPath.length >= 2
+                        ? detailMergedPath
+                        : pathPts;
+                  const mapRouteFit = computeMapRouteFit(
+                    fitPathForCamera ?? [],
+                    stepMapFocused
+                      ? {
+                          maxZoom: COURSE_DETAIL_MAP_STEP_FOCUS_ZOOM,
+                          paddingZoomOut: 0.5,
+                        }
+                      : { minZoom: 10, maxZoom: 16, paddingZoomOut: 0.9 },
+                  );
+                  const mapCenter =
+                    stepMapFocused && mapFocus
+                      ? mapFocus
+                      : mapRouteFit
+                        ? { lat: mapRouteFit.lat, lng: mapRouteFit.lng }
+                        : mapFocus ?? fallbackCenter;
+                  const mapZoom = mapRouteFit?.zoom;
+                  const mapFitToRoute = !mapRouteFit;
+
+                  return (
+                    <View style={{ flex: 1 }}>
+                      <View
+                        style={{
+                          backgroundColor: "#EEF5FF",
+                          paddingTop: 14,
+                          paddingBottom: 14,
+                          borderTopLeftRadius: 24,
+                          borderTopRightRadius: 24,
+                          overflow: "hidden",
+                          borderBottomWidth: StyleSheet.hairlineWidth,
+                          borderBottomColor: "rgba(37,99,235,0.15)",
+                        }}
+                      >
+                        <View className="flex-row items-center justify-between px-4 mb-2">
+                          <Text className="text-sm font-semibold text-[#1A1A2E]">
+                            코스 위치
+                          </Text>
                           <TouchableOpacity
                             onPress={() => closeCourseDetail()}
-                            className="mt-6 rounded-xl bg-blue-600 px-5 py-2.5"
+                            hitSlop={12}
                           >
-                            <Text className="text-sm font-semibold text-white">
-                              닫기
-                            </Text>
+                            <Ionicons name="close" size={26} color="#64748b" />
                           </TouchableOpacity>
                         </View>
-                      );
-                    }
-
-                    const mapBlockHeight = Math.min(
-                      240,
-                      Math.max(110, Math.floor(detailSheetMaxHeightPx * 0.3)),
-                    );
-                    const routeSteps = Array.isArray(course.routeSteps)
-                      ? course.routeSteps
-                      : [];
-                    const midStepNames = routeSteps
-                      .slice(1, -1)
-                      .map((s) => String(s?.name ?? "").trim())
-                      .filter(Boolean);
-                    const regionChip =
-                      resolveCourseRegionLabel(
-                        course.region,
-                        course.departure,
-                        course.arrival,
-                        midStepNames,
-                      ) || null;
-                    let pathPts:
-                      | { latitude: number; longitude: number }[]
-                      | undefined;
-                    if (ur && userRouteMapPath(ur).length >= 1) {
-                      pathPts = userRouteMapPath(ur).map((p) => ({
-                        latitude: p.latitude,
-                        longitude: p.longitude,
-                      }));
-                    } else if (routeSteps.length >= 1) {
-                      pathPts = routeSteps.map((step, i) => {
-                        if (step.lat != null && step.lng != null) {
-                          return { latitude: step.lat, longitude: step.lng };
-                        }
-                        const p = getCourseStepMapPoint(
-                          course.id,
-                          i,
-                          routeSteps.length,
-                        );
-                        return { latitude: p.lat, longitude: p.lng };
-                      });
-                    } else {
-                      pathPts = undefined;
-                    }
-                    const mapMarkers =
-                      pathPts && pathPts.length >= 1
-                        ? buildMapMarkersFromPathPoints(pathPts)
-                        : undefined;
-                    // 실경로만 표시 (실패 시 정류장 직선 연결·부채꼴 방지)
-                    const polylinePath = simplifyRoutePath(
-                      detailMergedPath && detailMergedPath.length >= 2
-                        ? detailMergedPath
-                        : undefined,
-                    );
-                    const fallbackCenter = ur
-                      ? userRouteMapCenter(ur)
-                      : getCourseMapCenter(course.id);
-                    const stepMapFocused = Boolean(selectedStepId);
-                    const showWalkOnMap =
-                      stepMapFocused &&
-                      Boolean(stepWalkSegments && stepWalkSegments.length > 0);
-                    const fitPathForCamera =
-                      showWalkOnMap && stepWalkSegments?.length
-                        ? stepWalkSegments.flatMap((s) => s.points)
-                        : detailMergedPath && detailMergedPath.length >= 2
-                          ? detailMergedPath
-                          : pathPts;
-                    const mapRouteFit = computeMapRouteFit(
-                      fitPathForCamera ?? [],
-                      stepMapFocused
-                        ? {
-                            maxZoom: COURSE_DETAIL_MAP_STEP_FOCUS_ZOOM,
-                            paddingZoomOut: 0.5,
-                          }
-                        : { minZoom: 10, maxZoom: 16, paddingZoomOut: 0.9 },
-                    );
-                    const mapCenter =
-                      stepMapFocused && mapFocus
-                        ? mapFocus
-                        : mapRouteFit
-                          ? { lat: mapRouteFit.lat, lng: mapRouteFit.lng }
-                          : (mapFocus ?? fallbackCenter);
-                    const mapZoom = mapRouteFit?.zoom;
-                    const mapFitToRoute = !mapRouteFit;
-                    const startStepName =
-                      routeSteps[0]?.name ?? course.departure;
-                    const endStepName =
-                      routeSteps[routeSteps.length - 1]?.name ?? course.arrival;
-
-                    return (
-                      <View style={{ flex: 1 }}>
                         <View
                           style={{
-                            backgroundColor: "#EEF5FF",
-                            paddingTop: 14,
-                            paddingBottom: 14,
-                            borderTopLeftRadius: 24,
-                            borderTopRightRadius: 24,
+                            height: mapBlockHeight,
+                            marginHorizontal: 10,
+                            borderRadius: 14,
                             overflow: "hidden",
-                            borderBottomWidth: StyleSheet.hairlineWidth,
-                            borderBottomColor: "rgba(37,99,235,0.15)",
+                            backgroundColor: "#dbeafe",
+                            borderWidth: 1,
+                            borderColor: "#bfdbfe",
+                            position: "relative",
                           }}
                         >
-                          <View className="flex-row items-center justify-between px-4 mb-2">
-                            <Text className="text-sm font-semibold text-[#1A1A2E]">
-                              코스 위치
-                            </Text>
-                            <TouchableOpacity
-                              onPress={() => closeCourseDetail()}
-                              hitSlop={12}
+                          <AppMapView
+                            key={
+                              ur
+                                ? `ur-${ur.id}-${mapZoom ?? "f"}-${polylinePath?.length ?? 0}-${detailMergedPath?.length ?? 0}-${stepMapFocused ? "step" : "route"}-${selectedStepId ?? "all"}`
+                                : `mc-${course.id}-${mapZoom ?? "f"}-${polylinePath?.length ?? 0}-${detailMergedPath?.length ?? 0}-${stepMapFocused ? "step" : "route"}-${selectedStepId ?? "all"}`
+                            }
+                            latitude={mapCenter.lat}
+                            longitude={mapCenter.lng}
+                            level={8}
+                            zoom={mapZoom}
+                            fitToRoute={mapFitToRoute}
+                            path={
+                              !showWalkOnMap &&
+                              polylinePath &&
+                              polylinePath.length >= 1
+                                ? polylinePath
+                                : undefined
+                            }
+                            segments={
+                              showWalkOnMap ? stepWalkSegments : undefined
+                            }
+                            stops={
+                              !showWalkOnMap &&
+                              polylinePath &&
+                              polylinePath.length >= 1
+                                ? polylinePath
+                                : undefined
+                            }
+                            markers={mapMarkers}
+                            style={{ width: "100%", height: mapBlockHeight }}
+                          />
+                          {(detailPathLoading ||
+                            (stepMapFocused && stepWalkLoading)) ? (
+                            <View
+                              style={{
+                                position: "absolute",
+                                right: 10,
+                                top: 10,
+                                flexDirection: "row",
+                                alignItems: "center",
+                                gap: 6,
+                                paddingHorizontal: 10,
+                                paddingVertical: 6,
+                                borderRadius: 10,
+                                backgroundColor: "rgba(255,255,255,0.92)",
+                              }}
                             >
-                              <Ionicons
-                                name="close"
-                                size={26}
-                                color="#64748b"
-                              />
-                            </TouchableOpacity>
-                          </View>
-                          <View
-                            style={{
-                              height: mapBlockHeight,
-                              marginHorizontal: 10,
-                              borderRadius: 14,
-                              overflow: "hidden",
-                              backgroundColor: "#dbeafe",
-                              borderWidth: 1,
-                              borderColor: "#bfdbfe",
-                              position: "relative",
-                            }}
-                          >
-                            <AppMapView
-                              key={
-                                ur
-                                  ? `ur-${ur.id}-${mapZoom ?? "f"}-${polylinePath?.length ?? 0}-${detailMergedPath?.length ?? 0}-${stepMapFocused ? "step" : "route"}-${selectedStepId ?? "all"}`
-                                  : `mc-${course.id}-${mapZoom ?? "f"}-${polylinePath?.length ?? 0}-${detailMergedPath?.length ?? 0}-${stepMapFocused ? "step" : "route"}-${selectedStepId ?? "all"}`
-                              }
-                              latitude={mapCenter.lat}
-                              longitude={mapCenter.lng}
-                              level={8}
-                              zoom={mapZoom}
-                              fitToRoute={mapFitToRoute}
-                              path={
-                                !showWalkOnMap &&
-                                polylinePath &&
-                                polylinePath.length >= 1
-                                  ? polylinePath
-                                  : undefined
-                              }
-                              segments={
-                                showWalkOnMap ? stepWalkSegments : undefined
-                              }
-                              stops={
-                                !showWalkOnMap &&
-                                polylinePath &&
-                                polylinePath.length >= 1
-                                  ? polylinePath
-                                  : undefined
-                              }
-                              markers={mapMarkers}
-                              style={{ width: "100%", height: mapBlockHeight }}
-                            />
-                            {detailPathLoading ||
-                            (stepMapFocused && stepWalkLoading) ? (
-                              <View
+                              <ActivityIndicator size="small" color="#2563eb" />
+                              <Text
                                 style={{
-                                  position: "absolute",
-                                  right: 10,
-                                  top: 10,
-                                  flexDirection: "row",
-                                  alignItems: "center",
-                                  gap: 6,
-                                  paddingHorizontal: 10,
-                                  paddingVertical: 6,
-                                  borderRadius: 10,
-                                  backgroundColor: "rgba(255,255,255,0.92)",
+                                  fontSize: 11,
+                                  color: "#2563eb",
+                                  fontWeight: "600",
                                 }}
                               >
-                                <ActivityIndicator
-                                  size="small"
-                                  color="#2563eb"
-                                />
-                                <Text
-                                  style={{
-                                    fontSize: 11,
-                                    color: "#2563eb",
-                                    fontWeight: "600",
-                                  }}
-                                >
-                                  {stepMapFocused && stepWalkLoading
-                                    ? "도보 경로 불러오는 중"
-                                    : "경로 반영 중"}
-                                </Text>
-                              </View>
-                            ) : null}
-                          </View>
-                          <Text className="mt-2 px-4 text-[11px] font-medium text-slate-500">
-                            {showWalkOnMap
-                              ? "도보 구간: 주황"
-                              : pathPts && pathPts.length >= 2
-                                ? `1(${startStepName}) → ${pathPts.length}(${endStepName})`
-                                : "출발 기준"}
-                          </Text>
+                                {stepMapFocused && stepWalkLoading
+                                  ? "도보 경로 불러오는 중"
+                                  : "경로 반영 중"}
+                              </Text>
+                            </View>
+                          ) : null}
                         </View>
+                      </View>
 
-                        <ScrollView
-                          showsVerticalScrollIndicator={false}
-                          className="bg-white flex-1"
-                          style={{ flexGrow: 1 }}
-                          contentContainerStyle={{
-                            paddingHorizontal: 20,
-                            paddingTop: 16,
-                            paddingBottom: 28,
-                          }}
-                        >
-                          <View className="flex-row items-center justify-between mb-4">
-                            <Text className="text-xl font-bold text-gray-900">
-                              코스 상세
-                            </Text>
-                            <View className="flex-row items-center gap-2 flex-wrap justify-end">
-                              {ur?.collaborative === true ? (
-                                <TouchableOpacity
-                                  onPress={() => {
-                                    void shareCollaborativeRoute({
-                                      routeId: String(course.id),
-                                      title: course.title,
-                                    });
-                                  }}
-                                  className="flex-row items-center gap-1 rounded-xl bg-orange-50 px-3 py-2"
-                                >
-                                  <Ionicons
-                                    name="share-social-outline"
-                                    size={16}
-                                    color="#ea580c"
-                                  />
-                                  <Text className="text-sm font-semibold text-orange-600">
-                                    초대
-                                  </Text>
-                                </TouchableOpacity>
-                              ) : null}
+
+                      <ScrollView
+                        showsVerticalScrollIndicator={false}
+                        className="flex-1 bg-white"
+                        style={{ flexGrow: 1 }}
+                        contentContainerStyle={{
+                          paddingHorizontal: 20,
+                          paddingTop: 16,
+                          paddingBottom: 28,
+                        }}
+                      >
+                        <View className="flex-row items-center justify-between mb-4">
+                          <Text className="text-xl font-bold text-gray-900">
+                            코스 상세
+                          </Text>
+                          <View className="flex-row flex-wrap items-center justify-end gap-2">
+                            {ur?.collaborative === true ? (
                               <TouchableOpacity
                                 onPress={() => {
-                                  closeCourseDetail(() => {
-                                    if (ur) {
-                                      openRouteCreateEdit(
-                                        ur.id,
-                                        ur.collaborative === true,
-                                      );
-                                    } else if (
-                                      isServerBackedMyCourse(course.id) &&
-                                      canEditAsOwnMyCourse(course)
-                                    ) {
-                                      openRouteCreateEdit(course.id, false);
-                                    } else {
-                                      openRouteCreateFromSharedCourse(
-                                        course.id,
-                                      );
-                                    }
+                                  void shareCollaborativeRoute({
+                                    routeId: String(course.id),
+                                    title: course.title,
                                   });
                                 }}
-                                className="flex-row items-center gap-1 rounded-xl bg-blue-50 px-3 py-2"
+                                className="flex-row items-center gap-1 px-3 py-2 rounded-xl bg-orange-50"
                               >
                                 <Ionicons
-                                  name="create-outline"
+                                  name="share-social-outline"
                                   size={16}
-                                  color="#2563eb"
+                                  color="#ea580c"
                                 />
-                                <Text className="text-sm font-semibold text-blue-600">
-                                  수정
+                                <Text className="text-sm font-semibold text-orange-600">
+                                  초대
                                 </Text>
                               </TouchableOpacity>
-                              <TouchableOpacity
-                                onPress={() => {
-                                  closeCourseDetail(() => handleRemove(course));
-                                }}
-                                className="flex-row items-center gap-1 rounded-xl bg-red-50 px-3 py-2"
-                              >
-                                <Ionicons
-                                  name="trash-outline"
-                                  size={16}
-                                  color="#ef4444"
-                                />
-                                <Text className="text-sm font-semibold text-red-500">
-                                  저장 삭제
-                                </Text>
-                              </TouchableOpacity>
-                            </View>
+                            ) : null}
+                            <TouchableOpacity
+                              onPress={() => {
+                                closeCourseDetail(() => {
+                                  if (ur) {
+                                    openRouteCreateEdit(
+                                      ur.id,
+                                      ur.collaborative === true,
+                                    );
+                                  } else if (
+                                    isServerBackedMyCourse(course.id) &&
+                                    canEditAsOwnMyCourse(course)
+                                  ) {
+                                    openRouteCreateEdit(course.id, false);
+                                  } else {
+                                    openRouteCreateFromSharedCourse(course.id);
+                                  }
+                                });
+                              }}
+                              className="flex-row items-center gap-1 px-3 py-2 rounded-xl bg-blue-50"
+                            >
+                              <Ionicons
+                                name="create-outline"
+                                size={16}
+                                color="#2563eb"
+                              />
+                              <Text className="text-sm font-semibold text-blue-600">
+                                수정
+                              </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => {
+                                closeCourseDetail(() => handleRemove(course));
+                              }}
+                              className="flex-row items-center gap-1 px-3 py-2 rounded-xl bg-red-50"
+                            >
+                              <Ionicons
+                                name="trash-outline"
+                                size={16}
+                                color="#ef4444"
+                              />
+                              <Text className="text-sm font-semibold text-red-500">
+                                저장 삭제
+                              </Text>
+                            </TouchableOpacity>
                           </View>
+                        </View>
 
-                          <Text className="mb-1 text-base font-semibold text-gray-900">
-                            {course.title}
-                          </Text>
+                        <Text className="mb-1 text-base font-semibold text-gray-900">
+                          {course.title}
+                        </Text>
+                        {!detailIsCollaborative ? (
                           <CourseAuthorDetailChip
                             course={course}
-                            authorCtx={{
-                              ...authorCtx,
-                              isLocalOwnRoute:
-                                Boolean(ur) &&
-                                !String(ur?.forkedFromSharedId ?? "").trim(),
-                            }}
+                            authorCtx={detailAuthorCtx}
                             onPressCreator={() => {
-                              const authorLabel = getCourseAuthorLabel(course, {
-                                ...authorCtx,
-                                isLocalOwnRoute:
-                                  Boolean(ur) &&
-                                  !String(ur?.forkedFromSharedId ?? "").trim(),
-                              });
+                              const authorLabel = getCourseAuthorLabel(
+                                course,
+                                detailAuthorCtx,
+                              );
                               const authorUuid = String(
                                 course.authorUuid ?? "",
                               ).trim();
@@ -1514,137 +1530,144 @@ export default function MyRouteScreen({
                               });
                             }}
                           />
-                          {Array.isArray(course.tags) &&
-                          course.tags.length > 0 ? (
-                            <View className="mb-2 flex-row flex-wrap gap-1.5">
-                              {course.tags.slice(0, 2).map((tag) => (
-                                <View
-                                  key={String(tag)}
-                                  className="rounded-full bg-indigo-50 px-2.5 py-0.5"
-                                >
-                                  <Text className="text-xs font-medium text-indigo-800">
-                                    {tag}
-                                  </Text>
-                                </View>
-                              ))}
-                            </View>
-                          ) : (
-                            <Text className="mb-2 text-xs text-gray-500">
-                              선택된 태그가 없어요
-                            </Text>
-                          )}
-
-                          <View className="flex-row flex-wrap items-center gap-2 mb-3">
-                            {regionChip ? (
-                              <View className="px-3 py-1 rounded-full bg-slate-100">
-                                <Text className="text-xs font-medium text-slate-700">
-                                  {regionChip}
-                                </Text>
-                              </View>
-                            ) : null}
-                            <View className="px-3 py-1 rounded-full bg-blue-50">
-                              <Text className="text-xs text-blue-700">
-                                예상 소요{" "}
-                                {formatOverallDurationLabel(
-                                  course.overallDurationMinutes,
-                                )}
-                              </Text>
-                            </View>
-                            <View className="px-3 py-1 rounded-full bg-yellow-50">
-                              <Text className="text-xs text-yellow-700">
-                                ★ {course.rating.toFixed(1)} (
-                                {course.reviewCount}
-                                명)
-                              </Text>
-                            </View>
-                          </View>
-
-                          <View className="p-3 mb-6 rounded-xl bg-gray-50">
-                            <View className="flex-row items-center">
-                              <View className="px-2 py-1 bg-green-100 rounded">
-                                <Text className="text-xs font-medium text-green-700">
-                                  출발
-                                </Text>
-                              </View>
-                              <Text className="flex-1 ml-2 text-sm text-gray-900">
-                                {course.departure}
-                              </Text>
-                            </View>
-                            <View className="flex-row items-center mt-2">
-                              <View className="px-2 py-1 bg-red-100 rounded">
-                                <Text className="text-xs font-medium text-red-700">
-                                  도착
-                                </Text>
-                              </View>
-                              <Text className="flex-1 ml-2 text-sm text-gray-900">
-                                {course.arrival}
-                              </Text>
-                            </View>
-                          </View>
-
-                          <Text className="mb-2 text-sm font-semibold text-gray-900">
-                            코스 경로
-                          </Text>
-                          <View className="p-3 mb-6 rounded-xl bg-gray-50">
-                            {routeSteps.map((step, index) => (
-                              <TouchableOpacity
-                                key={step.id}
-                                onPress={() => {
-                                  if (selectedStepId === step.id) {
-                                    setSelectedStepId(null);
-                                    setMapFocus({
-                                      ...getCourseMapCenterFromSteps(course),
-                                      level: COURSE_DETAIL_MAP_OVERVIEW_LEVEL,
-                                    });
-                                    return;
-                                  }
-                                  if (ur) {
-                                    const p = getUserRouteStepPoint(ur, index);
-                                    setMapFocus({ lat: p.lat, lng: p.lng });
-                                  } else {
-                                    setMapFocus(
-                                      focusMapOnCourseStep(
-                                        step,
-                                        course.id,
-                                        index,
-                                        routeSteps.length,
-                                      ),
-                                    );
-                                  }
-                                  setSelectedStepId(step.id);
-                                }}
-                                className="flex-row items-start py-1.5"
-                                style={[
-                                  index > 0
-                                    ? {
-                                        borderTopWidth: 1,
-                                        borderTopColor: "#e5e7eb",
-                                      }
-                                    : null,
-                                  selectedStepId === step.id
-                                    ? {
-                                        backgroundColor:
-                                          "rgba(59,130,246,0.08)",
-                                        borderRadius: 8,
-                                      }
-                                    : null,
-                                ]}
+                        ) : null}
+                        {Array.isArray(course.tags) && course.tags.length > 0 ? (
+                          <View className="mb-2 flex-row flex-wrap gap-1.5">
+                            {course.tags.slice(0, 2).map((tag) => (
+                              <View
+                                key={String(tag)}
+                                className="rounded-full bg-indigo-50 px-2.5 py-0.5"
                               >
-                                <Text className="mt-0.5 w-5 text-xs font-semibold text-gray-500">
-                                  {index + 1}.
-                                </Text>
-                                <View className="flex-1">
-                                  <Text className="text-sm font-medium text-gray-900">
-                                    {step.name}
-                                  </Text>
-                                </View>
-                              </TouchableOpacity>
+                                <Text className="text-xs font-medium text-indigo-800">{tag}</Text>
+                              </View>
                             ))}
                           </View>
-                        </ScrollView>
-                      </View>
-                    );
-                  })()}
+                        ) : (
+                          <Text className="mb-2 text-xs text-gray-500">
+                            선택된 태그가 없어요
+                          </Text>
+                        )}
+
+                        <View className="flex-row flex-wrap items-center gap-2 mb-3">
+                          {regionChip ? (
+                            <View className="px-3 py-1 rounded-full bg-slate-100">
+                              <Text className="text-xs font-medium text-slate-700">{regionChip}</Text>
+                            </View>
+                          ) : null}
+                          <View className="px-3 py-1 rounded-full bg-blue-50">
+                            <Text className="text-xs text-blue-700">
+                              예상 소요{" "}
+                              {formatOverallDurationLabel(
+                                course.overallDurationMinutes,
+                              )}
+                            </Text>
+                          </View>
+                          <View className="px-3 py-1 rounded-full bg-yellow-50">
+                            <Text className="text-xs text-yellow-700">
+                              ★ {course.rating.toFixed(1)} ({course.reviewCount}
+                              명)
+                            </Text>
+                          </View>
+                        </View>
+
+                        {detailIsCollaborative ? (
+                          <View className="mb-3 self-start rounded-md bg-orange-50 px-2.5 py-1">
+                            <CollaborativeMemberSummaryText
+                              course={course}
+                              routeId={String(course.id)}
+                              chatRoomUuid={ur?.chatRoomUuid}
+                              authorCtx={detailAuthorCtx}
+                              className="text-[11px] font-semibold text-orange-700"
+                              numberOfLines={3}
+                            />
+                          </View>
+                        ) : null}
+
+                        <View className="p-3 mb-6 rounded-xl bg-gray-50">
+                          <View className="flex-row items-center">
+                            <View className="px-2 py-1 bg-green-100 rounded">
+                              <Text className="text-xs font-medium text-green-700">
+                                출발
+                              </Text>
+                            </View>
+                            <Text className="flex-1 ml-2 text-sm text-gray-900">
+                              {course.departure}
+                            </Text>
+                          </View>
+                          <View className="flex-row items-center mt-2">
+                            <View className="px-2 py-1 bg-red-100 rounded">
+                              <Text className="text-xs font-medium text-red-700">
+                                도착
+                              </Text>
+                            </View>
+                            <Text className="flex-1 ml-2 text-sm text-gray-900">
+                              {course.arrival}
+                            </Text>
+                          </View>
+                        </View>
+
+                        <Text className="mb-2 text-sm font-semibold text-gray-900">
+                          코스 경로
+                        </Text>
+                        <View className="p-3 mb-6 rounded-xl bg-gray-50">
+                          {routeSteps.map((step, index) => (
+                            <TouchableOpacity
+                              key={step.id}
+                              onPress={() => {
+                                if (selectedStepId === step.id) {
+                                  setSelectedStepId(null);
+                                  setMapFocus({
+                                    ...getCourseMapCenterFromSteps(course),
+                                    level: COURSE_DETAIL_MAP_OVERVIEW_LEVEL,
+                                  });
+                                  return;
+                                }
+                                if (ur) {
+                                  const p = getUserRouteStepPoint(ur, index);
+                                  setMapFocus({ lat: p.lat, lng: p.lng });
+                                } else {
+                                  setMapFocus(
+                                    focusMapOnCourseStep(
+                                      step,
+                                      course.id,
+                                      index,
+                                      routeSteps.length,
+                                    ),
+                                  );
+                                }
+                                setSelectedStepId(step.id);
+                              }}
+                              className="flex-row items-start py-1.5"
+                              style={[
+                                index > 0
+                                  ? {
+                                      borderTopWidth: 1,
+                                      borderTopColor: "#e5e7eb",
+                                    }
+                                  : null,
+                                selectedStepId === step.id
+                                  ? {
+                                      backgroundColor: "rgba(59,130,246,0.08)",
+                                      borderRadius: 8,
+                                    }
+                                  : null,
+                              ]}
+                            >
+                              <Text className="mt-0.5 w-5 text-xs font-semibold text-gray-500">
+                                {index + 1}.
+                              </Text>
+                              <View className="flex-1">
+                                <Text className="text-sm font-medium text-gray-900">
+                                  {step.name}
+                                </Text>
+                              </View>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </ScrollView>
+                    </View>
+                  );
+                })()}
               </View>
             </Animated.View>
           </View>

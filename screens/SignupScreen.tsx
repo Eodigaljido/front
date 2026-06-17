@@ -11,6 +11,7 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -23,24 +24,17 @@ import { OtpModal } from '../components/OtpModal';
 import OAuthWebViewModal from '../components/OAuthWebViewModal';
 import { tokenStorage } from '../utils/tokenStorage';
 import { getOnboardingStatus } from '../api/onboard';
+import { signInWithGoogleNative, formatGoogleOAuthBackendError } from '../utils/googleSignIn';
+import { authInputStyle, authTextInputColorProps } from '../constants/authFormTheme';
 
 const KAKAO_REST_KEY = process.env.EXPO_PUBLIC_KAKAO_REST_API_KEY ?? '';
-const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID ?? '';
 const KAKAO_REDIRECT_URI = process.env.EXPO_PUBLIC_OAUTH_REDIRECT_URI ?? '';
-const GOOGLE_REDIRECT_URI = process.env.EXPO_PUBLIC_OAUTH_REDIRECT_URI ?? '';
 
 const KAKAO_AUTH_URL =
   `https://kauth.kakao.com/oauth/authorize` +
   `?client_id=${KAKAO_REST_KEY}` +
   `&redirect_uri=${encodeURIComponent(KAKAO_REDIRECT_URI)}` +
   `&response_type=code`;
-
-const GOOGLE_AUTH_URL =
-  `https://accounts.google.com/o/oauth2/v2/auth` +
-  `?client_id=${GOOGLE_CLIENT_ID}` +
-  `&redirect_uri=${encodeURIComponent(GOOGLE_REDIRECT_URI)}` +
-  `&response_type=code` +
-  `&scope=${encodeURIComponent('email profile')}`;
 
 type SignupNavProp = NativeStackNavigationProp<RootStackParamList, 'Signup'>;
 
@@ -76,6 +70,7 @@ export default function SignupScreen() {
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [modalVisible, setModalVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleOAuthPending, setIsGoogleOAuthPending] = useState(false);
   const [isPhoneVerified, setIsPhoneVerified] = useState(false);
   const [oauthModal, setOauthModal] = useState<'kakao' | 'google' | null>(null);
   const [otpExpiry, setOtpExpiry] = useState(TIMER_SECONDS);
@@ -192,15 +187,64 @@ export default function SignupScreen() {
     }
   };
 
-  const handleOAuthCode = async (provider: 'kakao' | 'google', code: string) => {
+  const handleGooglePress = async () => {
+    if (isLoading || isGoogleOAuthPending) return;
+
+    setIsGoogleOAuthPending(true);
+    try {
+      const result = await signInWithGoogleNative();
+      if (!result.ok) {
+        if (result.reason !== 'cancelled') {
+          Alert.alert('', result.message ?? '구글 로그인에 실패했습니다.');
+        }
+        return;
+      }
+      await handleGoogleIdToken(result.idToken);
+    } finally {
+      setIsGoogleOAuthPending(false);
+    }
+  };
+
+  const handleGoogleIdToken = async (idToken: string) => {
+    setIsLoading(true);
+    try {
+      const res = await googleOAuth({ idToken });
+
+      await tokenStorage.saveTokens(res.accessToken, res.refreshToken);
+      await tokenStorage.saveUserUuid(res.user.uuid);
+      await setTokens(res.accessToken, res.refreshToken);
+      setUser(res.user);
+
+      const { completed } = await getOnboardingStatus(res.accessToken);
+      if (!completed) {
+        navigation.reset({ index: 0, routes: [{ name: 'OnBoardStart' }] });
+      } else {
+        navigation.reset({ index: 0, routes: [{ name: 'Tabs' }] });
+      }
+    } catch (err: any) {
+      const status = err?.response?.status;
+      if (status === 409) {
+        Alert.alert(
+          '이미 가입된 계정',
+          '동일한 이메일로 가입된 계정이 있습니다. 기존 계정으로 로그인해주세요.',
+          [{ text: '확인', onPress: () => navigation.navigate('Login') }],
+        );
+      } else {
+        Alert.alert(
+          '오류',
+          formatGoogleOAuthBackendError(err?.response?.data?.message, idToken),
+        );
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleOAuthCode = async (_provider: 'kakao', code: string) => {
     setOauthModal(null);
     setIsLoading(true);
     try {
-      const redirectUri = provider === 'kakao' ? KAKAO_REDIRECT_URI : GOOGLE_REDIRECT_URI;
-      const res =
-        provider === 'kakao'
-          ? await kakaoOAuth({ code, redirectUri })
-          : await googleOAuth({ code, redirectUri });
+      const res = await kakaoOAuth({ code, redirectUri: KAKAO_REDIRECT_URI });
 
       await tokenStorage.saveTokens(res.accessToken, res.refreshToken);
       await tokenStorage.saveUserUuid(res.user.uuid);
@@ -256,7 +300,7 @@ export default function SignupScreen() {
     `w-full px-5 py-4 text-base rounded-full ${errors[field] ? 'bg-red-50' : 'bg-gray-100'}`;
 
   const inputStyle = (field: string) =>
-    errors[field] ? { borderWidth: 1, borderColor: '#fca5a5' } : {};
+    authInputStyle(errors[field] ? { borderWidth: 1, borderColor: '#fca5a5' } : undefined);
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
@@ -282,6 +326,7 @@ export default function SignupScreen() {
             {/* 아이디 */}
             <View>
               <TextInput
+                {...authTextInputColorProps}
                 ref={userIdRef}
                 value={userId}
                 onChangeText={text => handleChange('userId', text, setUserId)}
@@ -302,6 +347,7 @@ export default function SignupScreen() {
             {/* 이메일 */}
             <View>
               <TextInput
+                {...authTextInputColorProps}
                 ref={emailRef}
                 value={email}
                 onChangeText={text => handleChange('email', text, setEmail)}
@@ -323,6 +369,7 @@ export default function SignupScreen() {
             {/* 닉네임 */}
             <View>
               <TextInput
+                {...authTextInputColorProps}
                 ref={nicknameRef}
                 value={nickname}
                 onChangeText={text => handleChange('nickname', text, setNickname)}
@@ -342,6 +389,7 @@ export default function SignupScreen() {
             {/* 비밀번호 */}
             <View>
               <TextInput
+                {...authTextInputColorProps}
                 ref={passwordRef}
                 value={displayPassword}
                 onChangeText={handlePasswordInput}
@@ -370,6 +418,7 @@ export default function SignupScreen() {
                 style={errors.phone ? { borderWidth: 1, borderColor: '#fca5a5' } : {}}
               >
                 <TextInput
+                  {...authTextInputColorProps}
                   ref={phoneRef}
                   value={phone}
                   onChangeText={text => handleChange('phone', text, setPhone)}
@@ -378,6 +427,7 @@ export default function SignupScreen() {
                   keyboardType="phone-pad"
                   returnKeyType="done"
                   className="flex-1 py-4 pl-5 text-base"
+                  style={authInputStyle()}
                 />
                 <TouchableOpacity
                   activeOpacity={0.7}
@@ -436,7 +486,7 @@ export default function SignupScreen() {
             <TouchableOpacity
               activeOpacity={0.7}
               disabled={isLoading}
-              onPress={() => setOauthModal('google')}
+              onPress={() => void handleGooglePress()}
               className="flex-row items-center justify-center flex-1 h-12 gap-2 bg-white border border-gray-200 rounded-2xl"
             >
               <Image
@@ -478,15 +528,15 @@ export default function SignupScreen() {
           onClose={() => setOauthModal(null)}
         />
       )}
-      {oauthModal === 'google' && (
-        <OAuthWebViewModal
-          visible
-          authUrl={GOOGLE_AUTH_URL}
-          redirectUri={GOOGLE_REDIRECT_URI}
-          onCode={code => handleOAuthCode('google', code)}
-          onClose={() => setOauthModal(null)}
-        />
-      )}
+
+      <Modal visible={isGoogleOAuthPending} transparent animationType="fade">
+        <View className="flex-1 items-center justify-center bg-black/40">
+          <View className="items-center px-8 py-6 bg-white rounded-2xl">
+            <ActivityIndicator size="large" color="#3b82f6" />
+            <Text className="mt-4 text-base font-medium text-gray-800">구글 로그인 중…</Text>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

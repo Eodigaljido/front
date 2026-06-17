@@ -16,17 +16,25 @@
       },
       "env": {
         "NPM_CONFIG_LEGACY_PEER_DEPS": "true",
-        "EXPO_PUBLIC_APK_DEBUG": "1"
+        "EXPO_PUBLIC_APK_DEBUG": "1",
+        "EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID": "658554777625-ssds5atn1lpo91sccghm3ph8dvipqhtj.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_OAUTH_REDIRECT_URI": "https://eodigaljido.uk/oauth/google",
+        "EXPO_PUBLIC_OAUTH_REDIRECT_URI": "https://api.eodigaljido.uk/auth/oauth/kakao"
       }
     },
     "production": {
+      "environment": "production",
       "node": "22.11.0",
       "android": {
         "buildType": "app-bundle"
       },
       "autoIncrement": true,
       "env": {
-        "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
+        "NPM_CONFIG_LEGACY_PEER_DEPS": "true",
+        "EXPO_PUBLIC_TEST_LOGIN": "0",
+        "EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID": "658554777625-ssds5atn1lpo91sccghm3ph8dvipqhtj.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_OAUTH_REDIRECT_URI": "https://eodigaljido.uk/oauth/google",
+        "EXPO_PUBLIC_OAUTH_REDIRECT_URI": "https://api.eodigaljido.uk/auth/oauth/kakao"
       }
     }
   },

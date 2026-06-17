@@ -1,23 +1,14 @@
-import {
-  formatRouteDistanceDuration,
-  ROUTE_USER_MESSAGES,
-} from "../utils/routeCopy";
-
-declare const __DEV__: boolean;
+import { formatRouteDistanceDuration, ROUTE_USER_MESSAGES } from '../utils/routeCopy';
 
 type LatLng = { latitude: number; longitude: number };
 
 /** googleDirectionsApi.DirectionsMode 와 동일 (순환 import 방지) */
-export type TmapDirectionsRequestMode =
-  | "walking"
-  | "transit"
-  | "driving"
-  | "bicycling";
+export type TmapDirectionsRequestMode = 'walking' | 'transit' | 'driving' | 'bicycling';
 
 export type TmapDirectionsLegResult = {
   path: LatLng[];
   segments: Array<{
-    mode: "walk" | "ride";
+    mode: 'walk' | 'ride';
     points: LatLng[];
     lineLabel?: string;
   }>;
@@ -27,13 +18,14 @@ export type TmapDirectionsLegResult = {
   detail: string;
 };
 
-const TMAP_CAR_URL =
-  "https://apis.openapi.sk.com/tmap/routes?version=1&format=json";
-const TMAP_WALK_URL =
-  "https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json";
+const TMAP_CAR_URL = 'https://apis.openapi.sk.com/tmap/routes?version=1&format=json';
+const TMAP_WALK_URL = 'https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json';
+const TMAP_RATE_LIMIT_COOLDOWN_MS = 90_000;
+
+let tmapCooldownUntilMs = 0;
 
 function getTmapAppKey(): string {
-  return String(process.env.EXPO_PUBLIC_TMAP_APP_KEY ?? "").trim();
+  return String(process.env.EXPO_PUBLIC_TMAP_APP_KEY ?? '').trim();
 }
 
 function dedupeConsecutive(pts: LatLng[]): LatLng[] {
@@ -69,18 +61,18 @@ function appendLineStringCoords(coords: unknown, points: LatLng[]) {
 
 function appendGeometryCoords(geom: any, points: LatLng[]) {
   if (!geom) return;
-  const type = String(geom.type ?? "");
-  if (type === "LineString") {
+  const type = String(geom.type ?? '');
+  if (type === 'LineString') {
     appendLineStringCoords(geom.coordinates, points);
     return;
   }
-  if (type === "MultiLineString" && Array.isArray(geom.coordinates)) {
+  if (type === 'MultiLineString' && Array.isArray(geom.coordinates)) {
     for (const ring of geom.coordinates) {
       appendLineStringCoords(ring, points);
     }
     return;
   }
-  if (type === "Point" && Array.isArray(geom.coordinates)) {
+  if (type === 'Point' && Array.isArray(geom.coordinates)) {
     const lng = Number(geom.coordinates[0]);
     const lat = Number(geom.coordinates[1]);
     if (Number.isFinite(lat) && Number.isFinite(lng)) {
@@ -88,11 +80,11 @@ function appendGeometryCoords(geom: any, points: LatLng[]) {
     }
     return;
   }
-  if (type === "MultiPoint" && Array.isArray(geom.coordinates)) {
+  if (type === 'MultiPoint' && Array.isArray(geom.coordinates)) {
     appendLineStringCoords(geom.coordinates, points);
     return;
   }
-  if (type === "GeometryCollection" && Array.isArray(geom.geometries)) {
+  if (type === 'GeometryCollection' && Array.isArray(geom.geometries)) {
     for (const g of geom.geometries) {
       appendGeometryCoords(g, points);
     }
@@ -111,19 +103,19 @@ function tmapBody(
   mode: TmapDirectionsRequestMode,
   from: LatLng,
   to: LatLng,
-  searchOption = "0",
+  searchOption = '0',
 ) {
   const base = {
     startX: String(from.longitude),
     startY: String(from.latitude),
     endX: String(to.longitude),
     endY: String(to.latitude),
-    startName: "출발지",
-    endName: "도착지",
-    reqCoordType: "WGS84GEO",
-    resCoordType: "WGS84GEO",
+    startName: '출발지',
+    endName: '도착지',
+    reqCoordType: 'WGS84GEO',
+    resCoordType: 'WGS84GEO',
   };
-  if (mode === "walking") {
+  if (mode === 'walking') {
     return {
       ...base,
       searchOption: String(searchOption),
@@ -131,14 +123,14 @@ function tmapBody(
   }
   return {
     ...base,
-    searchOption: "0",
-    trafficInfo: "N",
+    searchOption: '0',
+    trafficInfo: 'N',
   };
 }
 
 function parseTmapCommonResult(
   features: any[],
-  fallbackMode: "walk" | "ride",
+  fallbackMode: 'walk' | 'ride',
 ): TmapDirectionsLegResult | null {
   const path = toLatLngListFromFeatures(features);
   if (path.length < 2) return null;
@@ -151,8 +143,8 @@ function parseTmapCommonResult(
   const detailLines: string[] = [];
   for (const f of features) {
     const p = f?.properties ?? {};
-    const desc = String(p?.description ?? "").trim();
-    const name = String(p?.name ?? "").trim();
+    const desc = String(p?.description ?? '').trim();
+    const name = String(p?.name ?? '').trim();
     if (desc) detailLines.push(desc);
     else if (name) detailLines.push(name);
   }
@@ -165,7 +157,7 @@ function parseTmapCommonResult(
     summary: formatRouteDistanceDuration(totalDistance, durationMinutes),
     detail:
       detailLines.length > 0
-        ? detailLines.slice(0, 12).join("\n")
+        ? detailLines.slice(0, 12).join('\n')
         : ROUTE_USER_MESSAGES.routeDetailFallback,
   };
 }
@@ -176,26 +168,32 @@ async function fetchTmapJson(
   body: Record<string, string>,
   signal?: AbortSignal,
 ): Promise<any | null> {
+  if (Date.now() < tmapCooldownUntilMs) {
+    return null;
+  }
   try {
     const res = await fetch(url, {
-      method: "POST",
+      method: 'POST',
       headers: {
         appKey,
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
       signal,
     });
     if (!res.ok) {
-      if (typeof __DEV__ !== "undefined" && __DEV__) {
+      if (res.status === 429) {
+        tmapCooldownUntilMs = Date.now() + TMAP_RATE_LIMIT_COOLDOWN_MS;
+      }
+      if (typeof __DEV__ !== 'undefined' && __DEV__ && res.status !== 429) {
         console.warn(`[Tmap] 요청 실패 status=${res.status}`);
       }
       return null;
     }
     return res.json();
   } catch {
-    if (typeof __DEV__ !== "undefined" && __DEV__) {
-      console.warn("[Tmap] 요청 예외 발생");
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      console.warn('[Tmap] 요청 예외 발생');
     }
     return null;
   }
@@ -214,18 +212,18 @@ export async function fetchTmapDirectionsLeg(params: {
   if (!appKey) return null;
 
   const mode = params.requestedMode;
-  if (mode !== "walking" && mode !== "driving") return null;
+  if (mode !== 'walking' && mode !== 'driving') return null;
 
-  const isWalking = mode === "walking";
+  const isWalking = mode === 'walking';
   const url = isWalking ? TMAP_WALK_URL : TMAP_CAR_URL;
   const json = await fetchTmapJson(
     url,
     appKey,
-    tmapBody(mode, params.from, params.to, params.searchOption ?? "0"),
+    tmapBody(mode, params.from, params.to, params.searchOption ?? '0'),
     params.signal,
   );
   const features = Array.isArray(json?.features) ? json.features : [];
   if (features.length === 0) return null;
 
-  return parseTmapCommonResult(features, isWalking ? "walk" : "ride");
+  return parseTmapCommonResult(features, isWalking ? 'walk' : 'ride');
 }

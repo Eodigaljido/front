@@ -1,15 +1,30 @@
 // @ts-nocheck
 import React, { useCallback, useState } from 'react';
-import { View, Text, Pressable, FlatList, Image, ActivityIndicator, RefreshControl } from 'react-native';
+import {
+  View,
+  Text,
+  Pressable,
+  FlatList,
+  Image,
+  ActivityIndicator,
+  RefreshControl,
+  TextInput,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import {
   getFriendRequests,
   respondToFriendRequest,
+  getMyFriendCode,
+  addFriendByCode,
   type FriendRequest,
 } from '../api/friend/friends';
 import ResultModal from '../components/ResultModal';
+
+// 백엔드 친구 코드 형식: 영문 대문자 + 숫자 조합 6자리 (예: A3K9B2)
+const FRIEND_CODE_REGEX = /^[A-Z0-9]{6}$/;
 
 type ModalState = { visible: boolean; type: 'success' | 'error'; title: string; message: string };
 const HIDDEN_MODAL: ModalState = { visible: false, type: 'success', title: '', message: '' };
@@ -31,6 +46,11 @@ export default function FriendRequestsScreen(): React.JSX.Element {
   const [responding, setResponding] = useState<number | null>(null);
   const [tab, setTab] = useState<'RECEIVED' | 'SENT'>('RECEIVED');
   const [modal, setModal] = useState<ModalState>(HIDDEN_MODAL);
+  const [myCode, setMyCode] = useState<string | null>(null);
+  const [myCodeLoading, setMyCodeLoading] = useState(false);
+  const [inputCode, setInputCode] = useState('');
+  const [inputError, setInputError] = useState('');
+  const [addLoading, setAddLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -44,11 +64,72 @@ export default function FriendRequestsScreen(): React.JSX.Element {
     }
   }, []);
 
+  const loadMyCode = useCallback(async () => {
+    if (myCode) return;
+    setMyCodeLoading(true);
+    try {
+      const code = await getMyFriendCode();
+      setMyCode(code);
+    } catch {
+      setMyCode(null);
+    } finally {
+      setMyCodeLoading(false);
+    }
+  }, [myCode]);
+
   useFocusEffect(
     useCallback(() => {
       void load();
-    }, [load]),
+      void loadMyCode();
+    }, [load, loadMyCode]),
   );
+
+  const handleCopyCode = useCallback(async () => {
+    if (!myCode) return;
+    await Clipboard.setStringAsync(myCode);
+    setModal({
+      visible: true,
+      type: 'success',
+      title: '복사 완료',
+      message: '친구 코드가 클립보드에 복사되었습니다.',
+    });
+  }, [myCode]);
+
+  const handleChangeCode = useCallback(
+    (text: string) => {
+      setInputCode(text.toUpperCase());
+      if (inputError) setInputError('');
+    },
+    [inputError],
+  );
+
+  const handleAddFriend = useCallback(async () => {
+    if (!inputCode.trim()) {
+      setInputError('친구 코드를 입력해주세요.');
+      return;
+    }
+    if (!FRIEND_CODE_REGEX.test(inputCode)) {
+      setInputError('올바른 형식이 아닙니다. (예: A3K9B2)');
+      return;
+    }
+    setAddLoading(true);
+    try {
+      await addFriendByCode(inputCode);
+      setInputCode('');
+      setInputError('');
+      setModal({
+        visible: true,
+        type: 'success',
+        title: '친구 추가 완료',
+        message: `${inputCode} 코드로 친구를 추가했습니다.`,
+      });
+      void load();
+    } catch (e: any) {
+      setInputError(e?.response?.data?.message ?? e?.message ?? '친구 추가에 실패했습니다.');
+    } finally {
+      setAddLoading(false);
+    }
+  }, [inputCode, load]);
 
   const handleRespond = useCallback(
     async (requestId: number, accept: boolean) => {
@@ -58,10 +139,20 @@ export default function FriendRequestsScreen(): React.JSX.Element {
         await respondToFriendRequest(requestId, accept);
         setRequests(prev => prev.filter(r => r.requestId !== requestId));
         if (accept) {
-          setModal({ visible: true, type: 'success', title: '친구 추가 완료', message: '친구 요청을 수락했습니다.' });
+          setModal({
+            visible: true,
+            type: 'success',
+            title: '친구 추가 완료',
+            message: '친구 요청을 수락했습니다.',
+          });
         }
       } catch (e: any) {
-        setModal({ visible: true, type: 'error', title: '오류', message: e?.response?.data?.message ?? e?.message ?? '처리에 실패했습니다.' });
+        setModal({
+          visible: true,
+          type: 'error',
+          title: '오류',
+          message: e?.response?.data?.message ?? e?.message ?? '처리에 실패했습니다.',
+        });
       } finally {
         setResponding(null);
       }
@@ -140,6 +231,72 @@ export default function FriendRequestsScreen(): React.JSX.Element {
         <Text className="flex-1 text-lg font-bold text-gray-900">친구 요청</Text>
       </View>
 
+      {/* 내 친구 코드 + 친구 코드 입력 */}
+      <View className="bg-white border-b border-gray-200 px-4 py-4">
+        <Text className="mb-2 text-sm font-semibold text-gray-700">내 친구 코드</Text>
+        <View
+          className="flex-row items-center justify-between rounded-xl px-4"
+          style={{ backgroundColor: '#EFF6FF', height: 48 }}
+        >
+          {myCodeLoading ? (
+            <ActivityIndicator size="small" color="#2563eb" />
+          ) : (
+            <Text style={{ fontSize: 20, fontWeight: '800', letterSpacing: 6, color: '#2563eb' }}>
+              {myCode ?? '------'}
+            </Text>
+          )}
+          <Pressable
+            onPress={handleCopyCode}
+            disabled={!myCode}
+            className="flex-row items-center gap-1 rounded-lg border border-blue-200 bg-white px-3 py-1.5 active:opacity-80 disabled:opacity-40"
+          >
+            <Ionicons name="copy-outline" size={14} color="#2563eb" />
+            <Text className="text-xs font-semibold text-blue-600">복사</Text>
+          </Pressable>
+        </View>
+
+        <Text className="mt-4 mb-2 text-sm font-semibold text-gray-700">친구 코드 입력</Text>
+        <View className="flex-row gap-2">
+          <View
+            className="flex-row items-center flex-1 px-3 border rounded-xl"
+            style={{
+              borderColor: inputError ? '#ef4444' : '#d1d5db',
+              backgroundColor: '#f9fafb',
+              height: 46,
+            }}
+          >
+            <Ionicons
+              name="person-add-outline"
+              size={16}
+              color="#9ca3af"
+              style={{ marginRight: 6 }}
+            />
+            <TextInput
+              value={inputCode}
+              onChangeText={handleChangeCode}
+              placeholder="예) A3K9B2"
+              placeholderTextColor="#9ca3af"
+              autoCapitalize="characters"
+              maxLength={6}
+              style={{ flex: 1, fontSize: 15, color: '#111827', letterSpacing: 2 }}
+            />
+          </View>
+          <Pressable
+            onPress={handleAddFriend}
+            disabled={addLoading}
+            className="items-center justify-center rounded-xl active:opacity-80"
+            style={{ backgroundColor: addLoading ? '#93c5fd' : '#2563eb', width: 46, height: 46 }}
+          >
+            {addLoading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text className="text-sm font-semibold text-white">추가</Text>
+            )}
+          </Pressable>
+        </View>
+        {inputError ? <Text className="mt-2 text-xs text-red-500">{inputError}</Text> : null}
+      </View>
+
       {/* 탭 */}
       <View className="flex-row bg-white border-b border-gray-200">
         {(['RECEIVED', 'SENT'] as const).map(t => (
@@ -180,7 +337,14 @@ export default function FriendRequestsScreen(): React.JSX.Element {
         renderItem={renderItem}
         contentContainerStyle={filtered.length === 0 ? { flex: 1 } : { backgroundColor: '#FFF' }}
         style={{ backgroundColor: '#F0F5FF' }}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={load} colors={['#2563eb']} tintColor="#2563eb" />}
+        refreshControl={
+          <RefreshControl
+            refreshing={loading}
+            onRefresh={load}
+            colors={['#2563eb']}
+            tintColor="#2563eb"
+          />
+        }
         ListEmptyComponent={
           <View className="items-center justify-center flex-1">
             <Ionicons name="people-outline" size={48} color="#d1d5db" />

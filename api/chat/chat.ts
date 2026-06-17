@@ -1,4 +1,10 @@
+import { isAxiosError } from "axios";
 import { instance } from "../axios";
+
+/** 삭제·만료된 채팅방 (404) */
+export function isChatApiNotFoundError(err: unknown): boolean {
+  return isAxiosError(err) && err.response?.status === 404;
+}
 import {
   fetchMultipart,
   fileNameFromUri,
@@ -59,6 +65,33 @@ export interface ChatMessage {
   mentionedUserUuids?: string[];
 }
 
+function normalizeChatMessage(raw: unknown): ChatMessage | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.uuid === "string") return raw as ChatMessage;
+  const inner = o.data;
+  if (inner && typeof inner === "object" && typeof (inner as ChatMessage).uuid === "string") {
+    return inner as ChatMessage;
+  }
+  return null;
+}
+
+function normalizeChatMessageList(raw: unknown): ChatMessage[] {
+  if (Array.isArray(raw)) {
+    return raw
+      .map((item) => normalizeChatMessage(item))
+      .filter((m): m is ChatMessage => Boolean(m));
+  }
+  if (raw && typeof raw === "object") {
+    const o = raw as Record<string, unknown>;
+    for (const key of ["data", "items", "content"] as const) {
+      const nested = o[key];
+      if (Array.isArray(nested)) return normalizeChatMessageList(nested);
+    }
+  }
+  return [];
+}
+
 // 채팅방 목록 조회
 export async function getChatRooms(accessToken: string): Promise<ChatRoom[]> {
   const res = await instance.get<ChatRoom[]>("/chats", {
@@ -88,7 +121,7 @@ export async function getRoomMessages(
     headers: { Authorization: `Bearer ${accessToken}` },
     params: options,
   });
-  return res.data;
+  return normalizeChatMessageList(res.data);
 }
 
 // 메세지  전송
@@ -103,7 +136,11 @@ export async function sendMessage(
     { content, mentionedUserUuids },
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
-  return res.data;
+  const msg = normalizeChatMessage(res.data);
+  if (!msg) {
+    throw new Error("메시지 전송 응답을 해석하지 못했습니다.");
+  }
+  return msg;
 }
 
 // 읽음 처리

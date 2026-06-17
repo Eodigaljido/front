@@ -1,6 +1,10 @@
 import { Alert, Platform, Share } from "react-native";
 import Constants from "expo-constants";
 import { SHARE_LINK_HOST } from "../constants/shareLinking";
+import {
+  linkCourseChatRoomForShare,
+  promptCreateCourseChatRoom,
+} from "../data/routeCollaborativeChat";
 
 export function getShareBaseUrl(): string {
   const fromEnv = String(process.env.EXPO_PUBLIC_SHARE_BASE_URL ?? "").trim();
@@ -36,6 +40,12 @@ export function buildPublicCourseShareUrl(courseId: string): string {
 export async function sharePublicCourse(opts: {
   courseId: string;
   title: string;
+  accessToken?: string | null;
+  myUuid?: string | null;
+  existingChatRoomUuid?: string | null;
+  onChatRoomLinked?: (roomUuid: string) => void;
+  /** 수정 화면 밖 — 코스 소개 링크만 (채팅방·공동 편집 초대 없음) */
+  introOnly?: boolean;
 }): Promise<void> {
   const title = String(opts.title ?? "코스").trim() || "코스";
   const shareId = resolveShareablePublicCourseId(opts.courseId);
@@ -54,15 +64,38 @@ export async function sharePublicCourse(opts: {
     return;
   }
 
-  const message = `${title}\n${url}`;
+  const introOnly = opts.introOnly === true;
+  const existingRoom = String(opts.existingChatRoomUuid ?? "").trim();
+  if (!introOnly && !existingRoom) {
+    const createChat = await promptCreateCourseChatRoom();
+    if (
+      createChat &&
+      opts.accessToken &&
+      String(opts.myUuid ?? "").trim()
+    ) {
+      const roomUuid = await linkCourseChatRoomForShare({
+        accessToken: opts.accessToken,
+        myUuid: String(opts.myUuid),
+        routeId: shareId,
+        routeTitle: title,
+        existingChatRoomUuid: existingRoom || null,
+      });
+      if (roomUuid) opts.onChatRoomLinked?.(roomUuid);
+    }
+  }
+
+  const message = introOnly
+    ? `「${title}」 코스를 소개합니다.\n${url}`
+    : `${title}\n${url}`;
+  const shareTitle = introOnly ? `${title} · 코스 소개` : title;
 
   try {
     const result = await Share.share(
       Platform.select({
-        ios: { message, title },
-        android: { message, title },
-        default: { message, title },
-      }) ?? { message, title },
+        ios: { message, title: shareTitle },
+        android: { message, title: shareTitle },
+        default: { message, title: shareTitle },
+      }) ?? { message, title: shareTitle },
     );
     if (result.action === Share.dismissedAction) return;
   } catch (e: unknown) {

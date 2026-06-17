@@ -7,6 +7,8 @@ export type UserSavedRouteStop = {
   id: string;
   kind: 'start' | 'via' | 'end';
   title: string;
+  /** 장소 검색 시 받은 원래 이름 */
+  originalTitle?: string;
   timeLine: string;
   lat?: number;
   lng?: number;
@@ -102,6 +104,7 @@ export function userRouteToCourseItem(r: UserSavedRoute): CourseItem {
       id: `${r.id}-step-${i}`,
       name: s.title,
       stayMinutes: 0,
+      ...(s.lat != null && s.lng != null ? { lat: s.lat, lng: s.lng } : {}),
     })),
     routeLegs: r.legs.map((l, i) => ({
       id: l.id || `${r.id}-leg-${i}`,

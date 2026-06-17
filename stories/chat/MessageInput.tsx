@@ -1,26 +1,10 @@
-import {
-  Image,
-  ImageUp,
-  Key,
-  Map,
-  Send,
-  Sticker,
-  X,
-} from "lucide-react-native";
-import { useEffect, useRef, useState } from "react";
-import type { StyleProp, ViewStyle } from "react-native";
+import { Image, ImageUp, Key, Map, Send, Sticker, X } from 'lucide-react-native';
+import { useEffect, useRef, useState } from 'react';
+import type { StyleProp, ViewStyle } from 'react-native';
 
-import * as ImagePicker from "expo-image-picker";
+import * as ImagePicker from 'expo-image-picker';
 
-import {
-  Keyboard,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
-import React from "react";
+import { Keyboard, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 const RESEND_INTERVAL_MS = 2000;
 const DEBOUNCE_MS = 2000;
@@ -40,7 +24,7 @@ export interface MessageInputProps {
 }
 
 export const MessageInput = ({
-  placeholder = "메세지 입력",
+  placeholder = '메세지 입력',
   onSend,
   onImageSend,
   onStickerSend,
@@ -51,7 +35,7 @@ export const MessageInput = ({
   onCancelEdit,
   onTypingChange,
 }: MessageInputProps) => {
-  const [text, setText] = useState("");
+  const [text, setText] = useState('');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const onTypingChangeRef = useRef(onTypingChange);
@@ -63,7 +47,7 @@ export const MessageInput = ({
   const lastTrueSentAtRef = useRef(0);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const currentTextRef = useRef("");
+  const currentTextRef = useRef('');
 
   const clearTypingTimers = () => {
     if (debounceTimerRef.current) {
@@ -83,8 +67,8 @@ export const MessageInput = ({
       setText(editingText);
       currentTextRef.current = editingText;
     } else {
-      setText("");
-      currentTextRef.current = "";
+      setText('');
+      currentTextRef.current = '';
     }
   }, [editingText]);
 
@@ -97,10 +81,7 @@ export const MessageInput = ({
     clearTypingTimers();
 
     const now = Date.now();
-    if (
-      !isTypingActiveRef.current ||
-      now - lastTrueSentAtRef.current >= RESEND_INTERVAL_MS
-    ) {
+    if (!isTypingActiveRef.current || now - lastTrueSentAtRef.current >= RESEND_INTERVAL_MS) {
       onTypingChangeRef.current(true);
       isTypingActiveRef.current = true;
       lastTrueSentAtRef.current = now;
@@ -132,8 +113,8 @@ export const MessageInput = ({
     }
 
     onSend?.(trimmed);
-    setText("");
-    currentTextRef.current = "";
+    setText('');
+    currentTextRef.current = '';
   };
 
   const canSend = !!text.trim() && !disabled;
@@ -143,16 +124,13 @@ export const MessageInput = ({
   const pickImageAsync = async () => {
     Keyboard.dismiss();
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") {
-      const { Alert } = await import("react-native");
-      Alert.alert(
-        "권한 필요",
-        "갤러리에서 사진을 선택하려면 사진 접근을 허용해 주세요.",
-      );
+    if (status !== 'granted') {
+      const { Alert } = await import('react-native');
+      Alert.alert('권한 필요', '갤러리에서 사진을 선택하려면 사진 접근을 허용해 주세요.');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
+      mediaTypes: ['images'],
       allowsEditing: false,
       quality: 0.85,
     });
@@ -162,7 +140,7 @@ export const MessageInput = ({
       setSelectedImage(result.assets[0].uri); // 선택한 이미지의 URI를 상태에 저장
       onImageSend?.(result.assets[0].uri);
     } else {
-      console.log("이미지를 선택하지 않았습니다.");
+      console.log('이미지를 선택하지 않았습니다.');
     }
   };
 
@@ -171,10 +149,7 @@ export const MessageInput = ({
       {isEditing && (
         <View style={styles.editingBanner}>
           <Text style={styles.editingLabel}>메시지 수정 중</Text>
-          <TouchableOpacity
-            onPress={onCancelEdit}
-            accessibilityLabel="수정 취소"
-          >
+          <TouchableOpacity onPress={onCancelEdit} accessibilityLabel="수정 취소">
             <X size={16} color="#666" />
           </TouchableOpacity>
         </View>
@@ -223,17 +198,17 @@ export const MessageInput = ({
 
 const styles = StyleSheet.create({
   container: {
-    width: "95%",
-    alignSelf: "center",
-    justifyContent: "center",
-    alignItems: "center",
+    width: '95%',
+    alignSelf: 'center',
+    justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: 25,
     borderRadius: 15,
   },
   inputWrapper: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#f0f0f0",
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0',
     borderRadius: 15,
     paddingLeft: 14,
     paddingRight: 6,
@@ -248,28 +223,28 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "#0088FF",
-    justifyContent: "center",
-    alignItems: "center",
+    backgroundColor: '#0088FF',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   sendButtonDisabled: {
-    backgroundColor: "#b0d4ff",
+    backgroundColor: '#b0d4ff',
   },
   editingBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    minWidth: "95%",
-    maxWidth: "95%",
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minWidth: '95%',
+    maxWidth: '95%',
     paddingHorizontal: 14,
     paddingVertical: 6,
-    backgroundColor: "#e8f0fe",
+    backgroundColor: '#e8f0fe',
     borderRadius: 10,
     marginBottom: 6,
   },
   editingLabel: {
     fontSize: 12,
-    color: "#0055cc",
-    fontWeight: "600",
+    color: '#0055cc',
+    fontWeight: '600',
   },
 });

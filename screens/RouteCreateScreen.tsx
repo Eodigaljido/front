@@ -23,6 +23,7 @@ import {
   Dimensions,
   useWindowDimensions,
   Switch,
+  AppState,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -47,9 +48,19 @@ import {
   estimateMinutes,
 } from "../data/routeCreateMocks";
 import {
-  getRouteMembers,
   hasCollaboratorPeers,
+  isEffectivelyCollaborativeRoute,
+  type RouteMember,
 } from "../data/collaborativeRoute";
+import { useCollaborativeRouteMembers } from "../hooks/useCollaborativeRouteMembers";
+import { useCollaborativeRoutePresence } from "../hooks/useCollaborativeRoutePresence";
+import { useCollaborativeRouteEntry } from "../hooks/useCollaborativeRouteEntry";
+import {
+  patchMyRouteWithVersion,
+  sendCoursePresenceHeartbeat,
+  type CollaborativeAccess,
+} from "../api/collaborativeCourse";
+import type { UpsertMyRoutePayload } from "../api/courses";
 import { rootNavigate, safeGoBack } from "../navigation/rootNavigation";
 import CollaboratorAvatarStack from "../components/CollaboratorAvatarStack";
 import { CollaborativeFriendInviteModal } from "../components/CollaborativeFriendInviteModal";
@@ -58,7 +69,10 @@ import { presentCollaborativeShareOptions } from "../utils/shareCollaborativeRou
 import { useAuthStore } from "../store/authStore";
 import {
   linkRouteToGroupChat,
+  linkCourseChatRoomForShare,
   inviteFriendsToRouteChat,
+  buildRouteGroupChatName,
+  promptCreateCourseChatRoom,
 } from "../data/routeCollaborativeChat";
 import {
   searchKakaoPlacesByKeyword,
@@ -67,12 +81,18 @@ import {
 } from "../data/kakaoLocalApi";
 import {
   fetchGoogleDirectionsLeg,
+  fetchBicycleDirectionsLeg,
   fetchWalkingRouteAlternatives,
   fetchTransitRouteAlternatives,
   type DirectionsMode,
   type WalkRouteCandidate,
   type TransitRouteCandidate,
 } from "../data/googleDirectionsApi";
+import {
+  buildStyledMapSegments,
+  directionsSegmentsToMapSegments,
+  sortMapSegmentsForRender,
+} from "../utils/mapRouteSegmentStyle";
 import {
   ROUTE_USER_MESSAGES,
   sanitizeRouteDisplayText,
@@ -109,15 +129,63 @@ import {
   forkOriginAuthorFromCourse,
   resolveForkOriginForSave,
 } from "../utils/enrichForkOriginAuthor";
+import { shouldPreferApiRouteOverLocal } from "../utils/routeStopRichness";
+import { useCollaborativeRouteSync } from "../hooks/useCollaborativeRouteSync";
+import { useRouteEditorAutoSave } from "../hooks/useRouteEditorAutoSave";
+
+const COLLAB_PATCH_MAX_RETRIES = 3;
+
+type EditorAuthorCredits = Pick<
+  CourseItem,
+  "authorUuid" | "authorUserId" | "modifierUuid" | "modifierUserId"
+>;
 
 type RouteStop = {
   id: string;
   kind: "start" | "via" | "end";
   title: string;
+  /** 장소 검색·지도에서 받은 원래 이름 */
+  originalTitle?: string;
   timeLine: string;
   lat?: number;
   lng?: number;
 };
+
+function stopOriginalTitleHint(stop: RouteStop): string | null {
+  const orig = String(stop.originalTitle ?? "").trim();
+  const title = String(stop.title ?? "").trim();
+  if (!orig || orig === title) return null;
+  if (stop.lat == null || stop.lng == null) return null;
+  return orig;
+}
+
+function withPlaceFromSearch(
+  stop: RouteStop,
+  placeName: string,
+  patch: Partial<RouteStop>,
+): RouteStop {
+  const name = String(placeName).trim();
+  return {
+    ...stop,
+    ...patch,
+    title: name,
+    originalTitle: name,
+  };
+}
+
+function routeStopToPersist(s: RouteStop) {
+  const orig = String(s.originalTitle ?? "").trim();
+  const title = String(s.title ?? "").trim();
+  return {
+    id: s.id,
+    kind: s.kind,
+    title: s.title,
+    timeLine: s.timeLine,
+    lat: s.lat,
+    lng: s.lng,
+    ...(orig && orig !== title ? { originalTitle: orig } : {}),
+  };
+}
 
 type RouteLeg = {
   id: string;
@@ -148,6 +216,34 @@ type LegDirectionResult = {
 
 const WALK_SEGMENT_COLOR = "#f59e0b";
 const RIDE_SEGMENT_COLOR = "#2563eb";
+
+function mapSegmentsFromDirectionLeg(
+  legIndex: number,
+  leg: RouteLeg | undefined,
+  rawSegs: Array<{
+    mode: "walk" | "ride";
+    points: { latitude: number; longitude: number }[];
+    lineLabel?: string;
+    vehicleType?: string;
+  }>,
+  fallbackPath: { latitude: number; longitude: number }[],
+): MapRouteSegment[] {
+  const legMode = leg?.mode ?? "walk";
+  if (rawSegs.length >= 1) {
+    return sortMapSegmentsForRender(
+      directionsSegmentsToMapSegments(rawSegs, legIndex, legMode, leg?.transitType),
+    );
+  }
+  if (fallbackPath.length < 2) return [];
+  return sortMapSegmentsForRender(
+    buildStyledMapSegments({
+      idPrefix: `leg-${legIndex}-path`,
+      points: fallbackPath,
+      legMode,
+      transitType: leg?.transitType,
+    }),
+  );
+}
 
 /** 내 루트 수정(editRouteId) 화면에서만 하단 패널 높이 저장 */
 const ROUTE_EDIT_SHEET_HEIGHT_STORAGE_KEY = "ROUTE_CREATE_EDIT_SHEET_HEIGHT_PX";
@@ -227,11 +323,13 @@ function courseItemToRouteStops(course: CourseItem): {
       s.lat != null && s.lng != null
         ? { lat: s.lat, lng: s.lng }
         : getCourseStepMapPoint(course.id, 0);
+    const placeName = String(s.name).trim();
     const stops: RouteStop[] = [
       {
         id: `seed-${uid()}-s`,
         kind: "start",
-        title: s.name,
+        title: placeName,
+        originalTitle: placeName,
         timeLine: `목 코스 · 약 ${s.stayMinutes}분`,
         lat,
         lng,
@@ -239,7 +337,8 @@ function courseItemToRouteStops(course: CourseItem): {
       {
         id: `seed-${uid()}-e`,
         kind: "end",
-        title: s.name,
+        title: placeName,
+        originalTitle: placeName,
         timeLine: "도착",
         lat,
         lng,
@@ -264,10 +363,14 @@ function courseItemToRouteStops(course: CourseItem): {
     const isFirst = index === 0;
     const isLast = index === steps.length - 1;
     const kind = isFirst ? "start" : isLast ? "end" : "via";
+    const placeName = String(step.name).trim();
+    const orig =
+      String(step.originalTitle ?? "").trim() || placeName;
     return {
       id: `seed-${step.id}`,
       kind,
-      title: step.name,
+      title: placeName,
+      originalTitle: orig,
       timeLine: `목 코스 · 약 ${step.stayMinutes}분`,
       lat,
       lng,
@@ -333,14 +436,14 @@ function buildWalkPickSegments(
     longitude: p.longitude,
   }));
   if (pts.length < 2) return [];
-  return [
-    {
-      id: `leg-${legIndex}-walk-pick`,
+  return sortMapSegmentsForRender(
+    buildStyledMapSegments({
+      idPrefix: `leg-${legIndex}-walk-pick`,
       points: offsetPolylineForLegSeparation(pts, legIndex, 0),
-      color: WALK_SEGMENT_COLOR,
-      width: 4,
-    },
-  ];
+      legMode: "walk",
+      isWalkSegment: true,
+    }),
+  );
 }
 
 function buildTransitPickSegments(
@@ -348,13 +451,14 @@ function buildTransitPickSegments(
   from: { lat: number; lng: number },
   to: { lat: number; lng: number },
   candidate: TransitRouteCandidate,
+  transitType?: TransitType,
 ): MapRouteSegment[] {
   const path = snapPolylineToEndpoints(candidate.path, from, to);
   const rawSegs =
     candidate.segments?.length >= 1
       ? candidate.segments
       : [{ mode: "ride" as const, points: path }];
-  return rawSegs
+  const normalized = rawSegs
     .map((seg, segIdx) => {
       const basePts = seg.points?.length >= 2 ? seg.points : path;
       if (!basePts || basePts.length < 2) return null;
@@ -366,16 +470,25 @@ function buildTransitPickSegments(
       if (segIdx === rawSegs.length - 1) {
         pts[pts.length - 1] = { latitude: to.lat, longitude: to.lng };
       }
-      const walkVisual = seg.mode === "walk";
       return {
-        id: `leg-${legIndex}-transit-${segIdx}`,
+        mode: seg.mode,
         points: offsetPolylineForLegSeparation(pts, legIndex, segIdx),
-        color: walkVisual ? WALK_SEGMENT_COLOR : RIDE_SEGMENT_COLOR,
-        width: walkVisual ? 4 : 5,
-        dashed: walkVisual,
-      } as MapRouteSegment;
+        lineLabel: seg.lineLabel,
+        vehicleType: seg.vehicleType,
+      };
     })
-    .filter(Boolean) as MapRouteSegment[];
+    .filter(Boolean) as Array<{
+    mode: "walk" | "ride";
+    points: { latitude: number; longitude: number }[];
+    lineLabel?: string;
+    vehicleType?: string;
+  }>;
+  return mapSegmentsFromDirectionLeg(
+    legIndex,
+    { mode: "transit", transitType } as RouteLeg,
+    normalized,
+    path,
+  );
 }
 
 function resolveLegDirectionResult(
@@ -424,7 +537,7 @@ function resolveLegDirectionResult(
     return {
       ...r,
       path,
-      segments: buildTransitPickSegments(legIndex, from, to, pick),
+      segments: buildTransitPickSegments(legIndex, from, to, pick, leg.transitType),
       durationMinutes: pick.durationMinutes,
       summary: pick.summary,
       detail: pick.detail,
@@ -838,6 +951,8 @@ export default function RouteCreateScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const { height: windowH } = useWindowDimensions();
   const editRouteIdParam = route.params?.editRouteId as string | undefined;
+  const isCollaborativeLinkEntry =
+    route.params?.collaborative === true && Boolean(editRouteIdParam);
   const isEditingMyRoute = Boolean(editRouteIdParam);
   const clampRouteSheetHeight = useCallback(
     (px: number) => {
@@ -868,9 +983,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
           sheetPanStartRef.current = sheetHeightRef.current;
         },
         onPanResponderMove: (_, g) => {
-          setRouteSheetHeightPx(
-            clampRouteSheetHeight(sheetPanStartRef.current - g.dy),
-          );
+          setRouteSheetHeightPx(clampRouteSheetHeight(sheetPanStartRef.current - g.dy));
         },
         onPanResponderRelease: async (_, g) => {
           const next = clampRouteSheetHeight(sheetPanStartRef.current - g.dy);
@@ -913,6 +1026,22 @@ export default function RouteCreateScreen(): React.JSX.Element {
   }, [windowH, clampRouteSheetHeight]);
   const { upsertUserRoute, getUserRoute, deleteUserRoute, userSavedRoutes } =
     useMockData();
+  const userSavedRoutesRef = useRef(userSavedRoutes);
+  userSavedRoutesRef.current = userSavedRoutes;
+
+  const routeSessionKey = useMemo(() => {
+    const editId = String(route.params?.editRouteId ?? "");
+    const seedId = String(route.params?.seedSharedCourseId ?? "");
+    const collab = route.params?.collaborative === true ? "1" : "0";
+    return `${editId}|${seedId}|${collab}`;
+  }, [
+    route.params?.editRouteId,
+    route.params?.seedSharedCourseId,
+    route.params?.collaborative,
+  ]);
+  const routeSessionHydratedRef = useRef<string | null>(null);
+  const createRouteInFlightRef = useRef<Promise<string | null> | null>(null);
+  const initialDraftPersistTriedRef = useRef(false);
 
   const [stops, setStops] = useState<RouteStop[]>(() =>
     ROUTE_CREATE_EMPTY_STOPS.map((s) => ({ ...s })),
@@ -960,11 +1089,10 @@ export default function RouteCreateScreen(): React.JSX.Element {
         forkSourceAuthorUuid:
           fromRef.forkSourceAuthorUuid ?? prev?.forkSourceAuthorUuid ?? null,
         forkSourceAuthorUserId:
-          fromRef.forkSourceAuthorUserId ??
-          prev?.forkSourceAuthorUserId ??
-          null,
+          fromRef.forkSourceAuthorUserId ?? prev?.forkSourceAuthorUserId ?? null,
         rootForkSourceCourseId: rootCourseId,
-        forkModifierAuthorUuid: myUuid || prev?.forkModifierAuthorUuid || null,
+        forkModifierAuthorUuid:
+          myUuid || prev?.forkModifierAuthorUuid || null,
         forkModifierAuthorUserId:
           myUserId || prev?.forkModifierAuthorUserId || null,
       };
@@ -1111,15 +1239,11 @@ export default function RouteCreateScreen(): React.JSX.Element {
   const initialMapCenterFetchedRef = useRef(false);
 
   const [chatOpen, setChatOpen] = useState(false);
-  const [chatMessages, setChatMessages] = useState<
-    {
-      id: string;
-      from: "me" | "other";
-      name: string;
-      text: string;
-      at: number;
-    }[]
-  >([]);
+  const [activeChatRoomMeta, setActiveChatRoomMeta] = useState<{
+    name: string;
+    memberCount: number;
+  } | null>(null);
+  const [chatLinking, setChatLinking] = useState(false);
   const [routeChatRoomUuid, setRouteChatRoomUuid] = useState<string | null>(
     null,
   );
@@ -1130,6 +1254,9 @@ export default function RouteCreateScreen(): React.JSX.Element {
   const [editingStop, setEditingStop] = useState<RouteStop | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [routeTitle, setRouteTitle] = useState("새 루트");
+  const [routeTitleFieldFocused, setRouteTitleFieldFocused] = useState(false);
+  const routeTitleAtFocusRef = useRef(routeTitle);
+  const routeTitleLastEditAtRef = useRef(0);
   const [routeCoverImageUri, setRouteCoverImageUri] = useState<string | null>(
     null,
   );
@@ -1137,6 +1264,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [editingLegId, setEditingLegId] = useState<string | null>(null);
   const [publishToPublic, setPublishToPublic] = useState(false);
+  const [wantsCourseChatRoom, setWantsCourseChatRoom] = useState(false);
 
   const syncPublishToPublicFromRoute = useCallback(
     async (routeId: string, localPublished?: boolean) => {
@@ -1156,60 +1284,403 @@ export default function RouteCreateScreen(): React.JSX.Element {
     [],
   );
 
-  const [collaborativeDraft, setCollaborativeDraft] = useState(
-    () => route.params?.collaborative === true,
-  );
-  const isCollaborative = collaborativeDraft;
-
-  /** 공동 루트로 진입·편집 시 개인 루트 전환 불가 */
-  const collaborativeModeLocked = useMemo(() => {
-    if (route.params?.collaborative === true) return true;
-    const eid = route.params?.editRouteId as string | undefined;
-    if (!eid) return false;
-    const r = userSavedRoutes.find((x) => String(x.id) === String(eid));
-    return r?.collaborative === true;
-  }, [route.params?.collaborative, route.params?.editRouteId, userSavedRoutes]);
+  const [collaborativeCommitted, setCollaborativeCommitted] = useState(false);
+  const collaborativeCommittedRef = useRef(false);
+  collaborativeCommittedRef.current = collaborativeCommitted;
+  const collabMembersRef = useRef<RouteMember[]>([]);
+  const refreshCollabMembersRef = useRef<(() => void) | null>(null);
 
   const activeRouteId = String(persistedRouteId ?? editRouteIdParam ?? "new");
 
-  const collabMembers = useMemo(
-    () =>
-      getRouteMembers(activeRouteId, {
-        hostName: authUser?.nickname ?? "나",
-        hostAvatarUri: authUser?.profileImageUrl,
-      }),
-    [activeRouteId, authUser?.nickname, authUser?.profileImageUrl],
+  const [editorAuthorCredits, setEditorAuthorCredits] =
+    useState<EditorAuthorCredits>({});
+  const [collabOwnerNickname, setCollabOwnerNickname] = useState<string | null>(
+    null,
   );
-
-  const showCollabMemberBar =
-    isCollaborative && hasCollaboratorPeers(collabMembers);
-
-  /** 루트 수정 + 공개(공유 탭) 또는 공동 루트 — 상단 공유 버튼 아래 채팅 */
-  const showHeaderChatBelowShare = useMemo(
-    () => isEditingMyRoute && (isCollaborative || publishToPublic),
-    [isEditingMyRoute, isCollaborative, publishToPublic],
+  const collabAccessRef = useRef<CollaborativeAccess | null>(null);
+  const [collabVersionSeed, setCollabVersionSeed] = useState(0);
+  const collabServerVersionRef = useRef(0);
+  const [collabCanEdit, setCollabCanEdit] = useState(true);
+  const flushCollabRoutePushRef = useRef<() => Promise<void>>(async () => {});
+  const flushPersonalRouteAutoSaveRef = useRef<() => Promise<void>>(
+    async () => {},
   );
-
-  const openRouteChat = useCallback(() => {
-    setChatOpen(true);
-  }, []);
-
-  useEffect(() => {
-    if (route.params?.collaborative === true) setCollaborativeDraft(true);
-    const eid = route.params?.editRouteId as string | undefined;
-    if (eid) {
-      const r = userSavedRoutes.find((x) => String(x.id) === String(eid));
-      if (r?.collaborative === true) setCollaborativeDraft(true);
-    }
-  }, [route.params?.collaborative, route.params?.editRouteId, userSavedRoutes]);
-
-  useEffect(() => {
-    if (collaborativeModeLocked) setCollaborativeDraft(true);
-  }, [collaborativeModeLocked]);
+  const [routeEditorFocused, setRouteEditorFocused] = useState(true);
 
   useFocusEffect(
     useCallback(() => {
+      setRouteEditorFocused(true);
+      return () => setRouteEditorFocused(false);
+    }, []),
+  );
+
+  const canTrackRouteMembers =
+    Boolean(activeRouteId) &&
+    activeRouteId !== "new" &&
+    !activeRouteId.startsWith("ur-");
+
+  const {
+    members: collabMembers,
+    refresh: refreshCollabMembers,
+  } = useCollaborativeRouteMembers({
+    routeId: activeRouteId,
+    chatRoomUuid: routeChatRoomUuid,
+    enabled: canTrackRouteMembers,
+    pollMembers: canTrackRouteMembers && routeEditorFocused,
+  });
+  collabMembersRef.current = collabMembers;
+  refreshCollabMembersRef.current = refreshCollabMembers;
+
+  const { status: collabEntryStatus } = useCollaborativeRouteEntry({
+    editRouteId: editRouteIdParam,
+    collaborative: route.params?.collaborative === true,
+    navigation,
+    showToast,
+    onGranted: (access) => {
+      collabAccessRef.current = access;
+      setCollaborativeCommitted(true);
+      const v = Number(access.version ?? 0);
+      setCollabVersionSeed(v);
+      collabServerVersionRef.current = v;
+      setCollabCanEdit(access.canEdit !== false);
+      const ownerNick = String(access.ownerNickname ?? "").trim();
+      if (ownerNick) setCollabOwnerNickname(ownerNick);
+      const ownerUuid = String(access.ownerUuid ?? "").trim();
+      if (ownerUuid) {
+        setEditorAuthorCredits((prev) => ({
+          ...prev,
+          authorUuid: ownerUuid,
+        }));
+      }
+      const room = String(access.chatRoomUuid ?? "").trim();
+      if (room) {
+        setRouteChatRoomUuid(room);
+        setWantsCourseChatRoom(true);
+      }
+      refreshCollabMembersRef.current?.();
+      void sendCoursePresenceHeartbeat(access.courseUuid);
+    },
+  });
+
+  const isCollaborative = useMemo(
+    () =>
+      isEffectivelyCollaborativeRoute({
+        collaborative: collaborativeCommitted,
+        members: collabMembers,
+        memberCount: activeChatRoomMeta?.memberCount,
+        chatRoomUuid: routeChatRoomUuid,
+        forceCollaborative:
+          isCollaborativeLinkEntry && collabEntryStatus === "granted",
+      }),
+    [
+      collaborativeCommitted,
+      collabMembers,
+      activeChatRoomMeta?.memberCount,
+      routeChatRoomUuid,
+      isCollaborativeLinkEntry,
+      collabEntryStatus,
+    ],
+  );
+
+  const collaborativeModeLocked = isCollaborative;
+
+  const showCollabMemberStack =
+    isCollaborative && hasCollaboratorPeers(collabMembers);
+
+  const showHeaderChatBelowShare = useMemo(
+    () => isEditingMyRoute && isCollaborative,
+    [isEditingMyRoute, isCollaborative],
+  );
+
+  const persistCollaborativeLocalFromCourse = useCallback(
+    (
+      courseId: string,
+      course: CourseItem,
+      chatRoomUuid?: string | null,
+    ) => {
+      const id = String(courseId ?? "").trim();
+      if (!id || id.startsWith("ur-")) return;
+      const { stops, legs } = courseItemToRouteStops(course);
+      const now = new Date().toISOString();
+      const prev = userSavedRoutesRef.current.find((x) =>
+        sameCourseId(x.id, id),
+      );
+      const room =
+        String(chatRoomUuid ?? "").trim() ||
+        String(prev?.chatRoomUuid ?? "").trim() ||
+        undefined;
+      upsertUserRoute({
+        id,
+        title: String(course.title ?? "루트").trim() || "루트",
+        createdAt: prev?.createdAt ?? now,
+        updatedAt: now,
+        collaborative: isEffectivelyCollaborativeRoute({
+          collaborative: true,
+          chatRoomUuid: room,
+        }),
+        chatRoomUuid: room,
+        stops: stops.map(routeStopToPersist),
+        legs: legs.map((l) => ({
+          id: l.id,
+          mode: l.mode,
+          minutes: l.minutes,
+          transitType: l.transitType,
+          directionsSummary: l.directionsSummary,
+          directionsDetail: l.directionsDetail,
+          distanceMeters: l.distanceMeters,
+        })),
+        tags: Array.isArray(course.tags)
+          ? course.tags
+              .map((t) => String(t).trim())
+              .filter(Boolean)
+              .slice(0, 2)
+          : prev?.tags,
+        coverImageUri: resolveCourseThumbnailForDisplay(
+          course.thumbnail,
+          prev?.coverImageUri,
+        ),
+        publishedToPublic: false,
+      });
+    },
+    [upsertUserRoute],
+  );
+
+  const getCollabRemoteSkip = useCallback(() => {
+    if (routeTitleFieldFocused) {
+      return { skipTitle: true as const };
+    }
+    if (Date.now() - routeTitleLastEditAtRef.current < 2500) {
+      return { skipTitle: true as const };
+    }
+    return {};
+  }, [routeTitleFieldFocused]);
+
+  const applyRemoteCourseFromServer = useCallback(
+    (course: CourseItem, ctx?: { skipTitle?: boolean }) => {
+      const { stops: nextStops, legs: nextLegs } =
+        courseItemToRouteStops(course);
+      if (!ctx?.skipTitle) {
+        setRouteTitle(String(course.title ?? "루트").trim() || "루트");
+      }
+      setSelectedTags(
+        Array.isArray(course.tags)
+          ? course.tags
+              .map((t) => String(t).trim())
+              .filter(Boolean)
+              .slice(0, MAX_ROUTE_TAGS)
+          : [],
+      );
+      setStops(nextStops);
+      setLegs(
+        nextLegs.map((l) => ({
+          id: l.id,
+          mode: normalizeLegMode(l.mode),
+          minutes: l.minutes,
+          transitType:
+            normalizeLegMode(l.mode) === "transit"
+              ? ((l as any).transitType ?? "subway")
+              : undefined,
+          directionsSummary: l.directionsSummary,
+          directionsDetail: l.directionsDetail,
+          distanceMeters: l.distanceMeters,
+        })),
+      );
+      setRouteCoverImageUri((prev) =>
+        resolveCourseThumbnailForDisplay(course.thumbnail, prev),
+      );
+      setEditorAuthorCredits({
+        authorUuid: course.authorUuid,
+        authorUserId: course.authorUserId,
+        modifierUuid: course.modifierUuid,
+        modifierUserId: course.modifierUserId,
+      });
+      const rid = pickServerBackedRouteId();
+      if (rid) {
+        persistCollaborativeLocalFromCourse(rid, course, routeChatRoomUuid);
+      }
+    },
+    [
+      pickServerBackedRouteId,
+      persistCollaborativeLocalFromCourse,
+      routeChatRoomUuid,
+    ],
+  );
+
+  const collabCourseIdForSync = useMemo(
+    () => pickServerBackedRouteId(),
+    [pickServerBackedRouteId, persistedRouteId, editRouteIdParam, forkSourceCourseId],
+  );
+
+  const collabSyncKey = useMemo(
+    () =>
+      JSON.stringify({
+        tags: selectedTags,
+        cover: routeCoverImageUri,
+        stops: stops.map((s) => ({
+          id: s.id,
+          k: s.kind,
+          t: s.title,
+          lat: s.lat,
+          lng: s.lng,
+        })),
+        legs: legs.map((l) => ({
+          id: l.id,
+          m: l.mode,
+          min: l.minutes,
+        })),
+      }),
+    [selectedTags, routeCoverImageUri, stops, legs],
+  );
+
+  const collabTitleSyncKey = useMemo(
+    () => (routeTitleFieldFocused ? null : routeTitle.trim()),
+    [routeTitle, routeTitleFieldFocused],
+  );
+
+  const buildCollabUpsertPayload = useCallback(
+    () =>
+      buildUpsertPayloadFromUserRoute({
+        title: routeTitle.trim() || "루트",
+        collaborative: true,
+        tags: selectedTags,
+        stops: stops.map(routeStopToPersist),
+        legs: legs.map((l) => ({
+          id: l.id,
+          mode: l.mode,
+          minutes: l.minutes,
+          transitType: l.transitType,
+          directionsSummary: l.directionsSummary,
+          directionsDetail: l.directionsDetail,
+          distanceMeters: l.distanceMeters,
+        })),
+      }),
+    [routeTitle, selectedTags, stops, legs],
+  );
+
+  const {
+    setServerVersion: setCollabServerVersion,
+    serverVersion: collabServerVersion,
+    isCourseSocketConnected,
+    reloadFromServer: reloadCollabCourseFromServer,
+    flushPendingPush: flushCollabRoutePush,
+  } = useCollaborativeRouteSync({
+    enabled: isCollaborative && Boolean(collabCourseIdForSync),
+    canPush: collabCanEdit,
+    courseId: collabCourseIdForSync,
+    initialVersion: collabVersionSeed,
+    myUuid: authUser?.uuid ?? null,
+    syncKey: collabSyncKey,
+    titleSyncKey: collabTitleSyncKey ?? undefined,
+    buildPayload: buildCollabUpsertPayload,
+    onApplyRemote: applyRemoteCourseFromServer,
+    getRemoteSkip: getCollabRemoteSkip,
+    onMembersChange: refreshCollabMembers,
+  });
+
+  useEffect(() => {
+    collabServerVersionRef.current = collabServerVersion;
+  }, [collabServerVersion]);
+
+  useEffect(() => {
+    if (Number.isFinite(collabVersionSeed) && collabVersionSeed >= 0) {
+      collabServerVersionRef.current = collabVersionSeed;
+    }
+  }, [collabVersionSeed]);
+
+  const patchCollaborativeRouteOnServer = useCallback(
+    async (
+      courseId: string,
+      payload: UpsertMyRoutePayload,
+    ): Promise<boolean> => {
+      const id = String(courseId ?? "").trim();
+      if (!id || id.startsWith("ur-")) return false;
+
+      let version = collabServerVersionRef.current;
+      for (let depth = 0; depth < COLLAB_PATCH_MAX_RETRIES; depth++) {
+        const res = await patchMyRouteWithVersion(id, {
+          ...payload,
+          version,
+        });
+        if (res.ok) {
+          setCollabServerVersion(res.version);
+          collabServerVersionRef.current = res.version;
+          return true;
+        }
+        if (!res.conflict) return false;
+
+        setCollabServerVersion(res.currentVersion);
+        collabServerVersionRef.current = res.currentVersion;
+        if (res.course) {
+          applyRemoteCourseFromServer(res.course);
+        } else {
+          await reloadCollabCourseFromServer({ force: true });
+        }
+        version = res.currentVersion;
+      }
+      return false;
+    },
+    [
+      setCollabServerVersion,
+      applyRemoteCourseFromServer,
+      reloadCollabCourseFromServer,
+    ],
+  );
+
+  flushCollabRoutePushRef.current = flushCollabRoutePush;
+
+  useCollaborativeRoutePresence({
+    courseId: collabCourseIdForSync,
+    enabled:
+      isCollaborative &&
+      collabCanEdit &&
+      Boolean(collabCourseIdForSync),
+    isEditorFocused: routeEditorFocused,
+    onAfterPing: refreshCollabMembers,
+  });
+
+  useEffect(() => {
+    if (collabEntryStatus === "granted") {
+      routeSessionHydratedRef.current = null;
+    }
+  }, [collabEntryStatus]);
+
+  useEffect(() => {
+    const resetSession = () => {
+      routeSessionHydratedRef.current = null;
+      initialDraftPersistTriedRef.current = false;
+      draftLocalRouteIdRef.current = null;
+    };
+    const unsubRemove = navigation.addListener("beforeRemove", () => {
+      void flushCollabRoutePushRef.current();
+      void flushPersonalRouteAutoSaveRef.current();
+      resetSession();
+    });
+    return () => {
+      unsubRemove();
+    };
+  }, [navigation]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state !== "background" && state !== "inactive") return;
+      void flushCollabRoutePushRef.current();
+      void flushPersonalRouteAutoSaveRef.current();
+    });
+    return () => sub.remove();
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (isCollaborativeLinkEntry && collabEntryStatus !== "granted") {
+        return undefined;
+      }
+      if (routeSessionHydratedRef.current === routeSessionKey) {
+        return undefined;
+      }
+      routeSessionHydratedRef.current = routeSessionKey;
+
       let cancelled = false;
+      const savedRoutes = userSavedRoutesRef.current;
 
       const editId = route.params?.editRouteId as string | undefined;
       const seedId = route.params?.seedSharedCourseId as string | undefined;
@@ -1217,7 +1688,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
         route.params?.collaborative === true ||
         (editId
           ? Boolean(
-              userSavedRoutes.find((x) => String(x.id) === String(editId))
+              savedRoutes.find((x) => String(x.id) === String(editId))
                 ?.collaborative,
             )
           : false);
@@ -1227,12 +1698,13 @@ export default function RouteCreateScreen(): React.JSX.Element {
         commitPersistedRouteId(null);
         setForkSourceCourseId(null);
         forkOriginAuthorRef.current = null;
+        setEditorAuthorCredits({});
+        setCollabOwnerNickname(null);
         setRouteTitle("새 루트");
         setSelectedTags([]);
         setPublishToPublic(false);
         setStops(ROUTE_CREATE_EMPTY_STOPS.map((s) => ({ ...s })));
         setLegs([]);
-        setChatMessages([]);
         setRouteChatRoomUuid(null);
         setRouteCoverImageUri(null);
       };
@@ -1251,18 +1723,17 @@ export default function RouteCreateScreen(): React.JSX.Element {
             forkId: opts.forkFromId,
             authorUuid: origin.forkSourceAuthorUuid ?? undefined,
             authorUserId: origin.forkSourceAuthorUserId ?? undefined,
-            rootCourseId: origin.rootForkSourceCourseId ?? opts.forkFromId,
+            rootCourseId:
+              origin.rootForkSourceCourseId ?? opts.forkFromId,
           };
-          void resolveForkOriginForSave(opts.forkFromId, course).then(
-            (root) => {
-              forkOriginAuthorRef.current = {
-                forkId: opts.forkFromId!,
-                authorUuid: root.forkSourceAuthorUuid ?? undefined,
-                authorUserId: root.forkSourceAuthorUserId ?? undefined,
-                rootCourseId: root.rootForkSourceCourseId ?? opts.forkFromId!,
-              };
-            },
-          );
+          void resolveForkOriginForSave(opts.forkFromId, course).then((root) => {
+            forkOriginAuthorRef.current = {
+              forkId: opts.forkFromId!,
+              authorUuid: root.forkSourceAuthorUuid ?? undefined,
+              authorUserId: root.forkSourceAuthorUserId ?? undefined,
+              rootCourseId: root.rootForkSourceCourseId ?? opts.forkFromId!,
+            };
+          });
         } else {
           forkOriginAuthorRef.current = null;
         }
@@ -1277,10 +1748,15 @@ export default function RouteCreateScreen(): React.JSX.Element {
         );
         setStops(nextStops);
         setLegs(nextLegs);
-        setChatMessages([]);
         setRouteCoverImageUri(
           resolveCourseThumbnailForDisplay(course.thumbnail, null),
         );
+        setEditorAuthorCredits({
+          authorUuid: course.authorUuid,
+          authorUserId: course.authorUserId,
+          modifierUuid: course.modifierUuid,
+          modifierUserId: course.modifierUserId,
+        });
       };
 
       const applyLocalSavedRoute = (r: UserSavedRoute) => {
@@ -1289,8 +1765,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
         if (fork) {
           forkOriginAuthorRef.current = {
             forkId: fork,
-            authorUuid:
-              String(r.forkSourceAuthorUuid ?? "").trim() || undefined,
+            authorUuid: String(r.forkSourceAuthorUuid ?? "").trim() || undefined,
             authorUserId:
               String(r.forkSourceAuthorUserId ?? "").trim() || undefined,
             rootCourseId:
@@ -1327,32 +1802,100 @@ export default function RouteCreateScreen(): React.JSX.Element {
             distanceMeters: l.distanceMeters,
           })),
         );
-        setChatMessages([]);
         setRouteChatRoomUuid(r.chatRoomUuid ?? null);
+        setWantsCourseChatRoom(Boolean(String(r.chatRoomUuid ?? "").trim()));
+        if (r.collaborative === true) {
+          setEditorAuthorCredits({});
+        } else {
+          setEditorAuthorCredits({
+            authorUuid: authUser?.uuid,
+            authorUserId: authUser?.userId,
+          });
+        }
         void syncPublishToPublicFromRoute(r.id, r.publishedToPublic);
       };
 
-      if (editId) {
-        const r = userSavedRoutes.find((x) => sameCourseId(x.id, editId));
-        if (r) {
-          applyLocalSavedRoute(r);
-          return () => {
-            cancelled = true;
-          };
-        }
+      const syncLocalCacheFromCourse = (
+        courseId: string,
+        course: CourseItem,
+        prev?: UserSavedRoute,
+      ) => {
+        const id = String(courseId ?? "").trim();
+        if (!id) return;
+        const { stops, legs } = courseItemToRouteStops(course);
+        const now = new Date().toISOString();
+        upsertUserRoute({
+          id,
+          title: String(course.title ?? prev?.title ?? "루트").trim() || "루트",
+          createdAt: prev?.createdAt ?? now,
+          updatedAt: now,
+          collaborative: prev?.collaborative ?? collab,
+          chatRoomUuid:
+            prev?.chatRoomUuid ??
+            (String(collabAccessRef.current?.chatRoomUuid ?? "").trim() ||
+              undefined),
+          stops: stops.map(routeStopToPersist),
+          legs: legs.map((l) => ({
+            id: l.id,
+            mode: l.mode,
+            minutes: l.minutes,
+            transitType: l.transitType,
+            directionsSummary: l.directionsSummary,
+            directionsDetail: l.directionsDetail,
+            distanceMeters: l.distanceMeters,
+          })),
+          tags: Array.isArray(course.tags)
+            ? course.tags
+                .map((t) => String(t).trim())
+                .filter(Boolean)
+                .slice(0, MAX_ROUTE_TAGS)
+            : prev?.tags,
+          coverImageUri: resolveCourseThumbnailForDisplay(
+            course.thumbnail,
+            prev?.coverImageUri,
+          ),
+          publishedToPublic: prev?.publishedToPublic,
+          forkedFromSharedId: prev?.forkedFromSharedId,
+          forkSourceAuthorUuid: prev?.forkSourceAuthorUuid,
+          forkSourceAuthorUserId: prev?.forkSourceAuthorUserId,
+          rootForkSourceCourseId: prev?.rootForkSourceCourseId,
+          forkModifierAuthorUuid: prev?.forkModifierAuthorUuid,
+          forkModifierAuthorUserId: prev?.forkModifierAuthorUserId,
+        });
+      };
 
+      if (editId) {
         (async () => {
           try {
+            const localAtStart = savedRoutes.find((x) =>
+              sameCourseId(x.id, editId),
+            );
             const { course: detail, source } =
               await resolveCourseDetailForRoute(editId);
             if (cancelled) return;
             const collabFromApi = await fetchMyRouteCollaborativeFlag(editId);
             if (cancelled) return;
-            if (collabFromApi) setCollaborativeDraft(true);
+
+            const routesNow = userSavedRoutesRef.current;
+            const localR =
+              routesNow.find((x) => sameCourseId(x.id, editId)) ?? localAtStart;
+
+            const preferServerOverLocal =
+              collabFromApi ||
+              localR?.collaborative === true ||
+              collab;
+            if (
+              localR &&
+              detail &&
+              source !== "shared" &&
+              !preferServerOverLocal &&
+              !shouldPreferApiRouteOverLocal(localR.stops, detail)
+            ) {
+              applyLocalSavedRoute(localR);
+              return;
+            }
+
             if (detail) {
-              const localR = userSavedRoutes.find(
-                (x) => String(x.id) === String(editId),
-              );
               const detailTagList = Array.isArray(detail.tags)
                 ? detail.tags
                     .map((t) => String(t).trim())
@@ -1367,17 +1910,35 @@ export default function RouteCreateScreen(): React.JSX.Element {
                 : [];
               if (source === "shared") {
                 const personalId =
-                  findPersonalRouteIdForForkSource(editId, userSavedRoutes) ||
+                  findPersonalRouteIdForForkSource(editId, routesNow) ||
                   (await resolvePersonalRouteIdForForkSave(
                     editId,
-                    userSavedRoutes,
+                    routesNow,
                     null,
                   ));
                 const localPersonal = personalId
-                  ? userSavedRoutes.find((x) => sameCourseId(x.id, personalId))
+                  ? routesNow.find((x) => sameCourseId(x.id, personalId))
                   : undefined;
                 if (localPersonal) {
-                  applyLocalSavedRoute(localPersonal);
+                  if (
+                    detail &&
+                    shouldPreferApiRouteOverLocal(localPersonal.stops, detail)
+                  ) {
+                    applyCourseToEditor(
+                      {
+                        ...detail,
+                        id: personalId!,
+                        tags:
+                          detailTagList.length > 0
+                            ? detailTagList
+                            : localTagList,
+                      },
+                      { persistId: personalId!, forkFromId: null },
+                    );
+                    syncLocalCacheFromCourse(personalId!, detail, localPersonal);
+                  } else {
+                    applyLocalSavedRoute(localPersonal);
+                  }
                   return;
                 }
                 if (personalId && hasMeaningfulRouteSteps(detail)) {
@@ -1397,6 +1958,31 @@ export default function RouteCreateScreen(): React.JSX.Element {
                   ? { persistId: null, forkFromId: editId }
                   : { persistId: editId, forkFromId: null },
               );
+              if (source === "my" && (collab || collabFromApi)) {
+                const detailVersion = Number(detail.version ?? NaN);
+                if (Number.isFinite(detailVersion) && detailVersion >= 0) {
+                  setCollabVersionSeed(detailVersion);
+                  setCollabServerVersion(detailVersion);
+                }
+                const roomFromDetail = String(
+                  detail.chatRoomUuid ?? "",
+                ).trim();
+                if (roomFromDetail) {
+                  setRouteChatRoomUuid(roomFromDetail);
+                  setWantsCourseChatRoom(true);
+                }
+                persistCollaborativeLocalFromCourse(
+                  editId,
+                  {
+                    ...detail,
+                    tags:
+                      detailTagList.length > 0 ? detailTagList : localTagList,
+                  },
+                  collabAccessRef.current?.chatRoomUuid ?? roomFromDetail,
+                );
+              } else if (localR && source === "my") {
+                syncLocalCacheFromCourse(editId, detail, localR);
+              }
               if (source === "my") {
                 void syncPublishToPublicFromRoute(
                   editId,
@@ -1405,12 +1991,19 @@ export default function RouteCreateScreen(): React.JSX.Element {
               }
               return;
             }
+
+            if (localR) {
+              applyLocalSavedRoute(localR);
+              return;
+            }
             applyEmptyRoute();
-            setChatMessages([]);
           } catch {
             if (!cancelled) {
-              applyEmptyRoute();
-              setChatMessages([]);
+              const fallback = userSavedRoutesRef.current.find((x) =>
+                sameCourseId(x.id, editId),
+              );
+              if (fallback) applyLocalSavedRoute(fallback);
+              else applyEmptyRoute();
             }
           }
         })();
@@ -1422,10 +2015,10 @@ export default function RouteCreateScreen(): React.JSX.Element {
       if (seedId) {
         const personalId = findPersonalRouteIdForForkSource(
           seedId,
-          userSavedRoutes,
+          savedRoutes,
         );
         const localPersonal = personalId
-          ? userSavedRoutes.find((x) => sameCourseId(x.id, personalId))
+          ? savedRoutes.find((x) => sameCourseId(x.id, personalId))
           : undefined;
         if (localPersonal) {
           applyLocalSavedRoute(localPersonal);
@@ -1448,7 +2041,6 @@ export default function RouteCreateScreen(): React.JSX.Element {
             if (cancelled) return;
             if (!c || !hasMeaningfulRouteSteps(c)) {
               applyEmptyRoute();
-              setChatMessages([]);
               return;
             }
             applyCourseToEditor(c, {
@@ -1458,7 +2050,6 @@ export default function RouteCreateScreen(): React.JSX.Element {
           } catch {
             if (!cancelled) {
               applyEmptyRoute();
-              setChatMessages([]);
             }
           }
         })();
@@ -1468,17 +2059,19 @@ export default function RouteCreateScreen(): React.JSX.Element {
       }
 
       applyEmptyRoute();
-      if (collab) setCollaborativeDraft(true);
       return () => {
         cancelled = true;
       };
     }, [
+      routeSessionKey,
+      isCollaborativeLinkEntry,
+      collabEntryStatus,
       route.params?.collaborative,
       route.params?.editRouteId,
       route.params?.seedSharedCourseId,
-      userSavedRoutes,
       syncPublishToPublicFromRoute,
       commitPersistedRouteId,
+      persistCollaborativeLocalFromCourse,
     ]),
   );
 
@@ -1739,23 +2332,23 @@ export default function RouteCreateScreen(): React.JSX.Element {
         if (seg.length < 2) continue;
         if (merged.length === 0) merged.push(...seg);
         else merged.push(...seg.slice(1));
-        if (r?.segments && r.segments.length >= 1)
+        if (r?.segments && r.segments.length >= 1) {
           mergedSegments.push(...r.segments);
-        else {
-          mergedSegments.push({
-            id: `fallback-${i}`,
-            points: offsetPolylineForLegSeparation(seg, i, 0),
-            color:
-              legsSnap[i]?.mode === "walk"
-                ? WALK_SEGMENT_COLOR
-                : RIDE_SEGMENT_COLOR,
-            width: legsSnap[i]?.mode === "walk" ? 4 : 5,
-          });
+        } else {
+          mergedSegments.push(
+            ...buildStyledMapSegments({
+              idPrefix: `fallback-${i}`,
+              points: offsetPolylineForLegSeparation(seg, i, 0),
+              legMode: legsSnap[i]?.mode ?? "walk",
+              transitType: legsSnap[i]?.transitType,
+              isWalkSegment: legsSnap[i]?.mode === "walk",
+            }),
+          );
         }
       }
       const cleaned = dedupePathPoints(merged);
       setMapRoutePath(cleaned.length > 0 ? cleaned : fallbackPath);
-      setMapRouteSegments(mergedSegments);
+      setMapRouteSegments(sortMapSegmentsForRender(mergedSegments));
     },
     [],
   );
@@ -1939,6 +2532,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                   { lat: s.lat, lng: s.lng },
                   { lat: e.lat, lng: e.lng },
                   pick,
+                  leg.transitType,
                 );
                 return {
                   path,
@@ -1951,29 +2545,36 @@ export default function RouteCreateScreen(): React.JSX.Element {
                 } satisfies LegDirectionResult;
               }
 
-              const r = await fetchGoogleDirectionsLeg({
-                from: fromPt,
-                to: toPt,
-                mode: modeMap[leg.mode],
-                transitType:
-                  leg.mode === "transit" ? leg.transitType : undefined,
-                signal: controller.signal,
-              });
+              const r =
+                leg.mode === "bike"
+                  ? await fetchBicycleDirectionsLeg({
+                      from: fromPt,
+                      to: toPt,
+                      signal: controller.signal,
+                    })
+                  : await fetchGoogleDirectionsLeg({
+                      from: fromPt,
+                      to: toPt,
+                      mode: modeMap[leg.mode],
+                      transitType:
+                        leg.mode === "transit" ? leg.transitType : undefined,
+                      signal: controller.signal,
+                    });
               const path = snapPolylineToEndpoints(
                 r.path,
                 { lat: s.lat, lng: s.lng },
                 { lat: e.lat, lng: e.lng },
               );
-              const rawSegs =
+              const sourceSegs =
                 Array.isArray(r.segments) && r.segments.length >= 1
                   ? r.segments
                   : [
                       {
-                        mode: leg.mode === "walk" ? "walk" : "ride",
+                        mode: leg.mode === "walk" ? ("walk" as const) : ("ride" as const),
                         points: path,
                       },
                     ];
-              const segs = rawSegs
+              const rawSegs = sourceSegs
                 .map((seg, segIdx) => {
                   const basePts = seg.points?.length >= 2 ? seg.points : path;
                   if (!basePts || basePts.length < 2) return null;
@@ -1986,28 +2587,20 @@ export default function RouteCreateScreen(): React.JSX.Element {
                       latitude: s.lat as number,
                       longitude: s.lng as number,
                     };
-                  if (segIdx === rawSegs.length - 1)
+                  if (segIdx === sourceSegs.length - 1)
                     pts[pts.length - 1] = {
                       latitude: e.lat as number,
                       longitude: e.lng as number,
                     };
-                  const isTransitInnerWalk =
-                    leg.mode === "transit" && seg.mode === "walk";
-                  const walkVisual = isTransitInnerWalk;
-                  const shiftedPts = offsetPolylineForLegSeparation(
-                    pts,
-                    i,
-                    segIdx,
-                  );
                   return {
-                    id: `leg-${i}-seg-${segIdx}`,
-                    points: shiftedPts,
-                    color: walkVisual ? WALK_SEGMENT_COLOR : RIDE_SEGMENT_COLOR,
-                    width: walkVisual ? 4 : 5,
-                    dashed: walkVisual,
-                  } as MapRouteSegment;
+                    mode: seg.mode,
+                    points: offsetPolylineForLegSeparation(pts, i, segIdx),
+                    lineLabel: seg.lineLabel,
+                    vehicleType: seg.vehicleType,
+                  };
                 })
-                .filter(Boolean) as MapRouteSegment[];
+                .filter(Boolean);
+              const segs = mapSegmentsFromDirectionLeg(i, leg, rawSegs, path);
               const transitChain = rawSegs
                 .filter(
                   (x) =>
@@ -2299,13 +2892,11 @@ export default function RouteCreateScreen(): React.JSX.Element {
       setStops((prev) =>
         prev.map((s) =>
           s.id === searchTargetStopId
-            ? {
-                ...s,
-                title: selectedPlace.name,
+            ? withPlaceFromSearch(s, selectedPlace.name, {
                 timeLine,
                 lat: selectedPlace.latitude,
                 lng: selectedPlace.longitude,
-              }
+              })
             : s,
         ),
       );
@@ -2364,13 +2955,11 @@ export default function RouteCreateScreen(): React.JSX.Element {
       setStops((prev) => {
         if (prev.length < 2) return prev;
         const [, ...rest] = prev;
-        const newStart: RouteStop = {
-          ...prev[0],
-          title: selectedPlace.name,
+        const newStart = withPlaceFromSearch(prev[0], selectedPlace.name, {
           timeLine: "",
           lat: selectedPlace.latitude,
           lng: selectedPlace.longitude,
-        };
+        });
         return [newStart, ...rest];
       });
       setLegs([]);
@@ -2384,13 +2973,11 @@ export default function RouteCreateScreen(): React.JSX.Element {
         const end = prev[prev.length - 1];
         return [
           ...prev.slice(0, -1),
-          {
-            ...end,
-            title: selectedPlace.name,
+          withPlaceFromSearch(end, selectedPlace.name, {
             timeLine: "",
             lat: selectedPlace.latitude,
             lng: selectedPlace.longitude,
-          },
+          }),
         ];
       });
       setLegs([
@@ -2410,14 +2997,19 @@ export default function RouteCreateScreen(): React.JSX.Element {
       if (prev.length < 2) return prev;
       const end = prev[prev.length - 1];
       const middle = prev.slice(0, -1);
-      const newVia: RouteStop = {
-        id: uid(),
-        kind: "via",
-        title: selectedPlace.name,
-        timeLine: "경유지",
-        lat: selectedPlace.latitude,
-        lng: selectedPlace.longitude,
-      };
+      const newVia: RouteStop = withPlaceFromSearch(
+        {
+          id: uid(),
+          kind: "via",
+          title: selectedPlace.name,
+          timeLine: "경유지",
+        },
+        selectedPlace.name,
+        {
+          lat: selectedPlace.latitude,
+          lng: selectedPlace.longitude,
+        },
+      );
       return [...middle, newVia, end];
     });
 
@@ -2508,17 +3100,19 @@ export default function RouteCreateScreen(): React.JSX.Element {
     ]);
   };
 
-  const editStop = (stop: RouteStop) => {
-    if (stop.kind === "start" || stop.kind === "end") {
-      openSearch(stop.id);
-      return;
-    }
+  /** 표시 이름 변경 (연필) */
+  const editStopName = (stop: RouteStop) => {
     if (stop.lat == null || stop.lng == null) {
-      openSearch();
+      openSearch(stop.id);
       return;
     }
     setEditTitle(stop.title);
     setEditingStop(stop);
+  };
+
+  /** 장소·좌표 변경 (위치 아이콘) */
+  const changeStopPlace = (stop: RouteStop) => {
+    openSearch(stop.id);
   };
 
   const applyEditTitle = () => {
@@ -2529,25 +3123,15 @@ export default function RouteCreateScreen(): React.JSX.Element {
       return;
     }
     setStops((prev) =>
-      prev.map((s) => (s.id === editingStop.id ? { ...s, title: t } : s)),
+      prev.map((s) => {
+        if (s.id !== editingStop.id) return s;
+        const originalTitle =
+          String(s.originalTitle ?? editingStop.title).trim() ||
+          editingStop.title;
+        return { ...s, title: t, originalTitle };
+      }),
     );
     setEditingStop(null);
-  };
-
-  const sendChatFallback = (text: string) => {
-    if (!isCollaborative) return;
-    const t = text.trim();
-    if (!t) return;
-    setChatMessages((m) => [
-      ...m,
-      {
-        id: uid(),
-        from: "me",
-        name: authUser?.nickname ?? "나",
-        text: t,
-        at: Date.now(),
-      },
-    ]);
   };
 
   const pickRouteCoverImage = useCallback(async () => {
@@ -2567,20 +3151,26 @@ export default function RouteCreateScreen(): React.JSX.Element {
       setRouteCoverImageUri(localUri);
       const serverId = pickServerBackedRouteId();
       if (serverId) {
-        const uploaded = await syncMyCourseThumbnailToServer(
-          serverId,
-          localUri,
-        );
+        const uploaded = await syncMyCourseThumbnailToServer(serverId, localUri);
         if (uploaded) {
           setRouteCoverImageUri(uploaded);
           const saved = getUserRoute(serverId);
           if (saved) {
             upsertUserRoute({ ...saved, coverImageUri: uploaded });
           }
+          if (isCollaborative) {
+            void reloadCollabCourseFromServer();
+          }
         }
       }
     }
-  }, [pickServerBackedRouteId, getUserRoute, upsertUserRoute]);
+  }, [
+    pickServerBackedRouteId,
+    getUserRoute,
+    upsertUserRoute,
+    isCollaborative,
+    reloadCollabCourseFromServer,
+  ]);
 
   const patchRouteChatRoom = useCallback(
     (
@@ -2619,7 +3209,10 @@ export default function RouteCreateScreen(): React.JSX.Element {
       if (persistPromiseRef.current) return persistPromiseRef.current;
 
       const requireCoords = opts?.requireCoords !== false;
-      const isCollab = opts?.collaborativeOverride ?? collaborativeDraft;
+      const isCollab =
+        opts?.collaborativeOverride ??
+        (collaborativeCommittedRef.current ||
+          hasCollaboratorPeers(collabMembersRef.current));
 
       if (
         requireCoords &&
@@ -2634,131 +3227,155 @@ export default function RouteCreateScreen(): React.JSX.Element {
         routeId: string | null;
       }> => {
         try {
-          const title = routeTitle.trim() || "새 루트";
-          const now = new Date().toISOString();
-          const serverId = pickServerBackedRouteId();
-          const localId = getOrCreateDraftLocalRouteId();
-          const prev =
-            getUserRoute(localId) ??
-            getUserRoute(persistedRouteIdRef.current ?? "") ??
-            getUserRoute(persistedRouteId ?? "");
-          const wantPublic = publishToPublic && !isCollab;
-          const tagsForSave = selectedTags
-            .map((t) => String(t).trim())
-            .filter(Boolean)
-            .slice(0, MAX_ROUTE_TAGS);
-          const routePayload = buildUpsertPayloadFromUserRoute({
-            title,
-            collaborative: isCollab,
-            tags: tagsForSave,
-            stops: stops.map((s) => ({
-              id: s.id,
-              kind: s.kind,
-              title: s.title,
-              timeLine: s.timeLine,
-              lat: s.lat,
-              lng: s.lng,
-            })),
-            legs: legs.map((l) => ({
-              id: l.id,
-              mode: l.mode,
-              minutes: l.minutes,
-              transitType: l.transitType,
-              directionsSummary: l.directionsSummary,
-              directionsDetail: l.directionsDetail,
-              distanceMeters: l.distanceMeters,
-            })),
-          });
+        const title = routeTitle.trim() || "새 루트";
+        const now = new Date().toISOString();
+        const serverId = pickServerBackedRouteId();
+        const localId = getOrCreateDraftLocalRouteId();
+        const prev =
+          getUserRoute(localId) ??
+          getUserRoute(persistedRouteIdRef.current ?? "") ??
+          getUserRoute(persistedRouteId ?? "");
+        const wantPublic = publishToPublic && !isCollab;
+        const tagsForSave = selectedTags
+          .map((t) => String(t).trim())
+          .filter(Boolean)
+          .slice(0, MAX_ROUTE_TAGS);
+        const routePayload = buildUpsertPayloadFromUserRoute({
+          title,
+          collaborative: isCollab,
+          tags: tagsForSave,
+          stops: stops.map(routeStopToPersist),
+          legs: legs.map((l) => ({
+            id: l.id,
+            mode: l.mode,
+            minutes: l.minutes,
+            transitType: l.transitType,
+            directionsSummary: l.directionsSummary,
+            directionsDetail: l.directionsDetail,
+            distanceMeters: l.distanceMeters,
+          })),
+        });
 
-          upsertUserRoute({
-            id: localId,
-            title,
-            createdAt: prev?.createdAt ?? now,
-            updatedAt: now,
-            collaborative: isCollab,
-            tags: tagsForSave,
-            stops: routePayload.stops,
-            legs: routePayload.legs,
-            publishedToPublic: wantPublic,
-            coverImageUri: routeCoverImageUri,
-            chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
-          });
+        upsertUserRoute({
+          id: localId,
+          title,
+          createdAt: prev?.createdAt ?? now,
+          updatedAt: now,
+          collaborative: isCollab,
+          tags: tagsForSave,
+          stops: routePayload.stops,
+          legs: routePayload.legs,
+          publishedToPublic: wantPublic,
+          coverImageUri: routeCoverImageUri,
+          chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
+        });
 
-          let apiSaved = false;
-          let effectiveId = localId;
-          let savedAsPersonalFork = false;
-          const forkId = String(forkSourceCourseId ?? "").trim();
-          const forkMeta =
-            forkId ||
-            (prev?.forkedFromSharedId
-              ? String(prev.forkedFromSharedId).trim()
-              : "");
-          if (forkId) {
-            const personalId = await resolvePersonalRouteIdForForkSave(
-              forkId,
-              userSavedRoutes,
-              serverId,
-            );
-            const isOwnCourseUpdate =
-              Boolean(personalId) && sameCourseId(personalId, forkId);
-            if (personalId) {
-              apiSaved = await updateMyRoute(personalId, routePayload);
-              if (apiSaved) {
-                effectiveId = personalId;
-                if (personalId !== localId) deleteUserRoute(localId);
-                upsertUserRoute({
-                  id: personalId,
-                  title,
-                  createdAt: prev?.createdAt ?? now,
-                  updatedAt: now,
-                  collaborative: isCollab,
-                  tags: tagsForSave,
-                  stops: routePayload.stops,
-                  legs: routePayload.legs,
-                  publishedToPublic: wantPublic,
-                  coverImageUri: routeCoverImageUri,
-                  chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
-                  ...(isOwnCourseUpdate
-                    ? {}
-                    : pickForkAuthorExtras(forkId, prev)),
-                });
-                setForkSourceCourseId(null);
-                forkOriginAuthorRef.current = null;
-              }
-            } else {
-              const newPersonalId = await forkSharedCourseToPersonalRoute(
-                forkId,
-                routePayload,
-              );
-              apiSaved = Boolean(newPersonalId);
-              if (newPersonalId) {
-                savedAsPersonalFork = true;
-                effectiveId = newPersonalId;
-                if (newPersonalId !== localId) deleteUserRoute(localId);
-                upsertUserRoute({
-                  id: newPersonalId,
-                  title,
-                  createdAt: prev?.createdAt ?? now,
-                  updatedAt: now,
-                  collaborative: isCollab,
-                  tags: tagsForSave,
-                  stops: routePayload.stops,
-                  legs: routePayload.legs,
-                  publishedToPublic: wantPublic,
-                  coverImageUri: routeCoverImageUri,
-                  chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
-                  ...pickForkAuthorExtras(forkId, prev),
-                });
-                setForkSourceCourseId(null);
-                forkOriginAuthorRef.current = null;
-              }
+        let apiSaved = false;
+        let effectiveId = localId;
+        let savedAsPersonalFork = false;
+        const forkId = String(forkSourceCourseId ?? "").trim();
+        const forkMeta =
+          forkId ||
+          (prev?.forkedFromSharedId
+            ? String(prev.forkedFromSharedId).trim()
+            : "");
+        if (forkId) {
+          const personalId = await resolvePersonalRouteIdForForkSave(
+            forkId,
+            userSavedRoutes,
+            serverId,
+          );
+          const isOwnCourseUpdate =
+            Boolean(personalId) && sameCourseId(personalId, forkId);
+          if (personalId) {
+            apiSaved = isCollab
+              ? await patchCollaborativeRouteOnServer(
+                  personalId,
+                  routePayload,
+                )
+              : await updateMyRoute(personalId, routePayload);
+            if (apiSaved) {
+              effectiveId = personalId;
+              if (personalId !== localId) deleteUserRoute(localId);
+              upsertUserRoute({
+                id: personalId,
+                title,
+                createdAt: prev?.createdAt ?? now,
+                updatedAt: now,
+                collaborative: isCollab,
+                tags: tagsForSave,
+                stops: routePayload.stops,
+                legs: routePayload.legs,
+                publishedToPublic: wantPublic,
+                coverImageUri: routeCoverImageUri,
+                chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
+                ...(isOwnCourseUpdate ? {} : pickForkAuthorExtras(forkId, prev)),
+              });
+              setForkSourceCourseId(null);
+              forkOriginAuthorRef.current = null;
             }
-          } else if (serverId) {
-            apiSaved = await updateMyRoute(serverId, routePayload);
-            effectiveId = serverId;
+          } else {
+            const newPersonalId = await forkSharedCourseToPersonalRoute(
+              forkId,
+              routePayload,
+            );
+            apiSaved = Boolean(newPersonalId);
+            if (newPersonalId) {
+              savedAsPersonalFork = true;
+              effectiveId = newPersonalId;
+              if (newPersonalId !== localId) deleteUserRoute(localId);
+              upsertUserRoute({
+                id: newPersonalId,
+                title,
+                createdAt: prev?.createdAt ?? now,
+                updatedAt: now,
+                collaborative: isCollab,
+                tags: tagsForSave,
+                stops: routePayload.stops,
+                legs: routePayload.legs,
+                publishedToPublic: wantPublic,
+                coverImageUri: routeCoverImageUri,
+                chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
+                ...pickForkAuthorExtras(forkId, prev),
+              });
+              setForkSourceCourseId(null);
+              forkOriginAuthorRef.current = null;
+            }
+          }
+        } else if (serverId) {
+          apiSaved = isCollab
+            ? await patchCollaborativeRouteOnServer(serverId, routePayload)
+            : await updateMyRoute(serverId, routePayload);
+          effectiveId = serverId;
+          if (apiSaved) {
+            upsertUserRoute({
+              id: serverId,
+              title,
+              createdAt: prev?.createdAt ?? now,
+              updatedAt: now,
+              collaborative: isCollab,
+              tags: tagsForSave,
+              stops: routePayload.stops,
+              legs: routePayload.legs,
+              publishedToPublic: wantPublic,
+              coverImageUri: routeCoverImageUri,
+              chatRoomUuid: routeChatRoomUuid ?? prev?.chatRoomUuid,
+              ...(forkMeta ? pickForkAuthorExtras(forkMeta, prev) : {}),
+            });
+          }
+        } else {
+          const racedServerId = pickServerBackedRouteId();
+          if (racedServerId) {
+            apiSaved = isCollab
+              ? await patchCollaborativeRouteOnServer(
+                  racedServerId,
+                  routePayload,
+                )
+              : await updateMyRoute(racedServerId, routePayload);
+            effectiveId = racedServerId;
             if (apiSaved) {
               upsertUserRoute({
-                id: serverId,
+                id: racedServerId,
                 title,
                 createdAt: prev?.createdAt ?? now,
                 updatedAt: now,
@@ -2773,7 +3390,18 @@ export default function RouteCreateScreen(): React.JSX.Element {
               });
             }
           } else {
-            const createdId = await createMyRoute(routePayload);
+            let createdId: string | null = null;
+            if (createRouteInFlightRef.current) {
+              createdId = await createRouteInFlightRef.current;
+            } else {
+              const createTask = createMyRoute(routePayload);
+              createRouteInFlightRef.current = createTask;
+              try {
+                createdId = await createTask;
+              } finally {
+                createRouteInFlightRef.current = null;
+              }
+            }
             apiSaved = Boolean(createdId);
             if (createdId) {
               effectiveId = createdId;
@@ -2794,90 +3422,91 @@ export default function RouteCreateScreen(): React.JSX.Element {
               });
             }
           }
+        }
 
-          if (
-            apiSaved &&
-            effectiveId &&
-            !String(effectiveId).startsWith("ur-") &&
-            !isCollab
-          ) {
-            await setMyCoursePublic(String(effectiveId), wantPublic);
-          }
+        if (
+          apiSaved &&
+          effectiveId &&
+          !String(effectiveId).startsWith("ur-") &&
+          !isCollab
+        ) {
+          await setMyCoursePublic(String(effectiveId), wantPublic);
+        }
 
-          let thumbnailSynced = true;
-          if (
-            apiSaved &&
-            effectiveId &&
-            !String(effectiveId).startsWith("ur-") &&
-            routeCoverImageUri
-          ) {
-            const uploaded = await syncMyCourseThumbnailToServer(
-              String(effectiveId),
-              routeCoverImageUri,
-            );
-            if (uploaded) {
-              const saved = getUserRoute(effectiveId);
-              if (saved) {
-                upsertUserRoute({ ...saved, coverImageUri: uploaded });
-              }
-              setRouteCoverImageUri(uploaded);
-            } else if (isLocalThumbnailUri(routeCoverImageUri)) {
-              thumbnailSynced = false;
+        let thumbnailSynced = true;
+        if (
+          apiSaved &&
+          effectiveId &&
+          !String(effectiveId).startsWith("ur-") &&
+          routeCoverImageUri
+        ) {
+          const uploaded = await syncMyCourseThumbnailToServer(
+            String(effectiveId),
+            routeCoverImageUri,
+          );
+          if (uploaded) {
+            const saved = getUserRoute(effectiveId);
+            if (saved) {
+              upsertUserRoute({ ...saved, coverImageUri: uploaded });
             }
+            setRouteCoverImageUri(uploaded);
+          } else if (isLocalThumbnailUri(routeCoverImageUri)) {
+            thumbnailSynced = false;
           }
+        }
 
-          if (!opts?.silent && apiSaved && !thumbnailSynced) {
-            showToast("코스는 저장됐지만 대표 이미지 업로드에 실패했어요");
-          }
+        if (!opts?.silent && apiSaved && !thumbnailSynced) {
+          showToast("코스는 저장됐지만 대표 이미지 업로드에 실패했어요");
+        }
 
-          commitPersistedRouteId(effectiveId);
+        commitPersistedRouteId(effectiveId);
 
-          if (isCollab && accessToken && authUser?.uuid && apiSaved) {
-            const ensured = await linkRouteToGroupChat({
-              accessToken,
-              myUuid: authUser.uuid,
-              routeId: effectiveId,
-              routeTitle: title,
-              existingChatRoomUuid:
-                routeChatRoomUuid ?? prev?.chatRoomUuid ?? null,
+        if (isCollab && accessToken && authUser?.uuid && apiSaved) {
+          const ensured = await linkRouteToGroupChat({
+            accessToken,
+            myUuid: authUser.uuid,
+            routeId: effectiveId,
+            routeTitle: title,
+            existingChatRoomUuid:
+              routeChatRoomUuid ?? prev?.chatRoomUuid ?? null,
+          });
+          if (ensured) {
+            patchRouteChatRoom(effectiveId, ensured, {
+              ...(getUserRoute(effectiveId) ?? {
+                id: effectiveId,
+                title,
+                createdAt: prev?.createdAt ?? now,
+                updatedAt: now,
+                collaborative: true,
+                tags: tagsForSave,
+                stops: routePayload.stops,
+                legs: routePayload.legs,
+                publishedToPublic: wantPublic,
+              }),
+              chatRoomUuid: ensured,
             });
-            if (ensured) {
-              patchRouteChatRoom(effectiveId, ensured, {
-                ...(getUserRoute(effectiveId) ?? {
-                  id: effectiveId,
-                  title,
-                  createdAt: prev?.createdAt ?? now,
-                  updatedAt: now,
-                  collaborative: true,
-                  tags: tagsForSave,
-                  stops: routePayload.stops,
-                  legs: routePayload.legs,
-                  publishedToPublic: wantPublic,
-                }),
-                chatRoomUuid: ensured,
-              });
-            }
           }
+        }
 
-          if (!opts?.silent) {
-            showToast(
-              apiSaved
-                ? savedAsPersonalFork
-                  ? "개인 루트로 저장했어요"
-                  : isCollab
-                    ? "저장 완료 · 채팅 탭에 단체 채팅이 생겼어요"
-                    : "저장 완료"
-                : "저장하지 못했어요",
-            );
-          }
+        if (!opts?.silent) {
+          showToast(
+            apiSaved
+              ? savedAsPersonalFork
+                ? "개인 루트로 저장했어요"
+                : isCollab
+                  ? "저장 완료 · 채팅 탭에 연동됐어요"
+                  : "저장 완료"
+              : "저장하지 못했어요",
+          );
+        }
 
-          if (opts?.navigateBack && apiSaved) safeGoBack(navigation);
+        if (opts?.navigateBack && apiSaved) safeGoBack(navigation);
 
-          const savedRouteId =
-            apiSaved && effectiveId && !String(effectiveId).startsWith("ur-")
-              ? String(effectiveId)
-              : null;
-          return { ok: apiSaved, routeId: savedRouteId };
+        const savedRouteId =
+          apiSaved && effectiveId && !String(effectiveId).startsWith("ur-")
+            ? String(effectiveId)
+            : null;
+        return { ok: apiSaved, routeId: savedRouteId };
         } catch {
           return { ok: false, routeId: null };
         }
@@ -2899,8 +3528,9 @@ export default function RouteCreateScreen(): React.JSX.Element {
       commitPersistedRouteId,
       buildUpsertPayloadFromUserRoute,
       forkSourceCourseId,
-      collaborativeDraft,
+      collaborativeCommitted,
       publishToPublic,
+      wantsCourseChatRoom,
       selectedTags,
       routeCoverImageUri,
       routeChatRoomUuid,
@@ -2912,8 +3542,126 @@ export default function RouteCreateScreen(): React.JSX.Element {
       patchRouteChatRoom,
       showToast,
       navigation,
+      patchCollaborativeRouteOnServer,
     ],
   );
+
+  const personalAutoSaveKey = useMemo(
+    () => `${collabSyncKey}\n${collabTitleSyncKey ?? routeTitle.trim()}`,
+    [collabSyncKey, collabTitleSyncKey, routeTitle],
+  );
+
+  const { flush: flushPersonalRouteAutoSave } = useRouteEditorAutoSave({
+    enabled:
+      !isCollaborative &&
+      Boolean(pickServerBackedRouteId()) &&
+      collabCanEdit !== false,
+    syncKey: personalAutoSaveKey,
+    onSave: () =>
+      persistRouteToServer({
+        silent: true,
+        requireCoords: false,
+        navigateBack: false,
+      }),
+  });
+
+  flushPersonalRouteAutoSaveRef.current = flushPersonalRouteAutoSave;
+
+  const openRouteChat = useCallback(async () => {
+    if (!isCollaborative) return;
+    if (!accessToken || !authUser?.uuid) {
+      showToast("로그인 후 채팅을 사용할 수 있어요");
+      return;
+    }
+    setChatLinking(true);
+    try {
+      let routeId = pickServerBackedRouteId();
+      if (!routeId) {
+        const res = await persistRouteToServer({
+          silent: true,
+          requireCoords: false,
+          navigateBack: false,
+        });
+        routeId = res.routeId;
+      }
+      if (!routeId) {
+        showToast("루트를 먼저 저장한 뒤 채팅을 열 수 있어요");
+        return;
+      }
+      const prev = getUserRoute(routeId);
+      const ensured = await linkRouteToGroupChat({
+        accessToken,
+        myUuid: authUser.uuid,
+        routeId,
+        routeTitle: routeTitle.trim() || "루트",
+        existingChatRoomUuid:
+          routeChatRoomUuid ?? prev?.chatRoomUuid ?? null,
+      });
+      if (ensured) {
+        patchRouteChatRoom(routeId, ensured, prev ?? undefined);
+        setActiveChatRoomMeta({
+          name: buildRouteGroupChatName(routeTitle.trim() || "루트"),
+          memberCount: Math.max(2, collabMembers.length),
+        });
+      }
+      if (!ensured && !routeChatRoomUuid) {
+        showToast("채팅방 연결에 실패했어요. 잠시 후 다시 시도해 주세요");
+        return;
+      }
+      setChatOpen(true);
+    } finally {
+      setChatLinking(false);
+    }
+  }, [
+    accessToken,
+    authUser?.uuid,
+    pickServerBackedRouteId,
+    persistRouteToServer,
+    routeTitle,
+    routeChatRoomUuid,
+    getUserRoute,
+    patchRouteChatRoom,
+    showToast,
+    collabMembers.length,
+    isCollaborative,
+  ]);
+
+  const handleSelectRouteChatRoom = useCallback(
+    (room: { uuid: string; name: string; memberCount: number }) => {
+      setRouteChatRoomUuid(room.uuid);
+      setActiveChatRoomMeta({
+        name: room.name,
+        memberCount: room.memberCount,
+      });
+      const rid = pickServerBackedRouteId();
+      if (rid) {
+        patchRouteChatRoom(rid, room.uuid);
+      }
+      setChatOpen(true);
+    },
+    [pickServerBackedRouteId, patchRouteChatRoom],
+  );
+
+  const linkedRouteChatRoom = useMemo(() => {
+    const id = String(routeChatRoomUuid ?? "").trim();
+    if (!id) return null;
+    return {
+      uuid: id,
+      name:
+        String(activeChatRoomMeta?.name ?? "").trim() ||
+        buildRouteGroupChatName(routeTitle.trim() || "루트"),
+      memberCount: Math.max(
+        2,
+        activeChatRoomMeta?.memberCount ?? collabMembers.length,
+      ),
+    };
+  }, [
+    routeChatRoomUuid,
+    activeChatRoomMeta?.name,
+    activeChatRoomMeta?.memberCount,
+    routeTitle,
+    collabMembers.length,
+  ]);
 
   const ensureCollaborativeRoutePersisted = useCallback(async (): Promise<
     string | null
@@ -2924,7 +3672,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
       silent: true,
       requireCoords: false,
       navigateBack: false,
-      collaborativeOverride: true,
+      collaborativeOverride: false,
     });
     if (res.routeId) return res.routeId;
 
@@ -2948,19 +3696,12 @@ export default function RouteCreateScreen(): React.JSX.Element {
     );
     const patchedPayload = buildUpsertPayloadFromUserRoute({
       title: routeTitle.trim() || "새 루트",
-      collaborative: true,
+      collaborative: false,
       tags: selectedTags
         .map((t) => String(t).trim())
         .filter(Boolean)
         .slice(0, MAX_ROUTE_TAGS),
-      stops: patchedStops.map((s) => ({
-        id: s.id,
-        kind: s.kind,
-        title: s.title,
-        timeLine: s.timeLine,
-        lat: s.lat,
-        lng: s.lng,
-      })),
+      stops: patchedStops.map(routeStopToPersist),
       legs: legs.map((l) => ({
         id: l.id,
         mode: l.mode,
@@ -2980,7 +3721,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
       title: routeTitle.trim() || "새 루트",
       createdAt: now,
       updatedAt: now,
-      collaborative: true,
+      collaborative: false,
       tags: selectedTags
         .map((t) => String(t).trim())
         .filter(Boolean)
@@ -3010,106 +3751,104 @@ export default function RouteCreateScreen(): React.JSX.Element {
     commitPersistedRouteId,
   ]);
 
-  /** 공동 루트 자동 저장 — 실패해도 재시도 폭주하지 않음 */
-  const collabAutoSaveAttemptedRef = useRef(false);
-  const collabAutoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-  /** 루트 제작 진입 직후 1회 초안 저장(공유 실패 방지용 routeId 확보) */
-  const initialDraftPersistTriedRef = useRef(false);
-
-  const scheduleCollaborativeAutoSave = useCallback(() => {
-    const wantsCollab =
-      collaborativeDraft || route.params?.collaborative === true;
-    if (!wantsCollab) return;
-    if (pickServerBackedRouteId()) return;
-
-    if (collabAutoSaveTimerRef.current) {
-      clearTimeout(collabAutoSaveTimerRef.current);
-    }
-    collabAutoSaveTimerRef.current = setTimeout(() => {
-      collabAutoSaveTimerRef.current = null;
-      if (pickServerBackedRouteId()) return;
-      if (collabAutoSaveAttemptedRef.current) return;
-      collabAutoSaveAttemptedRef.current = true;
-      void ensureCollaborativeRoutePersisted();
-    }, 600);
-  }, [
-    collaborativeDraft,
-    route.params?.collaborative,
-    pickServerBackedRouteId,
-    ensureCollaborativeRoutePersisted,
-  ]);
-
-  useEffect(() => {
-    return () => {
-      if (collabAutoSaveTimerRef.current) {
-        clearTimeout(collabAutoSaveTimerRef.current);
-      }
-    };
-  }, []);
-
   useEffect(() => {
     const editId = route.params?.editRouteId as string | undefined;
     const seedId = route.params?.seedSharedCourseId as string | undefined;
+    if (route.params?.collaborative !== true) return;
     if (editId || seedId) return;
     if (initialDraftPersistTriedRef.current) return;
     if (pickServerBackedRouteId()) return;
     initialDraftPersistTriedRef.current = true;
 
-    // 공유 버튼 직후 "공동 루트 저장 실패"를 줄이기 위해 진입 시 1회 routeId 선확보
+    // 초대 링크 진입 등 — routeId만 확보(개인 루트로 저장)
+    void persistRouteToServer({
+      silent: true,
+      requireCoords: false,
+      navigateBack: false,
+      collaborativeOverride: false,
+    });
+  }, [
+    route.params?.editRouteId,
+    route.params?.seedSharedCourseId,
+    route.params?.collaborative,
+    pickServerBackedRouteId,
+    persistRouteToServer,
+  ]);
+
+  const commitCollaborativeMode = useCallback(() => {
+    setCollaborativeCommitted(true);
     void persistRouteToServer({
       silent: true,
       requireCoords: false,
       navigateBack: false,
       collaborativeOverride: true,
     });
+  }, [persistRouteToServer]);
+
+  useEffect(() => {
+    if (!canTrackRouteMembers) return;
+    if (isCollaborativeLinkEntry && collabEntryStatus === "granted") return;
+
+    if (hasCollaboratorPeers(collabMembers)) {
+      if (!collaborativeCommittedRef.current) {
+        commitCollaborativeMode();
+      }
+      return;
+    }
+
+    if (!collaborativeCommittedRef.current) return;
+    setCollaborativeCommitted(false);
+    void persistRouteToServer({
+      silent: true,
+      requireCoords: false,
+      navigateBack: false,
+      collaborativeOverride: false,
+    });
   }, [
-    route.params?.editRouteId,
-    route.params?.seedSharedCourseId,
-    pickServerBackedRouteId,
+    canTrackRouteMembers,
+    collabMembers,
+    isCollaborativeLinkEntry,
+    collabEntryStatus,
+    commitCollaborativeMode,
     persistRouteToServer,
   ]);
 
-  /** 출발·도착 좌표가 잡히면 공동 루트 1회 자동 저장(공유용) */
-  useEffect(() => {
-    const wantsCollab =
-      collaborativeDraft || route.params?.collaborative === true;
-    if (!wantsCollab) return;
-    if (pickServerBackedRouteId()) return;
-    const hasCoords =
-      stops[0]?.lat != null && stops[stops.length - 1]?.lat != null;
-    if (!hasCoords) return;
-    scheduleCollaborativeAutoSave();
-  }, [
-    collaborativeDraft,
-    route.params?.collaborative,
-    stops,
-    persistedRouteId,
-    editRouteIdParam,
-    pickServerBackedRouteId,
-    scheduleCollaborativeAutoSave,
-  ]);
+  const handlePublishToPublicChange = useCallback((next: boolean) => {
+    setPublishToPublic(next);
+    if (!next) setWantsCourseChatRoom(false);
+  }, []);
 
-  /** 상단 공유 — 공동 모드 + 미저장이면 자동 저장 후 공유 */
+  /** 상단 공유 — 미저장이면 개인 루트로 저장 후 공유 시트 */
   const handleTopSharePress = useCallback(async () => {
-    setCollaborativeDraft(true);
-    collabAutoSaveAttemptedRef.current = false;
     const rid = await ensureCollaborativeRoutePersisted();
     if (!rid) {
       showToast("공동 루트 저장에 실패했어요. 잠시 후 다시 시도해 주세요");
       return;
+    }
+    if (!routeChatRoomUuid && accessToken && authUser?.uuid) {
+      const wantsChat = await promptCreateCourseChatRoom();
+      if (wantsChat) {
+        const ensured = await linkCourseChatRoomForShare({
+          accessToken,
+          myUuid: authUser.uuid,
+          routeId: rid,
+          routeTitle: routeTitle.trim() || "루트",
+          existingChatRoomUuid: routeChatRoomUuid,
+        });
+        if (ensured) patchRouteChatRoom(rid, ensured);
+      }
     }
     presentCollaborativeShareOptions({
       routeId: rid,
       title: routeTitle.trim() || "루트",
       onInviteFriends: () => setFriendInviteOpen(true),
     });
-  }, [routeTitle, showToast, ensureCollaborativeRoutePersisted]);
+  }, [routeTitle, showToast, ensureCollaborativeRoutePersisted, accessToken, authUser?.uuid, routeChatRoomUuid, patchRouteChatRoom]);
 
   const handleInviteFriendsToRoute = async (friendUuids: string[]) => {
     const rid =
-      (await ensureCollaborativeRoutePersisted()) ?? getServerBackedRouteId();
+      (await ensureCollaborativeRoutePersisted()) ??
+      getServerBackedRouteId();
     if (!rid) {
       Alert.alert("", "공동 루트를 저장한 뒤 친구에게 공유할 수 있어요.");
       return;
@@ -3130,12 +3869,16 @@ export default function RouteCreateScreen(): React.JSX.Element {
         existingChatRoomUuid: routeChatRoomUuid,
       });
       if (chatRoomUuid) patchRouteChatRoom(rid, chatRoomUuid);
+      refreshCollabMembers();
       setFriendInviteOpen(false);
-      showToast(
-        sent
-          ? `${friendUuids.length}명에게 초대했어요 · 채팅 탭에서 확인`
-          : "초대에 실패했어요",
-      );
+      if (sent) {
+        commitCollaborativeMode();
+        showToast(
+          `${friendUuids.length}명에게 초대했어요 · 채팅 탭에서 확인`,
+        );
+      } else {
+        showToast("초대에 실패했어요");
+      }
     } finally {
       setFriendInviteSubmitting(false);
     }
@@ -3145,6 +3888,8 @@ export default function RouteCreateScreen(): React.JSX.Element {
     if (routeSaving) return;
     setRouteSaving(true);
     try {
+      await flushCollabRoutePush();
+      await flushPersonalRouteAutoSave();
       await persistRouteToServer({ navigateBack: true, requireCoords: true });
     } finally {
       setRouteSaving(false);
@@ -3200,7 +3945,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
   const renderStopBadge = (kind: RouteStop["kind"]) => {
     if (kind === "start")
       return (
-        <View className="rounded-md bg-green-600 px-2 py-0.5">
+        <View className="rounded-md bg-blue-600 px-2 py-0.5">
           <Text className="text-[11px] font-bold text-white">출발</Text>
         </View>
       );
@@ -3220,20 +3965,20 @@ export default function RouteCreateScreen(): React.JSX.Element {
   const renderTimelineDot = (stop: RouteStop) => {
     if (stop.kind === "start")
       return (
-        <View className="h-8 w-8 items-center justify-center rounded-full bg-green-600">
+        <View className="items-center justify-center w-8 h-8 bg-blue-600 rounded-full">
           <Text className="text-xs font-bold text-white">P</Text>
         </View>
       );
     if (stop.kind === "end")
       return (
-        <View className="h-8 w-8 items-center justify-center rounded-full bg-red-500">
+        <View className="items-center justify-center w-8 h-8 bg-red-500 rounded-full">
           <Text className="text-[10px] font-bold text-white">P</Text>
         </View>
       );
     const vn = viaStops.findIndex((v) => v.id === stop.id) + 1;
     return (
-      <View className="h-8 w-8 items-center justify-center rounded-full bg-gray-300">
-        <Text className="text-xs font-semibold text-gray-700">{vn}</Text>
+      <View className="items-center justify-center w-8 h-8 bg-blue-100 rounded-full">
+        <Text className="text-xs font-semibold text-blue-800">{vn}</Text>
       </View>
     );
   };
@@ -3290,23 +4035,40 @@ export default function RouteCreateScreen(): React.JSX.Element {
           }}
           pointerEvents="box-none"
         >
-          <Pressable
-            onPress={() => safeGoBack(navigation)}
-            className="z-10 h-12 w-12 items-center justify-center rounded-full bg-white shadow-md active:opacity-90"
-            style={{
-              shadowColor: "#000",
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.12,
-              shadowRadius: 6,
-              elevation: 4,
-            }}
-          >
-            <Ionicons name="chevron-back" size={24} color="#f97316" />
-          </Pressable>
+          <View className="items-center shrink-0" pointerEvents="box-none">
+            <Pressable
+              onPress={() => safeGoBack(navigation)}
+              className="z-10 items-center justify-center w-12 h-12 bg-white rounded-full shadow-md active:opacity-90"
+              style={{
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.12,
+                shadowRadius: 6,
+                elevation: 4,
+              }}
+            >
+              <Ionicons name="chevron-back" size={24} color="#2563eb" />
+            </Pressable>
+            {showCollabMemberStack ? (
+              <View className="items-center mt-2">
+                <CollaboratorAvatarStack
+                  members={collabMembers}
+                  size={34}
+                  onPress={() =>
+                    rootNavigate("RouteCollaborators", {
+                      routeId: activeRouteId,
+                      routeTitle: routeTitle.trim() || "루트",
+                      chatRoomUuid: routeChatRoomUuid,
+                    })
+                  }
+                />
+              </View>
+            ) : null}
+          </View>
 
           <Pressable
             onPress={() => openSearch()}
-            className="flex-1 flex-row items-center rounded-2xl bg-white px-4 py-0 shadow-md active:opacity-95"
+            className="flex-row items-center flex-1 px-4 py-0 bg-white shadow-md rounded-2xl active:opacity-95"
             style={{
               shadowColor: "#000",
               shadowOffset: { width: 0, height: 2 },
@@ -3323,10 +4085,10 @@ export default function RouteCreateScreen(): React.JSX.Element {
             <Ionicons name="search-outline" size={22} color="#6b7280" />
           </Pressable>
 
-          <View className="shrink-0 items-center" pointerEvents="box-none">
+          <View className="items-center shrink-0" pointerEvents="box-none">
             <Pressable
               onPress={handleTopSharePress}
-              className="h-12 w-12 items-center justify-center rounded-full bg-white shadow-md active:opacity-90"
+              className="items-center justify-center w-12 h-12 bg-white rounded-full shadow-md active:opacity-90"
               style={{
                 shadowColor: "#000",
                 shadowOffset: { width: 0, height: 2 },
@@ -3339,13 +4101,14 @@ export default function RouteCreateScreen(): React.JSX.Element {
               <Ionicons
                 name="share-social-outline"
                 size={22}
-                color={isCollaborative ? "#ea580c" : "#2563eb"}
+                color="#2563eb"
               />
             </Pressable>
             {showHeaderChatBelowShare ? (
               <Pressable
-                onPress={openRouteChat}
-                className="mt-1.5 h-10 w-11 items-center justify-center rounded-full bg-orange-500 shadow-md active:opacity-90"
+                onPress={() => void openRouteChat()}
+                disabled={chatLinking}
+                className="mt-1.5 h-10 w-11 items-center justify-center rounded-full bg-blue-600 shadow-md active:opacity-90"
                 style={{
                   shadowColor: "#000",
                   shadowOffset: { width: 0, height: 2 },
@@ -3362,7 +4125,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
         </View>
 
         {showCollabMemberBar ? (
-          <View className="mt-2 px-3" pointerEvents="box-none">
+          <View className="px-3 mt-2" pointerEvents="box-none">
             <CollaboratorAvatarStack
               members={collabMembers}
               onPress={() =>
@@ -3378,7 +4141,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
         <View style={{ flex: 1, minHeight: 0 }} pointerEvents="none" />
 
         <View
-          className="rounded-t-3xl border-t border-gray-200 bg-white"
+          className="bg-white border-t border-gray-200 rounded-t-3xl"
           style={{
             height: bottomSheetPanelHeightPx,
             flexShrink: 0,
@@ -3413,29 +4176,40 @@ export default function RouteCreateScreen(): React.JSX.Element {
               }}
             />
           </View>
-          <View className="border-b border-gray-50 px-4 pt-3 pb-2">
+          <View className="px-4 pt-3 pb-2 border-b border-gray-50">
             <View className="flex-row items-center">
               <Pressable
                 onPress={() => void pickRouteCoverImage()}
-                className="mr-3 h-14 w-14 overflow-hidden rounded-xl bg-slate-100 active:opacity-90"
+                className="mr-3 overflow-hidden h-14 w-14 rounded-xl bg-slate-100 active:opacity-90"
                 accessibilityLabel="루트 대표 이미지 설정"
               >
                 {routeCoverImageUri ? (
                   <Image
                     source={{ uri: routeCoverImageUri }}
-                    className="h-full w-full"
+                    className="w-full h-full"
                     resizeMode="cover"
                   />
                 ) : (
-                  <View className="h-full w-full items-center justify-center">
+                  <View className="items-center justify-center w-full h-full">
                     <Ionicons name="camera-outline" size={22} color="#94a3b8" />
                   </View>
                 )}
               </Pressable>
-              <View className="min-w-0 flex-1 flex-row items-center">
+              <View className="flex-row items-center flex-1 min-w-0">
                 <TextInput
                   value={routeTitle}
-                  onChangeText={setRouteTitle}
+                  onChangeText={(text) => {
+                    routeTitleLastEditAtRef.current = Date.now();
+                    setRouteTitle(text);
+                  }}
+                  onFocus={() => {
+                    routeTitleAtFocusRef.current = routeTitle;
+                    setRouteTitleFieldFocused(true);
+                  }}
+                  onBlur={() => {
+                    setRouteTitleFieldFocused(false);
+                    routeTitleLastEditAtRef.current = Date.now();
+                  }}
                   placeholder="루트 이름 입력"
                   placeholderTextColor="#9ca3af"
                   className="flex-1 text-[17px] font-bold text-gray-900"
@@ -3451,7 +4225,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
             </Text>
           </View>
 
-          <View className="border-b border-gray-100 px-4 pb-3">
+          <View className="px-4 pb-3 border-b border-gray-100">
             <Text className="mb-1.5 text-[11px] font-semibold text-gray-700">
               태그 (최대 {MAX_ROUTE_TAGS}개)
             </Text>
@@ -3481,33 +4255,42 @@ export default function RouteCreateScreen(): React.JSX.Element {
             </View>
           </View>
 
+          {isCollaborative &&
+          collabCourseIdForSync &&
+          (!collabCanEdit || isCourseSocketConnected) ? (
+            <View className="px-4 pb-2 border-b border-blue-50">
+              <Text
+                className={`text-[10px] font-medium ${
+                  !collabCanEdit ? "text-slate-500" : "text-blue-600"
+                }`}
+              >
+                {!collabCanEdit
+                  ? "읽기 전용 · 멤버 수정은 실시간으로 반영돼요"
+                  : "멤버 수정이 실시간으로 반영돼요"}
+              </Text>
+            </View>
+          ) : null}
+
           <View className="border-b border-gray-100 px-3 py-2.5">
             <View className="flex-row items-center gap-2">
-              {isCollaborative ? (
-                <View className="min-w-0 flex-1">
-                  <Text className="text-xs font-medium text-gray-500">
-                    {showCollabMemberBar
-                      ? "멤버와 함께 편집 · 상단 공유로 초대"
-                      : "상단 공유로 친구를 초대해 보세요"}
-                  </Text>
-                </View>
-              ) : (
-                <View className="min-w-0 flex-1" />
-              )}
+              <View className="flex-1 min-w-0" />
               <View className="flex-row items-center gap-2 shrink-0">
                 {isCollaborative ? (
                   <Pressable
-                    onPress={() => setChatOpen(true)}
-                    className="rounded-xl bg-orange-500 px-3.5 py-2 active:opacity-90"
+                    onPress={() => void openRouteChat()}
+                    disabled={chatLinking}
+                    className="h-9 shrink-0 flex-row items-center justify-center rounded-xl bg-blue-600 px-3.5 active:opacity-90"
                   >
-                    <Text className="text-sm font-bold text-white">채팅</Text>
+                    <Text className="text-sm font-bold text-white">
+                      {chatLinking ? "연결…" : "채팅"}
+                    </Text>
                   </Pressable>
                 ) : null}
                 {!isCollaborative ? (
-                  <View className="flex-row items-center gap-1.5 rounded-xl bg-slate-100 px-2 py-1">
+                  <View className="h-9 flex-row items-center gap-1.5 rounded-xl bg-slate-100 px-2.5">
                     <Ionicons
                       name={publishToPublic ? "globe" : "lock-closed-outline"}
-                      size={16}
+                      size={15}
                       color={publishToPublic ? "#2563eb" : "#64748b"}
                     />
                     <Text className="text-[11px] font-semibold text-gray-600">
@@ -3515,17 +4298,18 @@ export default function RouteCreateScreen(): React.JSX.Element {
                     </Text>
                     <Switch
                       value={publishToPublic}
-                      onValueChange={setPublishToPublic}
+                      onValueChange={(v) => void handlePublishToPublicChange(v)}
                       trackColor={{ false: "#d1d5db", true: "#93c5fd" }}
                       thumbColor={publishToPublic ? "#2563eb" : "#f4f4f5"}
                       accessibilityLabel="공개 코스"
+                      style={{ transform: [{ scaleX: 0.88 }, { scaleY: 0.88 }] }}
                     />
                   </View>
                 ) : null}
                 <Pressable
                   onPress={() => void saveRoute()}
                   disabled={routeSaving}
-                  className="shrink-0 flex-row items-center justify-center rounded-xl bg-green-600 px-3.5 py-2 active:opacity-90"
+                  className="h-9 shrink-0 flex-row items-center justify-center rounded-xl bg-blue-600 px-3.5 active:opacity-90"
                   style={{ opacity: routeSaving ? 0.85 : 1 }}
                 >
                   {routeSaving ? (
@@ -3546,9 +4330,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
             <ScrollView
               ref={itineraryScrollRef}
               className="flex-1 px-3"
-              scrollEnabled={
-                viaDrag?.phase !== "lift" && viaDrag?.phase !== "drag"
-              }
+              scrollEnabled={viaDrag?.phase !== "lift" && viaDrag?.phase !== "drag"}
               showsVerticalScrollIndicator={false}
               scrollEventThrottle={16}
               onScroll={(e) => {
@@ -3573,6 +4355,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                     : 0.18
                   : 1;
                 const viaIdx = viaStops.findIndex((v) => v.id === stop.id);
+                const originalHint = stopOriginalTitleHint(stop);
                 return (
                   <View
                     key={stop.id}
@@ -3589,7 +4372,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                     }}
                   >
                     <View className="flex-row">
-                      <View className="w-10 items-center">
+                      <View className="items-center w-10">
                         {index > 0 ? (
                           <View
                             style={{
@@ -3615,7 +4398,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                       </View>
 
                       <View
-                        className="mb-2 ml-2 flex-1 rounded-xl bg-gray-50/80 p-3"
+                        className="flex-1 p-3 mb-2 ml-2 rounded-xl bg-gray-50/80"
                         style={{
                           opacity: cardOpacity,
                           ...(isDragRow
@@ -3628,19 +4411,49 @@ export default function RouteCreateScreen(): React.JSX.Element {
                         }}
                       >
                         <View className="flex-row items-start justify-between">
-                          <View className="flex-1 flex-row flex-wrap items-center gap-2">
-                            {renderStopBadge(stop.kind)}
-                            <Text
-                              className="text-base font-bold text-gray-900"
-                              numberOfLines={2}
-                            >
-                              {stop.title}
-                            </Text>
+                          <View className="flex-1 min-w-0">
+                            <View className="flex-row flex-wrap items-center gap-2">
+                              {renderStopBadge(stop.kind)}
+                              <Text
+                                className="text-base font-bold text-gray-900"
+                                numberOfLines={2}
+                              >
+                                {stop.title}
+                              </Text>
+                            </View>
+                            {originalHint ? (
+                              <Text
+                                className="mt-0.5 text-xs text-gray-400"
+                                numberOfLines={1}
+                              >
+                                {originalHint}
+                              </Text>
+                            ) : null}
                           </View>
                           <View className="flex-row items-center gap-0.5">
+                            {stop.lat != null && stop.lng != null ? (
+                              <Pressable
+                                onPress={() => changeStopPlace(stop)}
+                                hitSlop={6}
+                                accessibilityRole="button"
+                                accessibilityLabel="장소 변경"
+                              >
+                                <Ionicons
+                                  name="location-outline"
+                                  size={18}
+                                  color="#6b7280"
+                                />
+                              </Pressable>
+                            ) : null}
                             <Pressable
-                              onPress={() => editStop(stop)}
+                              onPress={() => editStopName(stop)}
                               hitSlop={6}
+                              accessibilityRole="button"
+                              accessibilityLabel={
+                                stop.lat != null && stop.lng != null
+                                  ? "이름 변경"
+                                  : "장소 검색"
+                              }
                             >
                               <Ionicons
                                 name="pencil-outline"
@@ -3693,7 +4506,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                     {index < stops.length - 1 && legs[index] && (
                       <Pressable
                         onPress={() => setEditingLegId(legs[index].id)}
-                        className="ml-12 mb-2 py-1 pl-2 active:opacity-70"
+                        className="py-1 pl-2 mb-2 ml-12 active:opacity-70"
                         style={{
                           borderLeftWidth: 3,
                           borderLeftColor: "rgba(37, 99, 235, 0.35)",
@@ -3705,7 +4518,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                             size={18}
                             color="#2563eb"
                           />
-                          <Text className="ml-2 flex-1 text-xs font-medium text-blue-900/80">
+                          <Text className="flex-1 ml-2 text-xs font-medium text-blue-900/80">
                             {legTransportLabel(
                               legs[index].mode,
                               legs[index].transitType,
@@ -3740,7 +4553,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                     legs[index].walkCandidates &&
                     legs[index].walkCandidates!.length > 1 ? (
                       <View className="mb-2 ml-12 pl-2 flex-row flex-wrap gap-1.5">
-                        <Text className="mb-0.5 w-full text-[10px] font-semibold text-amber-800">
+                        <Text className="mb-0.5 w-full text-[10px] font-semibold text-blue-800">
                           보도 선택
                         </Text>
                         {legs[index].walkCandidates!.map((c) => {
@@ -3756,13 +4569,13 @@ export default function RouteCreateScreen(): React.JSX.Element {
                               }
                               className={`rounded-lg border px-2.5 py-1.5 ${
                                 on
-                                  ? "border-amber-500 bg-amber-100"
+                                  ? "border-blue-500 bg-blue-50"
                                   : "border-gray-200 bg-white"
                               }`}
                             >
                               <Text
                                 className={`text-[11px] font-bold ${
-                                  on ? "text-amber-900" : "text-gray-700"
+                                  on ? "text-blue-900" : "text-gray-700"
                                 }`}
                               >
                                 {c.label}
@@ -3779,7 +4592,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                     legs[index]?.mode === "transit" &&
                     legs[index].transitCandidates &&
                     legs[index].transitCandidates!.length > 0 ? (
-                      <View className="mb-2 ml-12 pl-2">
+                      <View className="pl-2 mb-2 ml-12">
                         <Text className="mb-1.5 text-[10px] font-semibold text-sky-800">
                           대중교통 경로 ({legs[index].transitCandidates!.length}
                           개)
@@ -3809,7 +4622,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                               >
                                 {c.summary}
                               </Text>
-                              <View className="mt-1 flex-row flex-wrap gap-2">
+                              <View className="flex-row flex-wrap gap-2 mt-1">
                                 {c.departureLabel ? (
                                   <Text className="text-[11px] font-semibold text-emerald-700">
                                     {c.departureLabel}
@@ -3924,9 +4737,9 @@ export default function RouteCreateScreen(): React.JSX.Element {
             <View className="flex-row items-center gap-2 border-b border-gray-200 px-3 py-2.5">
               <Pressable
                 onPress={closeSearch}
-                className="h-10 w-10 items-center justify-center rounded-full bg-white active:opacity-80"
+                className="items-center justify-center w-10 h-10 bg-white rounded-full active:opacity-80"
               >
-                <Ionicons name="chevron-back" size={22} color="#f97316" />
+                <Ionicons name="chevron-back" size={22} color="#2563eb" />
               </Pressable>
               <View className="flex-1 flex-row items-center rounded-2xl bg-white px-3 py-2.5">
                 <TextInput
@@ -3952,7 +4765,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
               <Text className="mb-1 text-[10px] font-semibold text-gray-600">
                 정렬
               </Text>
-              <View className="mb-2 flex-row gap-2">
+              <View className="flex-row gap-2 mb-2">
                 <Pressable
                   onPress={() => setSearchSort("accuracy")}
                   className={`rounded-lg border px-3 py-1.5 ${
@@ -3995,14 +4808,14 @@ export default function RouteCreateScreen(): React.JSX.Element {
                         onPress={() => setSearchRadiusMeters(meters)}
                         className={`rounded-lg border px-2.5 py-1 ${
                           searchRadiusMeters === meters
-                            ? "border-amber-500 bg-amber-50"
+                            ? "border-blue-500 bg-blue-50"
                             : "border-gray-200 bg-gray-50"
                         }`}
                       >
                         <Text
                           className={`text-[11px] font-bold ${
                             searchRadiusMeters === meters
-                              ? "text-amber-900"
+                              ? "text-blue-900"
                               : "text-gray-700"
                           }`}
                         >
@@ -4047,7 +4860,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                 })}
               </ScrollView>
               {!canUseDistanceSort ? (
-                <Text className="mt-2 text-[10px] leading-4 text-amber-900">
+                <Text className="mt-2 text-[10px] leading-4 text-blue-800">
                   거리순은 현재 위치 권한 허용 또는 루트 좌표(출발/도착) 설정 후
                   사용할 수 있습니다.
                 </Text>
@@ -4067,19 +4880,19 @@ export default function RouteCreateScreen(): React.JSX.Element {
               keyboardShouldPersistTaps="handled"
             >
               <>
-                <Text className="mb-2 px-1 text-sm font-bold text-gray-800">
+                <Text className="px-1 mb-2 text-sm font-bold text-gray-800">
                   검색결과
                 </Text>
                 {searchLoading ? (
-                  <Text className="py-8 text-center text-sm text-gray-500">
+                  <Text className="py-8 text-sm text-center text-gray-500">
                     검색 중...
                   </Text>
                 ) : searchError ? (
-                  <Text className="py-8 text-center text-sm text-rose-500">
+                  <Text className="py-8 text-sm text-center text-rose-500">
                     {searchError}
                   </Text>
                 ) : searchResults.length === 0 ? (
-                  <Text className="py-8 text-center text-sm text-gray-500">
+                  <Text className="py-8 text-sm text-center text-gray-500">
                     {searchQuery.trim() === ""
                       ? "필터나 검색을 통해 찾아보세요!"
                       : "검색 결과가 없습니다. 필터나 다른 키워드로 찾아보세요!"}
@@ -4125,8 +4938,8 @@ export default function RouteCreateScreen(): React.JSX.Element {
                           />
                         </View>
                         {expanded && (
-                          <View className="border-t border-gray-100 bg-gray-50 px-3 py-3">
-                            <Text className="text-center text-sm text-gray-700">
+                          <View className="px-3 py-3 border-t border-gray-100 bg-gray-50">
+                            <Text className="text-sm text-center text-gray-700">
                               선택하신 {TRANSPORT_LABELS.transit}(으)로 이동 시
                               약 {estimateMinutes("transit", p.id)}분
                             </Text>
@@ -4157,14 +4970,28 @@ export default function RouteCreateScreen(): React.JSX.Element {
       </Modal>
 
       <RouteCollaborativeChatSheet
-        visible={chatOpen}
+        visible={isCollaborative && chatOpen}
         onClose={() => setChatOpen(false)}
         accessToken={accessToken}
         myUuid={authUser?.uuid}
         chatRoomUuid={routeChatRoomUuid}
         routeTitle={routeTitle.trim() || "루트"}
-        fallbackMessages={chatMessages}
-        onFallbackSend={sendChatFallback}
+        roomName={
+          activeChatRoomMeta?.name ??
+          buildRouteGroupChatName(routeTitle.trim() || "루트")
+        }
+        memberCount={
+          activeChatRoomMeta?.memberCount ??
+          Math.max(2, collabMembers.length)
+        }
+        linkedChatRoom={linkedRouteChatRoom}
+        onSelectChatRoom={
+          accessToken
+            ? (room) => {
+                handleSelectRouteChatRoom(room);
+              }
+            : undefined
+        }
       />
 
       <CollaborativeFriendInviteModal
@@ -4176,7 +5003,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
       />
 
       <Modal visible={!!editingLegId} transparent animationType="fade">
-        <View className="flex-1 justify-center px-6">
+        <View className="justify-center flex-1 px-6">
           <Pressable
             style={StyleSheet.absoluteFillObject}
             className="bg-black/40"
@@ -4191,11 +5018,13 @@ export default function RouteCreateScreen(): React.JSX.Element {
             </Text>
             {(() => {
               const leg = legs.find((l) => l.id === editingLegId);
-              const legDetail = sanitizeRouteDisplayText(leg?.directionsDetail);
+              const legDetail = sanitizeRouteDisplayText(
+                leg?.directionsDetail,
+              );
               if (!legDetail) return null;
               return (
                 <ScrollView
-                  className="mb-3 max-h-40 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2"
+                  className="px-3 py-2 mb-3 border max-h-40 rounded-xl border-slate-100 bg-slate-50"
                   nestedScrollEnabled
                 >
                   <Text className="text-xs leading-5 text-slate-700">
@@ -4270,12 +5099,12 @@ export default function RouteCreateScreen(): React.JSX.Element {
                         }
                         className={`mb-2 rounded-xl border-2 px-3 py-2.5 ${
                           on
-                            ? "border-amber-500 bg-amber-50"
+                            ? "border-blue-500 bg-blue-50"
                             : "border-gray-200 bg-gray-50"
                         }`}
                       >
                         <Text
-                          className={`text-sm font-bold ${on ? "text-amber-900" : "text-gray-800"}`}
+                          className={`text-sm font-bold ${on ? "text-blue-900" : "text-gray-800"}`}
                         >
                           {c.label}
                         </Text>
@@ -4296,7 +5125,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                   <Text className="mb-2 text-sm font-semibold text-gray-800">
                     대중교통 종류 (필터)
                   </Text>
-                  <View className="mb-3 flex-row gap-2">
+                  <View className="flex-row gap-2 mb-3">
                     {(Object.keys(TRANSIT_TYPE_LABELS) as TransitType[]).map(
                       (tt) => {
                         const on = (leg.transitType ?? "subway") === tt;
@@ -4377,7 +5206,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                         );
                       })
                     ) : (
-                      <Text className="py-4 text-center text-xs text-gray-500">
+                      <Text className="py-4 text-xs text-center text-gray-500">
                         대중교통 경로를 조회하는 중이거나, 이 구간에 승차 정보가
                         없습니다.
                       </Text>
@@ -4400,7 +5229,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
           className="items-center justify-center bg-black/35"
         >
           <View
-            className="items-center rounded-2xl bg-white px-8 py-6"
+            className="items-center px-8 py-6 bg-white rounded-2xl"
             style={{
               shadowColor: "#000",
               shadowOffset: { width: 0, height: 4 },
@@ -4421,22 +5250,35 @@ export default function RouteCreateScreen(): React.JSX.Element {
       ) : null}
 
       <Modal visible={!!editingStop} transparent animationType="fade">
-        <View className="flex-1 justify-center px-6">
+        <View className="justify-center flex-1 px-6">
           <Pressable
             style={StyleSheet.absoluteFillObject}
             className="bg-black/40"
             onPress={() => setEditingStop(null)}
           />
-          <View className="rounded-2xl bg-white p-5" style={{ zIndex: 1 }}>
-            <Text className="text-lg font-bold text-gray-900">장소 이름</Text>
+          <View className="p-5 bg-white rounded-2xl" style={{ zIndex: 1 }}>
+            <Text className="text-lg font-bold text-gray-900">표시 이름</Text>
+            <Text className="mt-1 text-xs text-gray-500">
+              지도·검색에 쓰인 원래 이름은 아래에 그대로 남아요.
+            </Text>
+            {editingStop &&
+            editingStop.lat != null &&
+            String(editingStop.originalTitle ?? editingStop.title).trim() ? (
+              <Text className="mt-1 text-xs text-gray-400" numberOfLines={2}>
+                원래 이름:{" "}
+                {String(
+                  editingStop.originalTitle ?? editingStop.title,
+                ).trim()}
+              </Text>
+            ) : null}
             <TextInput
               value={editTitle}
               onChangeText={setEditTitle}
-              className="mt-3 rounded-xl border border-gray-200 px-3 py-3 text-base text-gray-900"
+              className="px-3 py-3 mt-3 text-base text-gray-900 border border-gray-200 rounded-xl"
               placeholder="표시할 이름"
               autoFocus
             />
-            <View className="mt-4 flex-row justify-end gap-2">
+            <View className="flex-row justify-end gap-2 mt-4">
               <Pressable
                 onPress={() => setEditingStop(null)}
                 className="rounded-xl px-4 py-2.5 active:opacity-70"
@@ -4453,6 +5295,22 @@ export default function RouteCreateScreen(): React.JSX.Element {
           </View>
         </View>
       </Modal>
+      {isCollaborativeLinkEntry && collabEntryStatus === "checking" ? (
+        <View
+          style={{
+            ...StyleSheet.absoluteFillObject,
+            zIndex: 100,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: "rgba(255,255,255,0.92)",
+          }}
+        >
+          <ActivityIndicator size="large" color="#2563EB" />
+          <Text style={{ marginTop: 12, fontSize: 14, color: "#475569" }}>
+            공동 루트 확인 중…
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }

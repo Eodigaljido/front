@@ -1,3 +1,5 @@
+import type { MapRouteSegment } from '../components/mapTypes';
+
 /**
  * 코스 지도 폴리라인 상한.
  * Directions 병합 경로는 수백~수천 점이 될 수 있어, 과도한 점은 기기 부하를 줄이기 위해 샘플링한다.
@@ -19,4 +21,15 @@ export function simplifyRoutePath(
   const step = Math.max(1, Math.ceil(inner.length / keepInner));
   const sampled = inner.filter((_, idx) => idx % step === 0).slice(0, keepInner);
   return [first, ...sampled, last];
+}
+
+export function simplifyRouteSegments(
+  segments: MapRouteSegment[] | null | undefined,
+  maxPoints: number = COURSE_MAP_POLYLINE_MAX_POINTS,
+): MapRouteSegment[] | undefined {
+  if (!segments?.length) return undefined;
+  return segments.map((seg) => ({
+    ...seg,
+    points: simplifyRoutePath(seg.points, maxPoints) ?? seg.points,
+  }));
 }

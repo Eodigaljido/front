@@ -1,15 +1,9 @@
 // @ts-nocheck
 /**
  * 코스 「안내」 — 지도 중심, 턴바이턴·음성 없음.
- * 코스 입구 안내: 내 위치 ↔ 코스 출발점 도보 경로 + 사용자 방향 기준 지도 회전.
+ * 입구 안내: 내 위치 ↔ 코스 출발점 도보 경로 + 사용자 방향 기준 지도 회전.
  */
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -31,7 +25,7 @@ import {
   buildMapMarkersFromPathPoints,
   spreadOverlappingMapMarkers,
 } from "../utils/spreadMapMarkers";
-import { simplifyRoutePath } from "../utils/simplifyRoutePath";
+import { simplifyRoutePath, simplifyRouteSegments } from "../utils/simplifyRoutePath";
 import {
   guideMapHeadingFromDevice,
   normalizeDeviceHeading,
@@ -41,9 +35,7 @@ import { safeGoBack } from "../navigation/rootNavigation";
 import { useMockData } from "../context/MockDataContext";
 import {
   fetchGoogleDirectionsLeg,
-  fetchMergedDirectionsPolyline,
-  looksLikeStraightStopConnectorPath,
-  resolveCoursePreviewDirectionsMode,
+  fetchMergedDirectionsSegments,
 } from "../data/googleDirectionsApi";
 import {
   computeMapRouteFit,
@@ -94,6 +86,7 @@ export default function CourseGuideScreen(): React.JSX.Element {
   const [course, setCourse] = useState<CourseItem | null>(null);
   const [loadingCourse, setLoadingCourse] = useState(true);
   const [routePath, setRoutePath] = useState<LatLng[] | null>(null);
+  const [routeSegments, setRouteSegments] = useState<MapRouteSegment[] | null>(null);
   const [pathLoading, setPathLoading] = useState(false);
   const [userLocation, setUserLocation] = useState<LatLng | null>(null);
   const [deviceHeading, setDeviceHeading] = useState<number | null>(null);
@@ -168,32 +161,23 @@ export default function CourseGuideScreen(): React.JSX.Element {
   useEffect(() => {
     if (stopPoints.length < 2) {
       setRoutePath(null);
+      setRouteSegments(null);
       setPathLoading(false);
       return;
     }
     const ac = new AbortController();
     setPathLoading(true);
     setRoutePath(null);
-    const directionsMode = resolveCoursePreviewDirectionsMode(
-      course?.routeLegs,
-    );
-    const loadMergedPath = (mode: typeof directionsMode) =>
-      fetchMergedDirectionsPolyline({
-        points: stopPoints,
-        mode,
-        signal: ac.signal,
-      });
-    loadMergedPath(directionsMode)
-      .then(async (path) => {
+    setRouteSegments(null);
+    fetchMergedDirectionsSegments({
+      points: stopPoints,
+      routeLegs: course?.routeLegs,
+      signal: ac.signal,
+    })
+      .then((result) => {
         if (ac.signal.aborted) return;
-        let final = path;
-        if (
-          looksLikeStraightStopConnectorPath(path, stopPoints.length) &&
-          directionsMode === "transit"
-        ) {
-          final = await loadMergedPath("driving");
-        }
-        if (!ac.signal.aborted && final.length >= 2) setRoutePath(final);
+        if (result.path.length >= 2) setRoutePath(result.path);
+        if (result.segments.length >= 1) setRouteSegments(result.segments);
       })
       .catch(() => {})
       .finally(() => {
@@ -220,11 +204,7 @@ export default function CourseGuideScreen(): React.JSX.Element {
     const dist = metersBetween(userLocation, courseStart);
     if (dist < 12) {
       setApproachPath([userLocation, courseStart]);
-      setApproachMeta({
-        minutes: 1,
-        distanceM: Math.round(dist),
-        summary: "도착",
-      });
+      setApproachMeta({ minutes: 1, distanceM: Math.round(dist), summary: "도착" });
       setApproachLoading(false);
       return;
     }
@@ -284,29 +264,27 @@ export default function CourseGuideScreen(): React.JSX.Element {
         });
       }
     }
-    if (polylinePath && polylinePath.length >= 2) {
+    const styledCourse = simplifyRouteSegments(routeSegments ?? undefined);
+    if (styledCourse?.length) {
+      segs.push(...styledCourse);
+    } else if (polylinePath && polylinePath.length >= 2) {
       segs.push({
         id: "course",
         points: polylinePath,
         color: COURSE_LINE_COLOR,
-        width: 4,
+        width: 5,
         dashed: entranceNavActive,
       });
     }
     return segs;
-  }, [approachPath, polylinePath, entranceNavActive]);
+  }, [approachPath, polylinePath, routeSegments, entranceNavActive]);
 
   const mapMarkers = useMemo((): MapMarkerPoint[] | undefined => {
     const stops: MapMarkerPoint[] =
       stopPoints.length >= 1
         ? buildMapMarkersFromPathPoints(stopPoints).map((m, i) =>
             i === 0
-              ? {
-                  ...m,
-                  label: "출발",
-                  kind: "start" as const,
-                  color: "#2563eb",
-                }
+              ? { ...m, label: "출발", kind: "start" as const, color: "#2563eb" }
               : m,
           )
         : [];
@@ -329,10 +307,8 @@ export default function CourseGuideScreen(): React.JSX.Element {
 
   const fitCameraToRoute = useCallback(() => {
     const fitPoints: LatLng[] = [];
-    if (approachPath && approachPath.length >= 2)
-      fitPoints.push(...approachPath);
-    if (polylinePath && polylinePath.length >= 2)
-      fitPoints.push(...polylinePath);
+    if (approachPath && approachPath.length >= 2) fitPoints.push(...approachPath);
+    if (polylinePath && polylinePath.length >= 2) fitPoints.push(...polylinePath);
     else if (stopPoints.length >= 1) fitPoints.push(...stopPoints);
     if (userLocation) fitPoints.push(userLocation);
 
@@ -350,15 +326,15 @@ export default function CourseGuideScreen(): React.JSX.Element {
       });
       return;
     }
-    const center = ur ? userRouteMapCenter(ur) : getCourseMapCenter(courseId);
+    const center = ur
+      ? userRouteMapCenter(ur)
+      : getCourseMapCenter(courseId);
     setCamera({ lat: center.lat, lng: center.lng, fitToRoute: true });
   }, [approachPath, polylinePath, stopPoints, userLocation, ur, courseId]);
 
-  /** 자동 카메라 맞춤: 코스 경로 중심(내 위치 변화로 재실행되지 않음) */
   const fitCameraToCourse = useCallback(() => {
     const fitPoints: LatLng[] = [];
-    if (polylinePath && polylinePath.length >= 2)
-      fitPoints.push(...polylinePath);
+    if (polylinePath && polylinePath.length >= 2) fitPoints.push(...polylinePath);
     else if (stopPoints.length >= 1) fitPoints.push(...stopPoints);
 
     const fit = computeMapRouteFit(fitPoints, {
@@ -375,7 +351,9 @@ export default function CourseGuideScreen(): React.JSX.Element {
       });
       return;
     }
-    const center = ur ? userRouteMapCenter(ur) : getCourseMapCenter(courseId);
+    const center = ur
+      ? userRouteMapCenter(ur)
+      : getCourseMapCenter(courseId);
     setCamera({ lat: center.lat, lng: center.lng, fitToRoute: true });
   }, [polylinePath, stopPoints, ur, courseId]);
 
@@ -412,7 +390,6 @@ export default function CourseGuideScreen(): React.JSX.Element {
           if (deg != null) setDeviceHeading(deg);
         });
       } catch {
-        /* 나침반 미지원 기기 */
         if (__DEV__) {
           console.log("[GPS] heading watch unavailable on this device");
         }
@@ -489,16 +466,8 @@ export default function CourseGuideScreen(): React.JSX.Element {
   const mapLat = camera?.lat ?? 37.5665;
   const mapLng = camera?.lng ?? 126.978;
   const mapZoom = camera?.zoom;
-  const mapFitToRoute = !entranceNavActive && (camera?.fitToRoute ?? true);
-
-  const approachLabel = useMemo(() => {
-    if (!approachMeta) return null;
-    const d =
-      approachMeta.distanceM >= 1000
-        ? `${(approachMeta.distanceM / 1000).toFixed(1)}km`
-        : `${approachMeta.distanceM}m`;
-    return `입구까지 도보 약 ${approachMeta.minutes}분 · ${d}`;
-  }, [approachMeta]);
+  const mapFitToRoute =
+    !entranceNavActive && (camera?.fitToRoute ?? true);
 
   return (
     <View style={styles.root}>
@@ -542,13 +511,16 @@ export default function CourseGuideScreen(): React.JSX.Element {
             <Text style={styles.topTitle} numberOfLines={1}>
               {title}
             </Text>
-            <Text style={styles.topSubtitle}>
-              {entranceNavActive ? "입구 안내 · 방향 추적" : "지도 안내"}
-            </Text>
+            <Text style={styles.topSubtitle}>지도 안내</Text>
           </View>
         </View>
 
-        <View style={[styles.fabColumn, { top: insets.top + 4 + 54 + 20 }]}>
+        <View
+          style={[
+            styles.fabColumn,
+            { top: insets.top + 4 + 54 + 20 },
+          ]}
+        >
           <Pressable
             onPress={fitCameraToRoute}
             style={styles.fab}
@@ -588,34 +560,6 @@ export default function CourseGuideScreen(): React.JSX.Element {
                 {departure} → {arrival}
               </Text>
 
-              {entranceNavActive && userLocation && courseStart ? (
-                <View style={styles.legendRow}>
-                  <View
-                    style={[
-                      styles.legendDot,
-                      { backgroundColor: APPROACH_LINE_COLOR },
-                    ]}
-                  />
-                  <Text style={styles.legendText}>내 위치 → 코스 출발</Text>
-                  <View
-                    style={[
-                      styles.legendDot,
-                      { backgroundColor: COURSE_LINE_COLOR, marginLeft: 12 },
-                    ]}
-                  />
-                  <Text style={styles.legendText}>코스 경로</Text>
-                </View>
-              ) : null}
-
-              {entranceNavActive && approachLoading ? (
-                <View style={styles.loadingRow}>
-                  <ActivityIndicator size="small" color="#22c55e" />
-                  <Text style={styles.pathLoadingText}>입구 경로 계산 중…</Text>
-                </View>
-              ) : entranceNavActive && approachLabel ? (
-                <Text style={styles.approachMeta}>{approachLabel}</Text>
-              ) : null}
-
               {pathLoading ? (
                 <View style={styles.loadingRow}>
                   <ActivityIndicator size="small" color="#64748b" />
@@ -623,42 +567,30 @@ export default function CourseGuideScreen(): React.JSX.Element {
                 </View>
               ) : null}
 
-              {locationDenied ? (
-                <Text style={styles.locationNote}>
-                  위치 권한이 없어 입구 안내를 사용할 수 없습니다.
-                </Text>
-              ) : (
-                <View
-                  style={[
-                    styles.toggleRow,
-                    (!userLocation || !courseStart) && styles.toggleRowDisabled,
-                  ]}
-                >
-                  <View style={styles.toggleLabelWrap}>
-                    <Ionicons
-                      name="enter-outline"
-                      size={20}
-                      color={entranceNavActive ? "#0f766e" : "#64748b"}
-                    />
-                    <View style={styles.toggleTextCol}>
-                      <Text style={styles.toggleTitle}>입구 안내</Text>
-                      <Text style={styles.toggleHint}>
-                        {entranceNavActive
-                          ? "폰 방향에 맞춰 지도 회전 · 출발까지 경로"
-                          : "켜면 내 위치에서 코스 출발까지 안내"}
-                      </Text>
-                    </View>
-                  </View>
-                  <Switch
-                    value={entranceNavActive}
-                    onValueChange={onEntranceNavToggle}
-                    disabled={!userLocation || !courseStart}
-                    trackColor={{ false: "#d1d5db", true: "#6ee7b7" }}
-                    thumbColor={entranceNavActive ? "#0f766e" : "#f4f4f5"}
-                    accessibilityLabel="입구 안내"
+              <View
+                style={[
+                  styles.toggleRow,
+                  (!userLocation || !courseStart || locationDenied) &&
+                    styles.toggleRowDisabled,
+                ]}
+              >
+                <View style={styles.toggleLabelWrap}>
+                  <Ionicons
+                    name="enter-outline"
+                    size={20}
+                    color={entranceNavActive ? "#0f766e" : "#64748b"}
                   />
+                  <Text style={styles.toggleTitle}>입구 안내</Text>
                 </View>
-              )}
+                <Switch
+                  value={entranceNavActive}
+                  onValueChange={onEntranceNavToggle}
+                  disabled={!userLocation || !courseStart || locationDenied}
+                  trackColor={{ false: "#d1d5db", true: "#6ee7b7" }}
+                  thumbColor={entranceNavActive ? "#0f766e" : "#f4f4f5"}
+                  accessibilityLabel="입구 안내"
+                />
+              </View>
             </>
           )}
         </View>
@@ -709,12 +641,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   topTitle: { fontSize: 16, fontWeight: "700", color: "#0f172a" },
-  topSubtitle: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#64748b",
-    marginTop: 2,
-  },
+  topSubtitle: { fontSize: 11, fontWeight: "600", color: "#64748b", marginTop: 2 },
   fabColumn: {
     position: "absolute",
     right: 14,
@@ -757,25 +684,6 @@ const styles = StyleSheet.create({
     color: "#1e293b",
     marginBottom: 8,
   },
-  legendRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 8,
-    flexWrap: "wrap",
-  },
-  legendDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: 6,
-  },
-  legendText: { fontSize: 11, color: "#64748b", fontWeight: "600" },
-  approachMeta: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#15803d",
-    marginBottom: 10,
-  },
   hintText: {
     fontSize: 13,
     lineHeight: 20,
@@ -790,11 +698,6 @@ const styles = StyleSheet.create({
   },
   loadingText: { fontSize: 13, color: "#64748b" },
   pathLoadingText: { fontSize: 12, color: "#94a3b8" },
-  locationNote: {
-    fontSize: 11,
-    color: "#94a3b8",
-    marginBottom: 10,
-  },
   toggleRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -816,19 +719,9 @@ const styles = StyleSheet.create({
     gap: 10,
     minWidth: 0,
   },
-  toggleTextCol: {
-    flex: 1,
-    minWidth: 0,
-  },
   toggleTitle: {
     fontSize: 15,
     fontWeight: "700",
     color: "#0f172a",
-  },
-  toggleHint: {
-    fontSize: 11,
-    color: "#64748b",
-    marginTop: 2,
-    lineHeight: 16,
   },
 });

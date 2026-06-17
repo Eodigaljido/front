@@ -23,6 +23,8 @@ export function presentCollaborativeShareOptions(opts: {
   routeId: string;
   title: string;
   onInviteFriends: () => void;
+  /** 링크 공유가 실제로 완료됐을 때 */
+  onLinkShared?: () => void;
 }): void {
   const routeId = String(opts.routeId ?? '').trim();
   if (!routeId) {
@@ -33,7 +35,9 @@ export function presentCollaborativeShareOptions(opts: {
   const pick = (index: number) => {
     if (index === 0) opts.onInviteFriends();
     else if (index === 1) {
-      void shareCollaborativeRoute({ routeId, title: opts.title });
+      void shareCollaborativeRoute({ routeId, title: opts.title }).then((shared) => {
+        if (shared) opts.onLinkShared?.();
+      });
     }
   };
 
@@ -67,18 +71,18 @@ export function presentCollaborativeShareOptions(opts: {
 export async function shareCollaborativeRoute(opts: {
   routeId: string;
   title: string;
-}): Promise<void> {
+}): Promise<boolean> {
   const title = String(opts.title ?? '루트').trim() || '루트';
   const routeId = String(opts.routeId ?? '').trim();
   if (!routeId) {
     Alert.alert('', '저장된 루트가 있어야 초대 링크를 보낼 수 있어요.');
-    return;
+    return false;
   }
 
   const url = buildCollaborativeRouteShareUrl(routeId);
   if (!url.includes('/routes/collaborative/')) {
     Alert.alert('', '초대 링크를 만들지 못했어요.');
-    return;
+    return false;
   }
 
   const message =
@@ -93,10 +97,12 @@ export async function shareCollaborativeRoute(opts: {
         default: { message, title: `${title} · 공동 편집` },
       }) ?? { message, title: `${title} · 공동 편집` },
     );
-    if (result.action === Share.dismissedAction) return;
+    if (result.action === Share.dismissedAction) return false;
+    return true;
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : '';
-    if (msg.toLowerCase().includes('cancel') || msg.toLowerCase().includes('dismiss')) return;
+    if (msg.toLowerCase().includes('cancel') || msg.toLowerCase().includes('dismiss')) return false;
     Alert.alert('', '공유에 실패했어요.');
+    return false;
   }
 }

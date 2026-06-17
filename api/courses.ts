@@ -303,9 +303,18 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
     };
     const latRaw = sAny.lat ?? sAny.latitude;
     const lngRaw = sAny.lng ?? sAny.longitude;
+    const displayName = String(s.name ?? s.title ?? `경유지 ${sIdx + 1}`);
+    const originalTitle = String(
+      (s as { originalTitle?: string; originalName?: string }).originalTitle ??
+        (s as { originalName?: string }).originalName ??
+        "",
+    ).trim();
     return {
       id: String(s.id ?? `${rootId}-s-${sIdx}`),
-      name: String(s.name ?? s.title ?? `경유지 ${sIdx + 1}`),
+      name: displayName,
+      ...(originalTitle && originalTitle !== displayName
+        ? { originalTitle }
+        : {}),
       stayMinutes: Number(s.stayMinutes ?? 30),
       lat:
         latRaw != null && !Number.isNaN(Number(latRaw))
@@ -323,9 +332,19 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
     const sorted = [...raw.stops].sort(
       (a, b) => Number(a?.sequence ?? 0) - Number(b?.sequence ?? 0),
     );
-    steps = sorted.map((s, sIdx) => ({
+    steps = sorted.map((s, sIdx) => {
+      const displayName = String(s.title ?? s.name ?? `경유지 ${sIdx + 1}`);
+      const originalTitle = String(
+        (s as { originalTitle?: string; originalName?: string }).originalTitle ??
+          (s as { originalName?: string }).originalName ??
+          "",
+      ).trim();
+      return {
       id: String(s.id ?? `${rootId}-s-${s.sequence ?? sIdx}`),
-      name: String(s.title ?? s.name ?? `경유지 ${sIdx + 1}`),
+      name: displayName,
+      ...(originalTitle && originalTitle !== displayName
+        ? { originalTitle }
+        : {}),
       stayMinutes: Number(s.stayMinutes ?? 0),
       lat:
         s.lat != null && !Number.isNaN(Number(s.lat))
@@ -335,7 +354,8 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
         s.lng != null && !Number.isNaN(Number(s.lng))
           ? Number(s.lng)
           : undefined,
-    }));
+    };
+    });
   }
 
   const legs = (
@@ -444,7 +464,20 @@ function toCourseItem(raw: ApiCourseLike, idx: number): CourseItem {
     ...pickCourseAuthorFromRaw(raw as Record<string, unknown>),
     ...pickForkChainFromRaw(raw as Record<string, unknown>),
     savedByMe: pickCourseSavedByMe(raw),
+    collaborative: raw.collaborative === true,
+    version:
+      raw.version != null && Number.isFinite(Number(raw.version))
+        ? Number(raw.version)
+        : undefined,
+    chatRoomUuid:
+      raw.chatRoomUuid != null ? String(raw.chatRoomUuid).trim() : undefined,
   };
+}
+
+/** API 상세·409 충돌 body 등을 CourseItem으로 변환 */
+export function courseItemFromApiPayload(raw: unknown): CourseItem | null {
+  if (!raw || typeof raw !== "object") return null;
+  return toCourseItem(raw as ApiCourseLike, 0);
 }
 
 /** 내가 저장한 공유 코스 id 목록 — 홈·공유 탭 북마크 동기화 */
@@ -933,6 +966,7 @@ export type UpsertMyRoutePayload = {
     id: string;
     kind: "start" | "via" | "end";
     title: string;
+    originalTitle?: string;
     timeLine: string;
     lat?: number;
     lng?: number;
@@ -980,6 +1014,9 @@ export function sanitizeUpsertMyRoutePayload(
     id: s.id,
     kind: s.kind,
     title: String(s.title ?? "").trim() || "경유지",
+    ...(String(s.originalTitle ?? "").trim()
+      ? { originalTitle: String(s.originalTitle).trim() }
+      : {}),
     timeLine: String(s.timeLine ?? "").trim() || "",
     ...(s.lat != null &&
     s.lng != null &&
@@ -1037,8 +1074,8 @@ export async function createMyRoute(
     if (res.status >= 200 && res.status < 300) {
       const list = await fetchMyCourses();
       const title = String(body.title ?? "").trim();
-      const hit = list.find((c) => String(c.title ?? "").trim() === title);
-      return hit?.id ?? null;
+      const hits = list.filter((c) => String(c.title ?? "").trim() === title);
+      return hits[hits.length - 1]?.id ?? null;
     }
     return null;
   } catch (e: any) {
@@ -1098,6 +1135,9 @@ export function buildUpsertPayloadFromUserRoute(route: {
       id: s.id,
       kind: s.kind,
       title: s.title,
+      ...(s.originalTitle?.trim()
+        ? { originalTitle: s.originalTitle.trim() }
+        : {}),
       timeLine: s.timeLine,
       lat: s.lat,
       lng: s.lng,

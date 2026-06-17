@@ -53,6 +53,12 @@ export const useAuthStore = create<AuthState>(set => ({
       user: res.user,
       isAuthenticated: true,
     });
+    try {
+      const me = await getMyProfile();
+      set({ user: userFromProfile(me) });
+    } catch {
+      // login 응답 user를 fallback으로 유지
+    }
   },
 
   register: async data => {
@@ -104,7 +110,7 @@ export const useAuthStore = create<AuthState>(set => ({
       }
     }
     await tokenStorage.clearTokens();
-    set({ accessToken: null, refreshToken: null, user: null, isAuthenticated: false });
+    set({ accessToken: null, refreshToken: null, user: null, isAuthenticated: false, profileImageCacheBust: 0 });
   },
 
   restoreSession: async () => {
