@@ -21,10 +21,10 @@ import { getUserProfileByUuid, type UserProfile } from "../api/users";
 import { fetchMySharedCourses } from "../api/courses";
 import { instance } from "../api/axios";
 import type { CourseItem } from "../data/mockData";
+import ProfileAvatar from "../components/ProfileAvatar";
 
 const ACCENT = "#F87171";
 const PAGE_SIZE = 10;
-const DEFAULT_AVATAR = "https://i.pravatar.cc/100?img=3";
 
 type RouteParams = {
   uuid: string;
@@ -285,10 +285,7 @@ export default function UserProfileScreen(): React.JSX.Element {
           />
         ) : (
           <View style={styles.profileRow}>
-            <Image
-              source={{ uri: profile?.profileImageUrl ?? DEFAULT_AVATAR }}
-              style={styles.avatar}
-            />
+            <ProfileAvatar uri={profile?.profileImageUrl} size={72} style={styles.avatar} />
             <View style={styles.profileInfo}>
               <Text style={styles.nickname}>
                 {profile?.nickname ?? "사용자"}

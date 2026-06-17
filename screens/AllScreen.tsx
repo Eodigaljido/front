@@ -206,7 +206,7 @@ export default function AllScreen(): React.JSX.Element {
 
   const avatarUri = authUser?.profileImageUrl
     ? bustProfileImageUri(authUser.profileImageUrl, profileImageCacheBust)
-    : 'https://i.pravatar.cc/100?img=5';
+    : '';
 
   return (
     <SafeAreaView className="flex-1 bg-[#F0F5FF]" edges={['top']}>
