@@ -4124,7 +4124,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
           </View>
         </View>
 
-        {showCollabMemberBar ? (
+        {showCollabMemberStack ? (
           <View className="px-3 mt-2" pointerEvents="box-none">
             <CollaboratorAvatarStack
               members={collabMembers}
