@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   Image,
   Modal,
   Pressable,
@@ -491,11 +492,13 @@ export const ChatRoomScreen = () => {
           onPress={() => setSelectedImageUrl(null)}
         >
           {selectedImageUrl && (
-            <Image
-              source={{ uri: selectedImageUrl }}
-              style={imageViewerStyles.image}
-              resizeMode="contain"
-            />
+            <View style={imageViewerStyles.imageContainer}>
+              <Image
+                source={{ uri: selectedImageUrl }}
+                style={imageViewerStyles.image}
+                resizeMode="contain"
+              />
+            </View>
           )}
         </Pressable>
       </Modal>
@@ -574,10 +577,19 @@ const modalStyles = StyleSheet.create({
   },
 });
 
+const screenWidth = Dimensions.get('window').width;
+const screenHeight = Dimensions.get('window').height;
+
 const imageViewerStyles = StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.95)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  imageContainer: {
+    width: screenWidth * 0.95,
+    height: screenHeight * 0.95,
     justifyContent: "center",
     alignItems: "center",
   },
