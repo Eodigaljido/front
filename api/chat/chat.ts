@@ -229,15 +229,15 @@ export async function renameChatRoom(
   );
 }
 
-/** Swagger: POST /chats/{roomUuid}/members — 친구(userId) 초대 */
+/** Swagger: POST /chats/{roomUuid}/members — 친구(userUuid) 초대 */
 export async function inviteChatMember(
   accessToken: string,
   roomUuid: string,
-  userId: string,
+  userUuid: string,
 ): Promise<ChatRoom> {
   const res = await instance.post<ChatRoom>(
     `/chats/${roomUuid}/members`,
-    { userId: String(userId ?? "").trim() },
+    { userUuid },
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
   return res.data;
@@ -348,4 +348,28 @@ export async function shareRouteToChat(
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
   return res.data;
+}
+
+export interface InvitableFriendResponse {
+  friendId: number;
+  userId: number;
+  uuid: string;
+  nickname: string;
+  profileImageUrl?: string;
+  isDefaultImage: boolean;
+}
+
+/** GET /api/friends/invitable — 채팅방에 초대 가능한 친구 목록 */
+export async function getInvitableFriends(
+  accessToken: string,
+  roomUuid: string,
+): Promise<InvitableFriendResponse[]> {
+  const res = await instance.get<InvitableFriendResponse[]>(
+    "/api/friends/invitable",
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      params: { roomUuid },
+    },
+  );
+  return Array.isArray(res.data) ? res.data : [];
 }

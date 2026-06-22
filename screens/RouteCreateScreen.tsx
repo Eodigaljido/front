@@ -3231,12 +3231,12 @@ export default function RouteCreateScreen(): React.JSX.Element {
         (collaborativeCommittedRef.current ||
           hasCollaboratorPeers(collabMembersRef.current));
 
-      if (
-        requireCoords &&
-        (stops[0]?.lat == null || stops[stops.length - 1]?.lat == null)
-      ) {
-        if (!opts?.silent) showToast("출발·도착을 설정해 주세요");
-        return { ok: false, routeId: null };
+      if (requireCoords) {
+        const missingCoords = stops.some((s) => s.lat == null || s.lng == null);
+        if (missingCoords) {
+          if (!opts?.silent) showToast("모든 정류장에 위치를 설정해 주세요");
+          return { ok: false, routeId: null };
+        }
       }
 
       const task = (async (): Promise<{
@@ -4143,7 +4143,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
           </View>
         </View>
 
-        {showCollabMemberBar ? (
+        {showCollabMemberStack ? (
           <View className="px-3 mt-2" pointerEvents="box-none">
             <CollaboratorAvatarStack
               members={collabMembers}

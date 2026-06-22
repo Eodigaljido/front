@@ -1548,7 +1548,7 @@ export default function HomeScreen(): React.JSX.Element {
           >
             {recentCourses.map((course) => (
               <Pressable
-                key={course.id}
+                key={`recent-${course.id}`}
                 onPress={() => openRecentCourse(course.courseId)}
                 className="mr-3 rounded-[16px] p-3 active:opacity-95"
                 style={{ width: RECENT_CARD_WIDTH, ...CARD_STYLE }}
@@ -1688,7 +1688,7 @@ export default function HomeScreen(): React.JSX.Element {
               const bookmarkBusy = popularBookmarkBusyId === fid;
               return (
                 <View
-                  key={course.id}
+                  key={`trending-${course.id}`}
                   className="mb-3 flex-row items-center rounded-[16px] p-3"
                   style={
                     bookmarked

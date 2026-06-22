@@ -183,12 +183,22 @@ export async function linkRouteToGroupChat(opts: {
     return opts.existingChatRoomUuid ?? null;
   }
 
-  return ensureRouteGroupChat({
+  const chatRoomUuid = await ensureRouteGroupChat({
     accessToken: opts.accessToken,
     myUuid: opts.myUuid,
     routeTitle: opts.routeTitle,
     existingChatRoomUuid: opts.existingChatRoomUuid,
   });
+
+  if (chatRoomUuid) {
+    try {
+      await linkCollaborativeCourseChatRoom(routeId, chatRoomUuid);
+    } catch (e) {
+      console.warn('[linkRouteToGroupChat] 코스 협업 연결 실패:', e);
+    }
+  }
+
+  return chatRoomUuid;
 }
 
 /** 링크·코스 공유 시 채팅방 연결 + 루트 공유 메시지 1회 */

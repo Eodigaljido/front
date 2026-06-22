@@ -38,12 +38,12 @@ import { Asset } from "expo-asset";
 import {
   deleteChatRoom,
   getChatRoom,
+  getInvitableFriends,
   inviteChatMember,
   leaveChatRoom,
   renameChatRoom,
   updateChatRoomImage,
 } from "@/api/chat/chat";
-import { getFriends } from "@/api/friend/friends";
 import { useAuthStore } from "@/store/authStore";
 import { CHAT_PRESET_IMAGES } from "@/constants/chatPresetAvatars";
 
@@ -62,7 +62,7 @@ type Member = {
 
 type InvitableFriend = {
   id: string;
-  userId: string;
+  userId: number;
   uuid: string;
   name: string;
   profileImageUrl?: string;
@@ -135,7 +135,7 @@ export default function ChatRoomInfoScreen() {
 
   useEffect(() => {
     if (!inviteModalVisible || !accessToken) return;
-    getFriends(accessToken)
+    getInvitableFriends(accessToken, roomUuid)
       .then((list) =>
         setFriends(
           list.map((f) => ({
@@ -148,11 +148,9 @@ export default function ChatRoomInfoScreen() {
         ),
       )
       .catch(() => setFriends([]));
-  }, [inviteModalVisible, accessToken]);
+  }, [inviteModalVisible, accessToken, roomUuid]);
 
-  const invitableFriends = friends.filter(
-    (f) => !members.some((m) => m.uuid === f.uuid),
-  );
+  const invitableFriends = friends;
 
   const handleSaveName = async () => {
     const trimmed = editingName.trim();
@@ -237,17 +235,19 @@ export default function ChatRoomInfoScreen() {
 
     setIsInviting(true);
     let successCount = 0;
-    let failedCount = 0;
+    const failedFriends: string[] = [];
 
     try {
       for (const id of selectedFriends) {
         const friend = friends.find((f) => f.id === id);
         if (!friend) continue;
         try {
-          await inviteChatMember(accessToken, roomUuid, String(friend.userId));
+          await inviteChatMember(accessToken, roomUuid, friend.uuid);
           successCount++;
-        } catch {
-          failedCount++;
+        } catch (err: any) {
+          const errMsg = err?.response?.data?.message || err?.message || String(err);
+          console.error(`초대 실패 (${friend.name}):`, errMsg);
+          failedFriends.push(friend.name);
         }
       }
 
@@ -255,11 +255,13 @@ export default function ChatRoomInfoScreen() {
       setInviteModalVisible(false);
       void loadRoom();
 
-      if (failedCount > 0) {
+      if (failedFriends.length > 0) {
         Alert.alert(
           "초대 완료",
-          `${successCount}명 초대 성공${failedCount > 0 ? `, ${failedCount}명 초대 실패` : ""}`,
+          `${successCount}명 초대 성공${failedFriends.length > 0 ? `\n\n초대 실패: ${failedFriends.join(", ")}` : ""}`,
         );
+      } else if (successCount > 0) {
+        Alert.alert("초대 완료", `${successCount}명을 채팅방으로 초대했습니다.`);
       }
     } finally {
       setIsInviting(false);

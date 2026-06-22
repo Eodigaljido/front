@@ -24,6 +24,7 @@ export interface BubbleChatProps {
   isEdited?: boolean;
   isTyping?: boolean;
   onImageLoad?: () => void;
+  onImagePress?: () => void;
 }
 
 function formatTime(date: Date) {
@@ -47,6 +48,7 @@ export function BubbleChat({
   isEdited,
   isTyping,
   onImageLoad,
+  onImagePress,
 }: BubbleChatProps) {
   const dot1 = useRef(new Animated.Value(0)).current;
   const dot2 = useRef(new Animated.Value(0)).current;
@@ -154,8 +156,9 @@ export function BubbleChat({
             <Text style={groupStyles.senderName}>{userName}</Text>
             <TouchableOpacity
               onLongPress={onLongPress}
-              disabled={!onLongPress}
-              activeOpacity={onLongPress ? 0.7 : 1}
+              onPress={imageUrl ? onImagePress : undefined}
+              disabled={!onLongPress && !onImagePress}
+              activeOpacity={onLongPress || onImagePress ? 0.7 : 1}
             >
               {imageUrl ? (
                 <Image
@@ -193,8 +196,9 @@ export function BubbleChat({
     >
       <TouchableOpacity
         onLongPress={onLongPress}
-        disabled={!onLongPress}
-        activeOpacity={onLongPress ? 0.7 : 1}
+        onPress={imageUrl ? onImagePress : undefined}
+        disabled={!onLongPress && !onImagePress}
+        activeOpacity={onLongPress || onImagePress ? 0.7 : 1}
       >
         {imageUrl ? (
           <Image

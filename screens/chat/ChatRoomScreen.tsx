@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -57,6 +58,7 @@ export const ChatRoomScreen = () => {
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(
     null,
   );
+  const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
   const { handleTypingEvent, typingUsers } = useTypingIndicator(userUuid);
@@ -400,6 +402,11 @@ export const ChatRoomScreen = () => {
                         }
                       : undefined
                   }
+                  onImagePress={
+                    msg.messageType === "IMAGE" && msg.attachmentUrl
+                      ? () => setSelectedImageUrl(msg.attachmentUrl)
+                      : undefined
+                  }
                 />
               );
             })}
@@ -470,6 +477,26 @@ export const ChatRoomScreen = () => {
               <Text style={modalStyles.buttonTextCancel}>취소</Text>
             </TouchableOpacity>
           </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={!!selectedImageUrl}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedImageUrl(null)}
+      >
+        <Pressable
+          style={imageViewerStyles.backdrop}
+          onPress={() => setSelectedImageUrl(null)}
+        >
+          {selectedImageUrl && (
+            <Image
+              source={{ uri: selectedImageUrl }}
+              style={imageViewerStyles.image}
+              resizeMode="contain"
+            />
+          )}
         </Pressable>
       </Modal>
     </>
@@ -544,5 +571,18 @@ const modalStyles = StyleSheet.create({
   buttonTextCancel: {
     fontSize: 16,
     color: "#888",
+  },
+});
+
+const imageViewerStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.95)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  image: {
+    width: "100%",
+    height: "100%",
   },
 });
