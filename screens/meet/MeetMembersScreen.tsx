@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   NavigationProp,
   RouteProp,
+  useFocusEffect,
   useNavigation,
   useRoute,
 } from '@react-navigation/native';
@@ -64,9 +65,11 @@ export default function MeetMembersScreen(): React.JSX.Element {
     }
   }, [groupUuid]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
 
   const loadMore = useCallback(async () => {
     if (loadingMore || reachedEnd || loading) return;
@@ -96,7 +99,7 @@ export default function MeetMembersScreen(): React.JSX.Element {
   return (
     <SafeAreaView style={s.screen} edges={['top']}>
       <View style={s.header}>
-        <TouchableOpacity
+        <TouchableOpacity activeOpacity={0.7}
           style={s.backBtn}
           onPress={() => safeGoBack(navigation)}
         >
