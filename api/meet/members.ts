@@ -12,11 +12,18 @@ export async function getGroupMembers(
   page = 0,
   size = 20,
 ): Promise<GroupMember[]> {
-  const res = await instance.get<GroupMember[]>(
+  const res = await instance.get<GroupMember[] | PageResponse<GroupMember>>(
     `/api/groups/${groupUuid}/members`,
     { params: { page, size } },
   );
-  return Array.isArray(res.data) ? res.data : [];
+  if (Array.isArray(res.data)) return res.data;
+  if (
+    res.data &&
+    Array.isArray((res.data as PageResponse<GroupMember>).content)
+  ) {
+    return (res.data as PageResponse<GroupMember>).content;
+  }
+  return [];
 }
 
 /** DELETE /api/groups/{groupUuid}/members/me — 모임 탈퇴 (방장 불가) */

@@ -63,7 +63,7 @@ export async function signInWithGoogleNative(): Promise<GoogleSignInResult> {
       };
     }
 
-    const { GoogleSignin, isErrorWithCode, isSuccessResponse, statusCodes } = mod;
+    const { GoogleSignin, isSuccessResponse } = mod;
 
     if (Platform.OS === 'android') {
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });

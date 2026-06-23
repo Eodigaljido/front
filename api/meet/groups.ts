@@ -1,4 +1,9 @@
 import { instance } from "../axios";
+import {
+  fetchMultipart,
+  fileNameFromUri,
+  mimeFromUri,
+} from "../multipartFetch";
 import type {
   Group,
   CreateGroupRequest,
@@ -38,15 +43,37 @@ export async function getMyGroups(
   return [];
 }
 
-/** POST /api/groups — 모임 생성 */
+/**
+ * POST /api/groups — 모임 생성
+ * 서버가 multipart/form-data 만 받으므로 이미지 유무와 관계없이 항상 multipart 로
+ * 전송한다. request(JSON) 파트는 항상, image(파일) 파트는 선택했을 때만 포함.
+ */
 export async function createGroup(
   accessToken: string,
   data: CreateGroupRequest,
+  image?: { uri: string; name?: string; type?: string } | null,
 ): Promise<Group> {
-  const res = await instance.post<Group>("/api/groups", data, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  return res.data;
+  const { data: res } = await fetchMultipart(
+    "/api/groups",
+    "POST",
+    image?.uri
+      ? [
+          {
+            field: "image",
+            file: {
+              uri: image.uri,
+              name: image.name ?? fileNameFromUri(image.uri, "group.jpg"),
+              type: image.type ?? mimeFromUri(image.uri),
+            },
+          },
+        ]
+      : [],
+    {
+      accessToken,
+      fields: [{ field: "request", value: JSON.stringify(data) }],
+    },
+  );
+  return res as Group;
 }
 
 /** GET /api/groups/{groupUuid} — 모임 상세 조회 */

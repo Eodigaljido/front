@@ -15,7 +15,10 @@ import { pickAuthorProfilePublicFromRaw } from "../utils/authorProfileVisibility
 import { pickCourseAuthorFromRaw } from "../utils/pickCourseAuthorFromRaw";
 import { pickForkChainFromRaw } from "../utils/pickForkChainFromRaw";
 import { findPersonalRouteIdForForkSource } from "../data/userSavedRoute";
-import { isLocalThumbnailUri, isRemoteThumbnailUri } from "../utils/courseThumbnailUri";
+import {
+  isLocalThumbnailUri,
+  isRemoteThumbnailUri,
+} from "../utils/courseThumbnailUri";
 import { sameCourseId } from "../utils/sameCourseId";
 import { getFriends } from "./friend/friends";
 import { bustProfileImageUri } from "../utils/profileImageUri";
@@ -994,7 +997,10 @@ function extractMyCourseUuidFromResponse(data: any): string | null {
 }
 
 /** API 전송용 — 과도하게 긴 길안내 문자열 제거(요청 실패 방지) */
-function trimLegTextForApi(value: string | undefined, max = 4000): string | undefined {
+function trimLegTextForApi(
+  value: string | undefined,
+  max = 4000,
+): string | undefined {
   const s = String(value ?? "").trim();
   if (!s) return undefined;
   return s.length > max ? `${s.slice(0, max)}…` : s;
@@ -1019,9 +1025,7 @@ export function sanitizeUpsertMyRoutePayload(
       ? { lat: Number(s.lat), lng: Number(s.lng) }
       : {}),
   }));
-  const hasCoords = stops.some(
-    (s) => s.lat != null && s.lng != null,
-  );
+  const hasCoords = stops.some((s) => s.lat != null && s.lng != null);
   const legs = hasCoords
     ? payload.legs.map((l) => ({
         id: l.id,
@@ -1238,7 +1242,9 @@ function pickFollowingNewsUserLabel(raw: Record<string, unknown>): string {
   ).trim();
 }
 
-function pickFollowingNewsUserUuid(raw: Record<string, unknown>): string | null {
+function pickFollowingNewsUserUuid(
+  raw: Record<string, unknown>,
+): string | null {
   const nested = raw.user ?? raw.actor ?? raw.author ?? raw.fromUser;
   if (nested && typeof nested === "object") {
     const u = nested as Record<string, unknown>;
@@ -1295,7 +1301,9 @@ export async function fetchFollowingNews(
       const url = String(f.profileImageUrl ?? "").trim();
       if (!url || f.isDefaultImage) continue;
       if (f.uuid) profileByUuid.set(String(f.uuid), url);
-      const nick = String(f.nickname ?? "").trim().toLowerCase();
+      const nick = String(f.nickname ?? "")
+        .trim()
+        .toLowerCase();
       if (nick) profileByNickname.set(nick, url);
     }
 
@@ -1349,10 +1357,7 @@ function pickThumbnailUrlFromUploadResponse(data: unknown): string | null {
       ? (d.data as Record<string, unknown>)
       : d;
   const raw =
-    inner.thumbnail ??
-    inner.imageUrl ??
-    inner.url ??
-    inner.profileImageUrl;
+    inner.thumbnail ?? inner.imageUrl ?? inner.url ?? inner.profileImageUrl;
   const s = String(raw ?? "").trim();
   return isRemoteThumbnailUri(s) ? s : null;
 }

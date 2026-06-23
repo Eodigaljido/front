@@ -1,41 +1,57 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  Dimensions,
   FlatList,
   Image,
+  Keyboard,
   Modal,
   Platform,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import * as Clipboard from "expo-clipboard";
+import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   NavigationProp,
   RouteProp,
+  useFocusEffect,
   useNavigation,
   useRoute,
 } from "@react-navigation/native";
 import {
   ChevronLeft,
   ChevronRight,
+  Copy,
+  Link as LinkIcon,
   Lock,
+  LogOut,
   MapPin,
+  Camera,
   MessageCircle,
+  Pencil,
   Plus,
   Settings,
   Share2,
+  Trash2,
   Unlock,
   Users,
+  X,
 } from "lucide-react-native";
 
 import { RootStackParamList } from "@/App";
 import { safeGoBack } from "@/navigation/rootNavigation";
 import { useAuthStore } from "@/store/authStore";
+import { useToast } from "@/context/ToastContext";
 
 import { getGroup, joinGroup } from "@/api/meet/groups";
 import { getGroupChatRooms, createGroupChatRoom } from "@/api/meet/chatRooms";
@@ -77,6 +93,14 @@ export default function MeetDetailScreen(): React.JSX.Element {
 
   const accessToken = useAuthStore((s) => s.accessToken) ?? "";
   const myUuid = useAuthStore((s) => s.user?.uuid);
+  const { showToast } = useToast();
+
+  const groupLink = `https://eodigaljido.uk/groups/${groupUuid}`;
+  const [leaveModalVisible, setLeaveModalVisible] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const [shareModalVisible, setShareModalVisible] = useState(false);
+  const [postToDelete, setPostToDelete] = useState<GroupPost | null>(null);
+  const [deletingPost, setDeletingPost] = useState(false);
 
   const [activeTab, setActiveTab] = useState<Tab>("chat");
   const [group, setGroup] = useState<Group | null>(null);
@@ -89,12 +113,19 @@ export default function MeetDetailScreen(): React.JSX.Element {
   const [createRoomModalVisible, setCreateRoomModalVisible] = useState(false);
   const [newRoomName, setNewRoomName] = useState("");
   const [creatingRoom, setCreatingRoom] = useState(false);
+  const [roomError, setRoomError] = useState("");
 
   const [writePostModalVisible, setWritePostModalVisible] = useState(false);
+  const [newPostTitle, setNewPostTitle] = useState("");
   const [newPostContent, setNewPostContent] = useState("");
   const [submittingPost, setSubmittingPost] = useState(false);
+  const [postError, setPostError] = useState("");
+  const [postImages, setPostImages] = useState<
+    { uri: string; name: string; type: string }[]
+  >([]);
 
   const [editingPost, setEditingPost] = useState<GroupPost | null>(null);
+  const [editPostTitle, setEditPostTitle] = useState("");
   const [editPostContent, setEditPostContent] = useState("");
   const [submittingEdit, setSubmittingEdit] = useState(false);
 
@@ -151,13 +182,17 @@ export default function MeetDetailScreen(): React.JSX.Element {
     setLoading(false);
   }, [loadGroup, loadChatRooms, loadFeed]);
 
-  useEffect(() => {
-    void loadAll();
-  }, [loadAll]);
+  useFocusEffect(
+    useCallback(() => {
+      void loadAll();
+    }, [loadAll]),
+  );
 
-  useEffect(() => {
-    void loadPendingRequests();
-  }, [loadPendingRequests]);
+  useFocusEffect(
+    useCallback(() => {
+      void loadPendingRequests();
+    }, [loadPendingRequests]),
+  );
 
   const handleJoin = async () => {
     if (!accessToken) return;
@@ -175,30 +210,47 @@ export default function MeetDetailScreen(): React.JSX.Element {
     }
   };
 
-  const handleLeave = () => {
-    Alert.alert("모임 탈퇴", "모임에서 탈퇴하시겠습니까?", [
-      { text: "취소", style: "cancel" },
-      {
-        text: "탈퇴",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await leaveGroup(accessToken, groupUuid);
-            navigation.goBack();
-          } catch (err: any) {
-            Alert.alert(
-              "오류",
-              err?.response?.data?.message ?? "탈퇴에 실패했습니다.",
-            );
-          }
-        },
-      },
-    ]);
+  const confirmLeave = async () => {
+    if (leaving) return;
+    setLeaving(true);
+    try {
+      await leaveGroup(accessToken, groupUuid);
+      setLeaveModalVisible(false);
+      navigation.goBack();
+    } catch (err: any) {
+      setLeaveModalVisible(false);
+      Alert.alert("오류", err?.response?.data?.message ?? "탈퇴에 실패했습니다.");
+    } finally {
+      setLeaving(false);
+    }
+  };
+
+  const handleCopyLink = async () => {
+    await Clipboard.setStringAsync(groupLink);
+    showToast("모임 링크를 복사했어요");
+  };
+
+  const handleShareLink = async () => {
+    try {
+      await Share.share({
+        message: `${group?.name ?? initialName} 모임에 참여해보세요!\n${groupLink}`,
+      });
+    } catch {
+      /* 사용자가 공유 취소 */
+    }
   };
 
   const handleCreateRoom = async () => {
     const name = newRoomName.trim();
-    if (!name) return;
+    if (!name) {
+      setRoomError("채팅방 이름을 입력해주세요.");
+      return;
+    }
+    if (name.length > 50) {
+      setRoomError("채팅방 이름은 50자 이내로 입력해주세요.");
+      return;
+    }
+    setRoomError("");
     setCreatingRoom(true);
     try {
       await createGroupChatRoom(accessToken, groupUuid, name);
@@ -215,13 +267,69 @@ export default function MeetDetailScreen(): React.JSX.Element {
     }
   };
 
+  const pickPostImages = async () => {
+    const remaining = 10 - postImages.length;
+    if (remaining <= 0) {
+      Alert.alert("", "이미지는 최대 10장까지 첨부할 수 있어요.");
+      return;
+    }
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert("", "사진 접근 권한이 필요해요.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsMultipleSelection: true,
+      selectionLimit: remaining,
+      quality: 0.85,
+    });
+    if (result.canceled) return;
+    // 413(Request Entity Too Large) 방지: 업로드 전에 리사이즈·압축
+    const picked = await Promise.all(
+      result.assets.map(async (a, i) => {
+        const needResize = (a.width ?? 0) > 1280;
+        const m = await ImageManipulator.manipulateAsync(
+          a.uri,
+          needResize ? [{ resize: { width: 1280 } }] : [],
+          { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG },
+        );
+        return {
+          uri: m.uri,
+          name: `post_${Date.now()}_${i}.jpg`,
+          type: "image/jpeg",
+        };
+      }),
+    );
+    setPostImages((prev) => [...prev, ...picked].slice(0, 10));
+  };
+
   const handleSubmitPost = async () => {
+    const title = newPostTitle.trim();
     const content = newPostContent.trim();
-    if (!content) return;
+    if (!title) {
+      setPostError("제목을 입력해주세요.");
+      return;
+    }
+    if (title.length > 100) {
+      setPostError("제목은 100자 이내로 입력해주세요.");
+      return;
+    }
+    if (!content) {
+      setPostError("내용을 입력해주세요.");
+      return;
+    }
+    if (content.length > 1000) {
+      setPostError("내용은 1000자 이내로 입력해주세요.");
+      return;
+    }
+    setPostError("");
     setSubmittingPost(true);
     try {
-      await createGroupPost(accessToken, groupUuid, { content });
+      await createGroupPost(accessToken, groupUuid, { title, content }, postImages);
+      setNewPostTitle("");
       setNewPostContent("");
+      setPostImages([]);
       setWritePostModalVisible(false);
       void loadFeed();
     } catch {
@@ -233,11 +341,12 @@ export default function MeetDetailScreen(): React.JSX.Element {
 
   const handleEditPost = async () => {
     if (!editingPost) return;
+    const title = editPostTitle.trim();
     const content = editPostContent.trim();
-    if (!content) return;
+    if (!title || !content) return;
     setSubmittingEdit(true);
     try {
-      await updateGroupPost(accessToken, editingPost.uuid, { content });
+      await updateGroupPost(accessToken, editingPost.uuid, { title, content });
       setEditingPost(null);
       void loadFeed();
     } catch {
@@ -248,21 +357,22 @@ export default function MeetDetailScreen(): React.JSX.Element {
   };
 
   const handleDeletePost = (post: GroupPost) => {
-    Alert.alert("게시물 삭제", "게시물을 삭제하시겠습니까?", [
-      { text: "취소", style: "cancel" },
-      {
-        text: "삭제",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await deleteGroupPost(accessToken, groupUuid, post.uuid);
-            void loadFeed();
-          } catch {
-            Alert.alert("오류", "게시물 삭제에 실패했습니다.");
-          }
-        },
-      },
-    ]);
+    setPostToDelete(post);
+  };
+
+  const confirmDeletePost = async () => {
+    if (!postToDelete || deletingPost) return;
+    setDeletingPost(true);
+    try {
+      await deleteGroupPost(accessToken, groupUuid, postToDelete.uuid);
+      setPostToDelete(null);
+      void loadFeed();
+    } catch {
+      setPostToDelete(null);
+      Alert.alert("오류", "게시물 삭제에 실패했습니다.");
+    } finally {
+      setDeletingPost(false);
+    }
   };
 
   const feedItems = (() => {
@@ -270,9 +380,10 @@ export default function MeetDetailScreen(): React.JSX.Element {
       return posts.map((p) => ({ type: "post" as const, data: p }));
     if (feedFilter === "route")
       return routes.map((r) => ({ type: "route" as const, data: r }));
-    const combined: Array<
-      { type: "post"; data: GroupPost } | { type: "route"; data: GroupRoute }
-    > = [
+    const combined: (
+      | { type: "post"; data: GroupPost }
+      | { type: "route"; data: GroupRoute }
+    )[] = [
       ...posts.map((p) => ({ type: "post" as const, data: p })),
       ...routes.map((r) => ({ type: "route" as const, data: r })),
     ];
@@ -296,7 +407,7 @@ export default function MeetDetailScreen(): React.JSX.Element {
     <SafeAreaView style={s.screen} edges={["top"]}>
       {/* 헤더 */}
       <View style={s.header}>
-        <TouchableOpacity
+        <TouchableOpacity activeOpacity={0.7}
           style={s.backBtn}
           onPress={() => safeGoBack(navigation)}
         >
@@ -322,7 +433,7 @@ export default function MeetDetailScreen(): React.JSX.Element {
           </Text>
         </View>
         {isAdmin ? (
-          <TouchableOpacity
+          <TouchableOpacity activeOpacity={0.7}
             style={s.settingsBtn}
             onPress={() =>
               navigation.navigate("MeetManage", {
@@ -348,7 +459,7 @@ export default function MeetDetailScreen(): React.JSX.Element {
       {/* 탭 바 */}
       <View style={s.tabBar}>
         {(["chat", "feed", "info"] as Tab[]).map((tab) => (
-          <TouchableOpacity
+          <TouchableOpacity activeOpacity={0.7}
             key={tab}
             style={[s.tabBtn, activeTab === tab && s.tabBtnActive]}
             onPress={() => setActiveTab(tab)}
@@ -374,9 +485,13 @@ export default function MeetDetailScreen(): React.JSX.Element {
               contentContainerStyle={{ padding: 16, paddingBottom: 120 }}
               ListHeaderComponent={
                 isAdmin ? (
-                  <TouchableOpacity
+                  <TouchableOpacity activeOpacity={0.7}
                     style={s.actionPill}
-                    onPress={() => setCreateRoomModalVisible(true)}
+                    onPress={() => {
+                      setRoomError("");
+                      setNewRoomName("");
+                      setCreateRoomModalVisible(true);
+                    }}
                   >
                     <View style={s.actionPillIcon}>
                       <Plus color="#3B82F6" size={15} strokeWidth={2.5} />
@@ -426,7 +541,7 @@ export default function MeetDetailScreen(): React.JSX.Element {
                     route: "루트",
                   };
                   return (
-                    <TouchableOpacity
+                    <TouchableOpacity activeOpacity={0.7}
                       key={f}
                       style={[
                         s.filterChip,
@@ -457,9 +572,15 @@ export default function MeetDetailScreen(): React.JSX.Element {
                 contentContainerStyle={{ padding: 16, paddingBottom: 120 }}
                 ListHeaderComponent={
                   isMember ? (
-                    <TouchableOpacity
+                    <TouchableOpacity activeOpacity={0.7}
                       style={s.actionPill}
-                      onPress={() => setWritePostModalVisible(true)}
+                      onPress={() => {
+                        setPostError("");
+                        setNewPostTitle("");
+                        setNewPostContent("");
+                        setPostImages([]);
+                        setWritePostModalVisible(true);
+                      }}
                     >
                       <View style={s.actionPillIcon}>
                         <Plus color="#3B82F6" size={15} strokeWidth={2.5} />
@@ -485,7 +606,15 @@ export default function MeetDetailScreen(): React.JSX.Element {
                       post={item.data}
                       myUuid={myUuid}
                       isAdmin={isAdmin}
+                      onPress={(p) =>
+                        navigation.navigate("MeetPostDetail", {
+                          groupUuid,
+                          postUuid: p.uuid,
+                          groupName: group?.name ?? initialName,
+                        })
+                      }
                       onEdit={(p) => {
+                        setEditPostTitle(p.title);
                         setEditPostContent(p.content);
                         setEditingPost(p);
                       }}
@@ -546,6 +675,25 @@ export default function MeetDetailScreen(): React.JSX.Element {
 
               {/* 액션 카드 */}
               <View style={s.actionCard}>
+                <TouchableOpacity
+                  style={s.actionRow}
+                  onPress={() =>
+                    navigation.navigate("MeetMembers", {
+                      groupUuid,
+                      groupName: group.name,
+                    })
+                  }
+                  activeOpacity={0.7}
+                >
+                  <View style={[s.actionIcon, { backgroundColor: "#EFF6FF" }]}>
+                    <Users color="#3B82F6" size={17} />
+                  </View>
+                  <Text style={s.actionText}>멤버 보기</Text>
+                  <Text style={s.actionCount}>{group.memberCount}명</Text>
+                  <ChevronRight color="#CBD5E1" size={17} />
+                </TouchableOpacity>
+                <View style={s.actionDivider} />
+
                 {!isMember ? (
                   <TouchableOpacity
                     style={s.actionRow}
@@ -567,7 +715,7 @@ export default function MeetDetailScreen(): React.JSX.Element {
                 ) : !isAdmin ? (
                   <TouchableOpacity
                     style={s.actionRow}
-                    onPress={handleLeave}
+                    onPress={() => setLeaveModalVisible(true)}
                     activeOpacity={0.7}
                   >
                     <View
@@ -589,12 +737,7 @@ export default function MeetDetailScreen(): React.JSX.Element {
                     )}
                     <TouchableOpacity
                       style={s.actionRow}
-                      onPress={() =>
-                        Alert.alert(
-                          "링크 공유",
-                          `https://eodigaljido.uk/groups/${groupUuid}`,
-                        )
-                      }
+                      onPress={() => setShareModalVisible(true)}
                       activeOpacity={0.7}
                     >
                       <View
@@ -638,134 +781,308 @@ export default function MeetDetailScreen(): React.JSX.Element {
       )}
 
       {/* 채팅방 생성 모달 */}
-      <Modal
+      <CenteredModal
         visible={createRoomModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setCreateRoomModalVisible(false)}
+        onClose={() => {
+          setRoomError("");
+          setCreateRoomModalVisible(false);
+        }}
       >
-        <TouchableOpacity
-          style={s.backdrop}
-          activeOpacity={1}
-          onPress={() => setCreateRoomModalVisible(false)}
-        >
-          <TouchableOpacity activeOpacity={1} style={s.modalCard}>
-            <Text style={s.modalTitle}>채팅방 만들기</Text>
-            <TextInput
-              style={s.modalInput}
-              value={newRoomName}
-              onChangeText={setNewRoomName}
-              placeholder="채팅방 이름"
-              placeholderTextColor="#CBD5E1"
-              autoFocus
-              maxLength={50}
-              selectionColor="#3B82F6"
-            />
-            <View style={s.modalBtns}>
-              <TouchableOpacity
-                style={[s.modalBtn, s.modalBtnCancel]}
-                onPress={() => setCreateRoomModalVisible(false)}
-              >
-                <Text style={s.modalBtnCancelText}>취소</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  s.modalBtn,
-                  s.modalBtnConfirm,
-                  { opacity: creatingRoom ? 0.65 : 1 },
-                ]}
-                onPress={handleCreateRoom}
-                disabled={creatingRoom}
-              >
-                <Text style={s.modalBtnConfirmText}>
-                  {creatingRoom ? "생성 중…" : "만들기"}
-                </Text>
-              </TouchableOpacity>
-            </View>
+        <Text style={s.modalTitle}>채팅방 만들기</Text>
+        <TextInput
+          style={[s.modalInput, roomError ? s.modalInputError : null]}
+          value={newRoomName}
+          onChangeText={(t) => {
+            setNewRoomName(t);
+            if (roomError) setRoomError("");
+          }}
+          placeholder="채팅방 이름"
+          placeholderTextColor="#CBD5E1"
+          autoFocus
+          maxLength={50}
+          selectionColor="#3B82F6"
+        />
+        {roomError ? <Text style={s.modalError}>{roomError}</Text> : null}
+        <View style={s.modalBtns}>
+          <TouchableOpacity activeOpacity={0.7}
+            style={[s.modalBtn, s.modalBtnCancel]}
+            onPress={() => {
+              setRoomError("");
+              setCreateRoomModalVisible(false);
+            }}
+          >
+            <Text style={s.modalBtnCancelText}>취소</Text>
           </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+          <TouchableOpacity activeOpacity={0.7}
+            style={[
+              s.modalBtn,
+              s.modalBtnConfirm,
+              { opacity: creatingRoom ? 0.65 : 1 },
+            ]}
+            onPress={handleCreateRoom}
+            disabled={creatingRoom}
+          >
+            <Text style={s.modalBtnConfirmText}>
+              {creatingRoom ? "생성 중…" : "만들기"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </CenteredModal>
 
       {/* 게시물 작성 모달 */}
-      <Modal
+      <CenteredModal
         visible={writePostModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setWritePostModalVisible(false)}
+        onClose={() => {
+          setPostError("");
+          setPostImages([]);
+          setWritePostModalVisible(false);
+        }}
       >
-        <View style={s.bottomSheetWrap}>
-          <TouchableOpacity
-            style={{ flex: 1 }}
-            onPress={() => setWritePostModalVisible(false)}
-          />
-          <View style={s.bottomSheet}>
-            <View style={s.sheetHandle} />
-            <Text style={s.sheetTitle}>게시물 작성</Text>
-            <TextInput
-              style={s.postInput}
-              value={newPostContent}
-              onChangeText={setNewPostContent}
-              placeholder="모임 멤버들에게 전할 내용을 작성하세요."
-              placeholderTextColor="#94A3B8"
-              multiline
-              maxLength={1000}
-              selectionColor="#3B82F6"
-            />
-            <View style={{ paddingHorizontal: 16 }}>
+        <Text style={s.modalTitle}>게시물 작성</Text>
+        <TextInput
+          style={s.modalInput}
+          value={newPostTitle}
+          onChangeText={(t) => {
+            setNewPostTitle(t);
+            if (postError) setPostError("");
+          }}
+          placeholder="제목"
+          placeholderTextColor="#94A3B8"
+          maxLength={100}
+          selectionColor="#3B82F6"
+        />
+        <TextInput
+          style={[s.modalTextArea, postError ? s.modalInputError : null]}
+          value={newPostContent}
+          onChangeText={(t) => {
+            setNewPostContent(t);
+            if (postError) setPostError("");
+          }}
+          placeholder="모임 멤버들에게 전할 내용을 작성하세요."
+          placeholderTextColor="#94A3B8"
+          multiline
+          maxLength={1000}
+          selectionColor="#3B82F6"
+          textAlignVertical="top"
+        />
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: 8, paddingBottom: 4 }}
+          style={{ marginBottom: 14 }}
+          keyboardShouldPersistTaps="handled"
+        >
+          {postImages.map((img, i) => (
+            <View key={`${img.uri}-${i}`} style={s.postThumbWrap}>
+              <Image source={{ uri: img.uri }} style={s.postThumb} />
               <TouchableOpacity
-                style={[s.submitBtn, { opacity: submittingPost ? 0.65 : 1 }]}
-                onPress={handleSubmitPost}
-                disabled={submittingPost}
+                style={s.postThumbRemove}
+                onPress={() =>
+                  setPostImages((prev) => prev.filter((_, idx) => idx !== i))
+                }
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
               >
-                <Text style={s.submitBtnText}>
-                  {submittingPost ? "등록 중…" : "게시물 등록"}
-                </Text>
+                <X color="#fff" size={12} strokeWidth={2.5} />
               </TouchableOpacity>
             </View>
-          </View>
+          ))}
+          {postImages.length < 10 && (
+            <TouchableOpacity
+              style={s.postThumbAdd}
+              onPress={pickPostImages}
+              activeOpacity={0.7}
+            >
+              <Camera color="#94A3B8" size={22} />
+              <Text style={s.postThumbAddText}>{postImages.length}/10</Text>
+            </TouchableOpacity>
+          )}
+        </ScrollView>
+
+        {postError ? <Text style={s.modalError}>{postError}</Text> : null}
+        <View style={s.modalBtns}>
+          <TouchableOpacity activeOpacity={0.7}
+            style={[s.modalBtn, s.modalBtnCancel]}
+            onPress={() => {
+              setPostError("");
+              setPostImages([]);
+              setWritePostModalVisible(false);
+            }}
+          >
+            <Text style={s.modalBtnCancelText}>취소</Text>
+          </TouchableOpacity>
+          <TouchableOpacity activeOpacity={0.7}
+            style={[
+              s.modalBtn,
+              s.modalBtnConfirm,
+              { opacity: submittingPost ? 0.65 : 1 },
+            ]}
+            onPress={handleSubmitPost}
+            disabled={submittingPost}
+          >
+            <Text style={s.modalBtnConfirmText}>
+              {submittingPost ? "등록 중…" : "등록"}
+            </Text>
+          </TouchableOpacity>
         </View>
-      </Modal>
+      </CenteredModal>
 
       {/* 게시물 수정 모달 */}
-      <Modal
+      <CenteredModal
         visible={editingPost !== null}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setEditingPost(null)}
+        onClose={() => setEditingPost(null)}
       >
-        <View style={s.bottomSheetWrap}>
-          <TouchableOpacity
-            style={{ flex: 1 }}
+        <Text style={s.modalTitle}>게시물 수정</Text>
+        <TextInput
+          style={s.modalInput}
+          value={editPostTitle}
+          onChangeText={setEditPostTitle}
+          placeholder="제목"
+          placeholderTextColor="#94A3B8"
+          maxLength={100}
+          selectionColor="#3B82F6"
+        />
+        <TextInput
+          style={s.modalTextArea}
+          value={editPostContent}
+          onChangeText={setEditPostContent}
+          placeholder="내용을 입력하세요."
+          placeholderTextColor="#94A3B8"
+          multiline
+          maxLength={1000}
+          selectionColor="#3B82F6"
+          textAlignVertical="top"
+          autoFocus
+        />
+        <View style={s.modalBtns}>
+          <TouchableOpacity activeOpacity={0.7}
+            style={[s.modalBtn, s.modalBtnCancel]}
             onPress={() => setEditingPost(null)}
-          />
-          <View style={s.bottomSheet}>
-            <View style={s.sheetHandle} />
-            <Text style={s.sheetTitle}>게시물 수정</Text>
-            <TextInput
-              style={s.postInput}
-              value={editPostContent}
-              onChangeText={setEditPostContent}
-              placeholder="내용을 입력하세요."
-              placeholderTextColor="#94A3B8"
-              multiline
-              maxLength={1000}
-              selectionColor="#3B82F6"
-              autoFocus
-            />
-            <View style={{ paddingHorizontal: 16 }}>
-              <TouchableOpacity
-                style={[s.submitBtn, { opacity: submittingEdit ? 0.65 : 1 }]}
-                onPress={handleEditPost}
-                disabled={submittingEdit}
-              >
-                <Text style={s.submitBtnText}>
-                  {submittingEdit ? "수정 중…" : "수정 완료"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+          >
+            <Text style={s.modalBtnCancelText}>취소</Text>
+          </TouchableOpacity>
+          <TouchableOpacity activeOpacity={0.7}
+            style={[
+              s.modalBtn,
+              s.modalBtnConfirm,
+              { opacity: submittingEdit ? 0.65 : 1 },
+            ]}
+            onPress={handleEditPost}
+            disabled={submittingEdit}
+          >
+            <Text style={s.modalBtnConfirmText}>
+              {submittingEdit ? "수정 중…" : "수정"}
+            </Text>
+          </TouchableOpacity>
         </View>
-      </Modal>
+      </CenteredModal>
+
+      {/* 모임 탈퇴 확인 모달 */}
+      <CenteredModal
+        visible={leaveModalVisible}
+        onClose={() => !leaving && setLeaveModalVisible(false)}
+      >
+        <View style={s.confirmIconWrap}>
+          <LogOut color="#EF4444" size={24} />
+        </View>
+        <Text style={s.confirmTitle}>모임 탈퇴</Text>
+        <Text style={s.confirmMessage}>
+          정말 이 모임에서 탈퇴할까요?{"\n"}다시 참여하려면 새로 가입해야 해요.
+        </Text>
+        <View style={s.modalBtns}>
+          <TouchableOpacity activeOpacity={0.7}
+            style={[s.modalBtn, s.modalBtnCancel]}
+            onPress={() => setLeaveModalVisible(false)}
+            disabled={leaving}
+          >
+            <Text style={s.modalBtnCancelText}>취소</Text>
+          </TouchableOpacity>
+          <TouchableOpacity activeOpacity={0.7}
+            style={[
+              s.modalBtn,
+              s.modalBtnDanger,
+              { opacity: leaving ? 0.65 : 1 },
+            ]}
+            onPress={confirmLeave}
+            disabled={leaving}
+          >
+            <Text style={s.modalBtnDangerText}>
+              {leaving ? "처리 중…" : "탈퇴"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </CenteredModal>
+
+      {/* 모임 링크 공유 모달 */}
+      <CenteredModal
+        visible={shareModalVisible}
+        onClose={() => setShareModalVisible(false)}
+      >
+        <View style={[s.confirmIconWrap, { backgroundColor: "#F0FDF4" }]}>
+          <LinkIcon color="#22C55E" size={22} />
+        </View>
+        <Text style={s.confirmTitle}>모임 링크 공유</Text>
+        <Text style={s.confirmMessage}>
+          이 링크로 친구를 모임에 초대해보세요.
+        </Text>
+        <View style={s.linkBox}>
+          <Text style={s.linkText} numberOfLines={1}>
+            {groupLink}
+          </Text>
+        </View>
+        <View style={s.modalBtns}>
+          <TouchableOpacity activeOpacity={0.7}
+            style={[s.modalBtn, s.modalBtnCancel]}
+            onPress={handleCopyLink}
+          >
+            <Copy color="#475569" size={15} />
+            <Text style={s.modalBtnCancelText}>복사</Text>
+          </TouchableOpacity>
+          <TouchableOpacity activeOpacity={0.7}
+            style={[s.modalBtn, s.modalBtnConfirm]}
+            onPress={handleShareLink}
+          >
+            <Share2 color="#fff" size={15} />
+            <Text style={s.modalBtnConfirmText}>공유</Text>
+          </TouchableOpacity>
+        </View>
+      </CenteredModal>
+
+      {/* 게시물 삭제 확인 모달 */}
+      <CenteredModal
+        visible={postToDelete !== null}
+        onClose={() => !deletingPost && setPostToDelete(null)}
+      >
+        <View style={s.confirmIconWrap}>
+          <Trash2 color="#EF4444" size={22} />
+        </View>
+        <Text style={s.confirmTitle}>게시물 삭제</Text>
+        <Text style={s.confirmMessage}>
+          이 게시물을 삭제할까요?{"\n"}삭제하면 되돌릴 수 없어요.
+        </Text>
+        <View style={s.modalBtns}>
+          <TouchableOpacity activeOpacity={0.7}
+            style={[s.modalBtn, s.modalBtnCancel]}
+            onPress={() => setPostToDelete(null)}
+            disabled={deletingPost}
+          >
+            <Text style={s.modalBtnCancelText}>취소</Text>
+          </TouchableOpacity>
+          <TouchableOpacity activeOpacity={0.7}
+            style={[
+              s.modalBtn,
+              s.modalBtnDanger,
+              { opacity: deletingPost ? 0.65 : 1 },
+            ]}
+            onPress={confirmDeletePost}
+            disabled={deletingPost}
+          >
+            <Text style={s.modalBtnDangerText}>
+              {deletingPost ? "삭제 중…" : "삭제"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </CenteredModal>
     </SafeAreaView>
   );
 }
@@ -774,12 +1091,14 @@ function PostCard({
   post,
   myUuid,
   isAdmin,
+  onPress,
   onEdit,
   onDelete,
 }: {
   post: GroupPost;
   myUuid?: string;
   isAdmin: boolean;
+  onPress?: (post: GroupPost) => void;
   onEdit?: (post: GroupPost) => void;
   onDelete?: (post: GroupPost) => void;
 }) {
@@ -792,21 +1111,7 @@ function PostCard({
     day: "numeric",
   });
 
-  const showActions = () => {
-    Alert.alert("게시물", undefined, [
-      ...(canEdit ? [{ text: "수정", onPress: () => onEdit?.(post) }] : []),
-      ...(canDelete
-        ? [
-            {
-              text: "삭제",
-              style: "destructive" as const,
-              onPress: () => onDelete?.(post),
-            },
-          ]
-        : []),
-      { text: "취소", style: "cancel" as const },
-    ]);
-  };
+  const [menuVisible, setMenuVisible] = useState(false);
 
   const avatarColor =
     AVATAR_COLORS[
@@ -814,7 +1119,12 @@ function PostCard({
     ];
 
   return (
-    <View style={s.feedCard}>
+    <>
+    <TouchableOpacity
+      style={s.feedCard}
+      activeOpacity={0.8}
+      onPress={() => onPress?.(post)}
+    >
       <View style={s.feedCardHeader}>
         <View
           style={[
@@ -842,8 +1152,8 @@ function PostCard({
           <Text style={s.feedTime}>{time}</Text>
         </View>
         {(canEdit || canDelete) && (
-          <TouchableOpacity
-            onPress={showActions}
+          <TouchableOpacity activeOpacity={0.7}
+            onPress={() => setMenuVisible(true)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             style={s.moreBtn}
           >
@@ -851,7 +1161,10 @@ function PostCard({
           </TouchableOpacity>
         )}
       </View>
-      <Text style={s.feedContent}>{post.content}</Text>
+      {post.title ? <Text style={s.feedTitle}>{post.title}</Text> : null}
+      <Text style={s.feedContent} numberOfLines={3}>
+        {post.content}
+      </Text>
       {post.imageUrls.length > 0 && (
         <ScrollView
           horizontal
@@ -872,7 +1185,58 @@ function PostCard({
           ))}
         </ScrollView>
       )}
-    </View>
+    </TouchableOpacity>
+
+      <Modal
+        visible={menuVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuVisible(false)}
+      >
+        <TouchableOpacity
+          style={s.sheetBackdrop}
+          activeOpacity={1}
+          onPress={() => setMenuVisible(false)}
+        >
+          <View style={s.actionSheet}>
+            {canEdit && (
+              <TouchableOpacity activeOpacity={0.7}
+                style={s.actionSheetRow}
+                onPress={() => {
+                  setMenuVisible(false);
+                  onEdit?.(post);
+                }}
+              >
+                <Pencil color="#475569" size={18} />
+                <Text style={s.actionSheetText}>수정</Text>
+              </TouchableOpacity>
+            )}
+            {canEdit && canDelete && <View style={s.actionSheetDivider} />}
+            {canDelete && (
+              <TouchableOpacity activeOpacity={0.7}
+                style={s.actionSheetRow}
+                onPress={() => {
+                  setMenuVisible(false);
+                  onDelete?.(post);
+                }}
+              >
+                <Trash2 color="#EF4444" size={18} />
+                <Text style={[s.actionSheetText, { color: "#EF4444" }]}>
+                  삭제
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <TouchableOpacity
+            style={s.actionSheetCancel}
+            activeOpacity={0.8}
+            onPress={() => setMenuVisible(false)}
+          >
+            <Text style={s.actionSheetCancelText}>취소</Text>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+    </>
   );
 }
 
@@ -909,6 +1273,80 @@ function RouteCard({ route }: { route: GroupRoute }) {
         </Text>
       </View>
     </View>
+  );
+}
+
+/**
+ * 중앙 정렬 모달 — 키보드가 카드를 가릴 때 "겹치는 만큼만" 위로 올린다.
+ * KeyboardAvoidingView(padding)+중앙정렬 조합이 키보드 높이만큼 과하게
+ * 밀어 올려 모달이 화면 상단까지 튀던 버그를 해결한다.
+ */
+function CenteredModal({
+  visible,
+  onClose,
+  children,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const [translateY] = useState(() => new Animated.Value(0));
+  const cardHeightRef = useRef(0);
+
+  useEffect(() => {
+    if (!visible) return;
+    const screenH = Dimensions.get("window").height;
+    const liftTo = (kbHeight: number) => {
+      const cardBottom = screenH / 2 + cardHeightRef.current / 2;
+      const overlap = cardBottom - (screenH - kbHeight) + 16;
+      Animated.timing(translateY, {
+        toValue: -Math.max(0, overlap),
+        duration: 220,
+        useNativeDriver: true,
+      }).start();
+    };
+    const showSub = Keyboard.addListener("keyboardDidShow", (e) =>
+      liftTo(e.endCoordinates?.height ?? 0),
+    );
+    const hideSub = Keyboard.addListener("keyboardDidHide", () => {
+      Animated.timing(translateY, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: true,
+      }).start();
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+      translateY.setValue(0);
+    };
+  }, [visible, translateY]);
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <TouchableOpacity
+        style={s.backdrop}
+        activeOpacity={1}
+        onPress={onClose}
+      >
+        <Animated.View style={{ transform: [{ translateY }] }}>
+          <TouchableOpacity
+            activeOpacity={1}
+            style={s.modalCard}
+            onLayout={(e) => {
+              cardHeightRef.current = e.nativeEvent.layout.height;
+            }}
+          >
+            {children}
+          </TouchableOpacity>
+        </Animated.View>
+      </TouchableOpacity>
+    </Modal>
   );
 }
 
@@ -1104,12 +1542,52 @@ const s = StyleSheet.create({
   feedAvatarText: { fontSize: 15, fontWeight: "800", color: "#fff" },
   feedAuthor: { fontSize: 14, fontWeight: "700", color: "#0F172A" },
   feedTime: { fontSize: 12, color: "#94A3B8", marginTop: 1 },
+  feedTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#0F172A",
+    marginBottom: 4,
+  },
   feedContent: { fontSize: 14, color: "#334155", lineHeight: 22 },
   moreBtn: {
     paddingHorizontal: 4,
     paddingVertical: 2,
   },
   moreBtnText: { fontSize: 14, color: "#94A3B8", letterSpacing: 1 },
+
+  sheetBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15,23,42,0.45)",
+    justifyContent: "flex-end",
+    padding: 16,
+    paddingBottom: 28,
+  },
+  actionSheet: {
+    backgroundColor: "#fff",
+    borderRadius: 18,
+    overflow: "hidden",
+    marginBottom: 10,
+  },
+  actionSheetRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  actionSheetText: { fontSize: 16, fontWeight: "600", color: "#0F172A" },
+  actionSheetDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: "#F1F5F9",
+    marginHorizontal: 20,
+  },
+  actionSheetCancel: {
+    backgroundColor: "#fff",
+    borderRadius: 18,
+    paddingVertical: 16,
+    alignItems: "center",
+  },
+  actionSheetCancelText: { fontSize: 16, fontWeight: "700", color: "#64748B" },
 
   routeThumb: {
     width: 68,
@@ -1211,6 +1689,7 @@ const s = StyleSheet.create({
     justifyContent: "center",
   },
   actionText: { flex: 1, fontSize: 15, fontWeight: "600", color: "#0F172A" },
+  actionCount: { fontSize: 13, fontWeight: "600", color: "#94A3B8" },
 
   emptyBox: {
     backgroundColor: "#fff",
@@ -1272,17 +1751,114 @@ const s = StyleSheet.create({
     marginBottom: 16,
     backgroundColor: "#F8FAFF",
   },
+  modalTextArea: {
+    minHeight: 100,
+    maxHeight: 180,
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    lineHeight: 22,
+    color: "#0F172A",
+    marginBottom: 16,
+    backgroundColor: "#F8FAFF",
+    textAlignVertical: "top",
+  },
+  modalInputError: { borderColor: "#FCA5A5", backgroundColor: "#FEF2F2" },
+  modalError: {
+    marginTop: -8,
+    marginBottom: 12,
+    fontSize: 12,
+    color: "#EF4444",
+    fontWeight: "500",
+  },
   modalBtns: { flexDirection: "row", gap: 10 },
   modalBtn: {
     flex: 1,
+    flexDirection: "row",
     paddingVertical: 13,
     borderRadius: 12,
     alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
   },
   modalBtnCancel: { backgroundColor: "#F1F5F9" },
   modalBtnConfirm: { backgroundColor: "#3B82F6" },
+  modalBtnDanger: { backgroundColor: "#EF4444" },
   modalBtnCancelText: { fontSize: 15, fontWeight: "600", color: "#64748B" },
   modalBtnConfirmText: { fontSize: 15, fontWeight: "600", color: "#fff" },
+  modalBtnDangerText: { fontSize: 15, fontWeight: "700", color: "#fff" },
+
+  confirmIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "#FEF2F2",
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
+    marginBottom: 14,
+  },
+  confirmTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#0F172A",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  confirmMessage: {
+    fontSize: 14,
+    color: "#64748B",
+    textAlign: "center",
+    lineHeight: 21,
+    marginBottom: 20,
+  },
+  linkBox: {
+    backgroundColor: "#F8FAFF",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    marginBottom: 20,
+  },
+  linkText: { fontSize: 13, color: "#475569", fontWeight: "500" },
+
+  postThumbWrap: { width: 64, height: 64 },
+  postThumb: {
+    width: 64,
+    height: 64,
+    borderRadius: 12,
+    backgroundColor: "#F1F5F9",
+  },
+  postThumbRemove: {
+    position: "absolute",
+    top: -6,
+    right: -6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "#0F172A",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: "#fff",
+  },
+  postThumbAdd: {
+    width: 64,
+    height: 64,
+    borderRadius: 12,
+    backgroundColor: "#F8FAFF",
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+    borderStyle: "dashed",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 2,
+  },
+  postThumbAddText: { fontSize: 11, color: "#94A3B8", fontWeight: "600" },
 
   bottomSheetWrap: {
     flex: 1,

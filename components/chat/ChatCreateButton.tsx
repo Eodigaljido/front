@@ -1,5 +1,6 @@
 import { rootNavigate } from "@/navigation/rootNavigation";
 import { Plus } from "lucide-react-native";
+import React from "react";
 import { TouchableOpacity } from "react-native";
 
 export const ChatCreatingButton = () => {
