@@ -53,17 +53,6 @@ export async function signInWithGoogleNative(): Promise<GoogleSignInResult> {
     };
   }
 
-  const mod = loadGoogleSignin();
-  if (!mod) {
-    return {
-      ok: false,
-      reason: 'unavailable',
-      message:
-        '이 빌드에서는 구글 로그인을 사용할 수 없습니다. (Expo Go 미지원 — dev build 필요)',
-    };
-  }
-  const { GoogleSignin, isErrorWithCode, isSuccessResponse, statusCodes } = mod;
-
   try {
     const mod = await configureGoogleSignIn();
     if (!mod) {
@@ -74,7 +63,7 @@ export async function signInWithGoogleNative(): Promise<GoogleSignInResult> {
       };
     }
 
-    const { GoogleSignin, isErrorWithCode, isSuccessResponse, statusCodes } = mod;
+    const { GoogleSignin, isSuccessResponse } = mod;
 
     if (Platform.OS === 'android') {
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
