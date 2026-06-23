@@ -43,6 +43,7 @@ import {
   RouteChatRoomPickerPanel,
   type SelectedRouteChatRoom,
 } from "./RouteChatRoomPickerModal";
+import { RouteHistoryFeed } from "./RouteHistoryFeed";
 
 const SHEET_SLIDE = 420;
 const MESSAGE_POLL_MS = 4000;
@@ -54,6 +55,7 @@ type Props = {
   accessToken: string | null;
   myUuid: string | undefined;
   chatRoomUuid: string | null | undefined;
+  routeId?: string;
   routeTitle: string;
   roomName?: string;
   memberCount?: number;
@@ -155,6 +157,7 @@ export function RouteCollaborativeChatSheet({
   const [expandedImageUrl, setExpandedImageUrl] = useState<string | null>(null);
   const [roomUnavailable, setRoomUnavailable] = useState(false);
   const [chatListPickerOpen, setChatListPickerOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"chat" | "history">("chat");
 
   const roomId = String(chatRoomUuid ?? "").trim();
   const useApi = Boolean(accessToken && roomId);
@@ -508,27 +511,61 @@ export function RouteCollaborativeChatSheet({
               </View>
             </View>
           </View>
+
+          {/* 탭 버튼 */}
           <View style={styles.headerDivider} />
-
-          {useApi && showSyncBanner ? (
-            <View className="flex-row items-center border-b border-gray-50 bg-sky-50 px-3 py-2">
-              <Text className="flex-1 pr-2 text-[11px] leading-4 text-sky-900">
-                채팅 탭과 같은 방입니다. 여기서 보낸 메시지는 채팅 탭에서도 바로
-                보여요.
-              </Text>
-              <Pressable
-                onPress={dismissSyncBanner}
-                hitSlop={10}
-                accessibilityRole="button"
-                accessibilityLabel="안내 닫기"
-                className="rounded-full p-1 active:opacity-70"
+          <View className="flex-row border-b border-gray-100">
+            <Pressable
+              onPress={() => setActiveTab("chat")}
+              className={`flex-1 border-b-2 py-3 text-center ${
+                activeTab === "chat" ? "border-blue-600" : "border-transparent"
+              }`}
+            >
+              <Text
+                className={`text-center text-sm font-semibold ${
+                  activeTab === "chat" ? "text-blue-600" : "text-gray-500"
+                }`}
               >
-                <Ionicons name="close-circle" size={20} color="#0369a1" />
-              </Pressable>
-            </View>
-          ) : null}
+                채팅
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setActiveTab("history")}
+              className={`flex-1 border-b-2 py-3 text-center ${
+                activeTab === "history" ? "border-blue-600" : "border-transparent"
+              }`}
+            >
+              <Text
+                className={`text-center text-sm font-semibold ${
+                  activeTab === "history" ? "text-blue-600" : "text-gray-500"
+                }`}
+              >
+                기록
+              </Text>
+            </Pressable>
+          </View>
 
-          <View style={{ maxHeight: 360, position: "relative" }}>
+          {activeTab === "chat" ? (
+            <>
+              {useApi && showSyncBanner ? (
+                <View className="flex-row items-center border-b border-gray-50 bg-sky-50 px-3 py-2">
+                  <Text className="flex-1 pr-2 text-[11px] leading-4 text-sky-900">
+                    채팅 탭과 같은 방입니다. 여기서 보낸 메시지는 채팅 탭에서도 바로
+                    보여요.
+                  </Text>
+                  <Pressable
+                    onPress={dismissSyncBanner}
+                    hitSlop={10}
+                    accessibilityRole="button"
+                    accessibilityLabel="안내 닫기"
+                    className="rounded-full p-1 active:opacity-70"
+                  >
+                    <Ionicons name="close-circle" size={20} color="#0369a1" />
+                  </Pressable>
+                </View>
+              ) : null}
+
+              <View style={{ maxHeight: 360, position: "relative" }}>
             <KeyboardAwareScrollView
               ref={scrollRef}
               style={{ maxHeight: 360 }}
@@ -690,6 +727,32 @@ export function RouteCollaborativeChatSheet({
               </Pressable>
             </View>
           </KeyboardStickyView>
+            </>
+          ) : (
+            /* 기록 탭 */
+            <View style={{ flex: 1 }}>
+              {accessToken && routeId ? (
+                <RouteHistoryFeed
+                  courseId={routeId}
+                  accessToken={accessToken}
+                  onClose={handleClose}
+                />
+              ) : (
+                <View
+                  style={{
+                    flex: 1,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    paddingHorizontal: 16,
+                  }}
+                >
+                  <Text style={{ fontSize: 14, color: "#9CA3AF" }}>
+                    루트 기록을 불러올 수 없습니다
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
         </Animated.View>
 
         {chatListPickerOpen && onSelectChatRoom && accessToken ? (

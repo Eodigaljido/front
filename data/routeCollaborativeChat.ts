@@ -252,7 +252,15 @@ export async function inviteFriendsToRouteChat(opts: {
   }
 
   if (routeId && !routeId.startsWith('ur-')) {
-    await addCollaborativeCourseMembers(routeId, friends);
+    const memberResult = await addCollaborativeCourseMembers(routeId, friends);
+    if (memberResult.failed > 0) {
+      console.warn('[inviteFriendsToRouteChat] 멤버 추가 부분 실패:', { added: memberResult.added, failed: memberResult.failed, friends: friends.length });
+      // 멤버 추가가 모두 실패한 경우 초대 중단
+      if (memberResult.added === 0) {
+        console.error('[inviteFriendsToRouteChat] 멤버 추가 완전 실패 - 초대 중단');
+        return { chatRoomUuid, sent: false };
+      }
+    }
     await linkCollaborativeCourseChatRoom(routeId, chatRoomUuid);
   }
 

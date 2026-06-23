@@ -40,6 +40,7 @@ import {
   getChatRoom,
   getInvitableFriends,
   inviteChatMember,
+  kickChatMember,
   leaveChatRoom,
   renameChatRoom,
   updateChatRoomImage,
@@ -220,8 +221,20 @@ export default function ChatRoomInfoScreen() {
         {
           text: "강퇴",
           style: "destructive",
-          onPress: () =>
-            setMembers((prev) => prev.filter((m) => m.uuid !== member.uuid)),
+          onPress: async () => {
+            if (!accessToken) {
+              Alert.alert("오류", "인증 정보가 없습니다.");
+              return;
+            }
+            try {
+              await kickChatMember(accessToken, roomUuid, member.uuid);
+              setMembers((prev) => prev.filter((m) => m.uuid !== member.uuid));
+            } catch (err: any) {
+              const errorMessage = err?.response?.data?.message || err?.message || "멤버 강퇴에 실패했습니다.";
+              Alert.alert("오류", errorMessage);
+              console.error("멤버 강퇴 실패:", err);
+            }
+          },
         },
       ],
     );

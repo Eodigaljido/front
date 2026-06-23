@@ -243,6 +243,17 @@ export async function inviteChatMember(
   return res.data;
 }
 
+/** DELETE /chats/{roomUuid}/members/{targetUuid} — 멤버 강퇴 (방장만 가능) */
+export async function kickChatMember(
+  accessToken: string,
+  roomUuid: string,
+  targetUuid: string,
+): Promise<void> {
+  await instance.delete(`/chats/${roomUuid}/members/${targetUuid}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
 // 이미지 메시지 전송
 export async function sendImageMessage(
   accessToken: string,

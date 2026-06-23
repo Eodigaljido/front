@@ -85,6 +85,9 @@ import {
 } from "../utils/mergeCourseThumbnails";
 import { rootNavigate } from "../navigation/rootNavigation";
 import { CollaborativeMemberSummaryText } from "../components/CollaborativeMemberSummaryText";
+import { presentCollaborativeShareOptions } from "../utils/shareCollaborativeRoute";
+import { CollaborativeFriendInviteModal } from "../components/CollaborativeFriendInviteModal";
+import { inviteFriendsToRouteChat } from "../data/routeCollaborativeChat";
 
 type RouteKindFilter = "all" | "personal" | "collaborative";
 const ROUTE_KIND_CHIPS: { key: RouteKindFilter; label: string }[] = [
@@ -356,6 +359,9 @@ export default function MyRouteScreen({
   const [selectedSort, setSelectedSort] = useState<string | null>("즐겨찾기순");
   const [selectedRouteKind, setSelectedRouteKind] = useState<RouteKindFilter>("all");
   const [viewingCourseId, setViewingCourseId] = useState<string | null>(null);
+  const [collaborativeInviteModalOpen, setCollaborativeInviteModalOpen] = useState(false);
+  const [inviteTargetRoute, setInviteTargetRoute] = useState<{ id: string; title: string } | null>(null);
+  const [inviteSubmitting, setInviteSubmitting] = useState(false);
   /** 카드에서 연 상세 — 목록 재조회·id 타입 불일치 시에도 동일 코스 표시 */
   const [viewingCourseSnapshot, setViewingCourseSnapshot] =
     useState<CourseItem | null>(null);
@@ -930,6 +936,40 @@ export default function MyRouteScreen({
     rootNavigate("RouteCreate", { seedSharedCourseId: sharedCourseId });
   };
 
+  const handleCollaborativeInvite = async (friendUuids: string[]) => {
+    if (!inviteTargetRoute || friendUuids.length === 0) return;
+    const accessToken = useAuthStore.getState().accessToken;
+    const myUuid = useAuthStore.getState().user?.uuid;
+    if (!accessToken || !myUuid) {
+      Alert.alert("오류", "인증 정보가 없습니다.");
+      return;
+    }
+
+    setInviteSubmitting(true);
+    try {
+      const ur = userSavedRoutes.find((r) =>
+        sameCourseId(r.id, inviteTargetRoute.id)
+      );
+      await inviteFriendsToRouteChat({
+        accessToken,
+        myUuid,
+        routeId: inviteTargetRoute.id,
+        routeTitle: inviteTargetRoute.title,
+        friendUuids,
+        existingChatRoomUuid: ur?.chatRoomUuid,
+      });
+      Alert.alert("완료", `${friendUuids.length}명에게 공동 루트 초대를 보냈습니다.`);
+      setCollaborativeInviteModalOpen(false);
+      setInviteTargetRoute(null);
+      void reloadMyRoutesAndSharing();
+    } catch (err) {
+      console.error("공동 루트 초대 실패:", err);
+      Alert.alert("오류", "초대를 보내는데 실패했습니다. 다시 시도해 주세요.");
+    } finally {
+      setInviteSubmitting(false);
+    }
+  };
+
   const ScreenRoot = embedded ? View : SafeAreaView;
   const screenRootProps = embedded
     ? { className: "flex-1 bg-[#F0F5FF]" }
@@ -1110,6 +1150,19 @@ export default function MyRouteScreen({
         }}
         onApply={() => {}}
       />
+
+      {inviteTargetRoute && (
+        <CollaborativeFriendInviteModal
+          visible={collaborativeInviteModalOpen}
+          onClose={() => {
+            setCollaborativeInviteModalOpen(false);
+            setInviteTargetRoute(null);
+          }}
+          accessToken={useAuthStore((s) => s.accessToken)}
+          onConfirm={handleCollaborativeInvite}
+          submitting={inviteSubmitting}
+        />
+      )}
 
       {/* 코스 상세 보기 모달 — 배경은 페이드, 시트만 슬라이드 (Modal slide는 백드롭까지 같이 움직임) */}
       <Modal
@@ -1416,9 +1469,16 @@ export default function MyRouteScreen({
                             {ur?.collaborative === true ? (
                               <TouchableOpacity
                                 onPress={() => {
-                                  void shareCollaborativeRoute({
+                                  presentCollaborativeShareOptions({
                                     routeId: String(course.id),
                                     title: course.title,
+                                    onInviteFriends: () => {
+                                      setInviteTargetRoute({
+                                        id: String(course.id),
+                                        title: course.title,
+                                      });
+                                      setCollaborativeInviteModalOpen(true);
+                                    },
                                   });
                                 }}
                                 className="flex-row items-center gap-1 px-3 py-2 rounded-xl bg-orange-50"

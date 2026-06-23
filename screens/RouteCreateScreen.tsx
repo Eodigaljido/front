@@ -3900,8 +3900,17 @@ export default function RouteCreateScreen(): React.JSX.Element {
         commitCollaborativeMode();
         showToast(`${friendUuids.length}명에게 초대했어요 · 채팅 탭에서 확인`);
       } else {
-        showToast("초대에 실패했어요");
+        Alert.alert(
+          "초대 실패",
+          "친구 초대에 실패했어요. 잠시 후 다시 시도해 주세요.",
+        );
       }
+    } catch (err) {
+      console.error('[handleInviteFriendsToRoute]', err);
+      Alert.alert(
+        "오류",
+        "친구 초대 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.",
+      );
     } finally {
       setFriendInviteSubmitting(false);
     }
@@ -4998,6 +5007,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
         accessToken={accessToken}
         myUuid={authUser?.uuid}
         chatRoomUuid={routeChatRoomUuid}
+        routeId={persistedRouteId ?? undefined}
         routeTitle={routeTitle.trim() || "루트"}
         roomName={
           activeChatRoomMeta?.name ??
