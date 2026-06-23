@@ -50,6 +50,8 @@ import MeetDetailScreen from './screens/meet/MeetDetailScreen';
 import MeetCreateScreen from './screens/meet/MeetCreateScreen';
 import MeetManageScreen from './screens/meet/MeetManageScreen';
 import MeetMembersScreen from './screens/meet/MeetMembersScreen';
+import MeetMyGroupsScreen from './screens/meet/MeetMyGroupsScreen';
+import MeetPostDetailScreen from './screens/meet/MeetPostDetailScreen';
 import { restorePendingShareLinkFromStorage } from './utils/pendingShareLink';
 
 export type RootTabParamList = {
@@ -78,6 +80,8 @@ export type RootTabParamList = {
   MeetCreate: undefined;
   MeetManage: { groupUuid: string; groupName: string };
   MeetMembers: { groupUuid: string; groupName: string };
+  MeetMyGroups: undefined;
+  MeetPostDetail: { groupUuid: string; postUuid: string; groupName?: string };
 };
 
 export type RootStackParamList = {
@@ -123,6 +127,8 @@ export type RootStackParamList = {
   MeetCreate: undefined;
   MeetManage: { groupUuid: string; groupName: string };
   MeetMembers: { groupUuid: string; groupName: string };
+  MeetMyGroups: undefined;
+  MeetPostDetail: { groupUuid: string; postUuid: string; groupName?: string };
 
   FollowingNews: undefined;
   NotificationCenter: undefined;
@@ -391,6 +397,8 @@ export default function App(): React.JSX.Element {
                   <Stack.Screen name="MeetCreate" component={MeetCreateScreen} />
                   <Stack.Screen name="MeetManage" component={MeetManageScreen} />
                   <Stack.Screen name="MeetMembers" component={MeetMembersScreen} />
+                  <Stack.Screen name="MeetMyGroups" component={MeetMyGroupsScreen} />
+                  <Stack.Screen name="MeetPostDetail" component={MeetPostDetailScreen} />
                 </Stack.Navigator>
               </KeyboardProvider>
             </NavigationContainer>
