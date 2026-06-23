@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { Camera, ChevronLeft, Lock, Unlock, X } from 'lucide-react-native';
 
 import { RootStackParamList } from '@/App';
@@ -32,7 +33,11 @@ export default function MeetCreateScreen(): React.JSX.Element {
   const [description, setDescription] = useState('');
   const [groupType, setGroupType] = useState<GroupType>('PUBLIC');
   const [requiresApproval, setRequiresApproval] = useState(false);
-  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [image, setImage] = useState<{
+    uri: string;
+    name: string;
+    type: string;
+  } | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const isPrivate = groupType === 'PRIVATE';
@@ -49,8 +54,16 @@ export default function MeetCreateScreen(): React.JSX.Element {
       aspect: [1, 1],
       quality: 0.85,
     });
-    if (!result.canceled && result.assets[0]?.uri) {
-      setImageUri(result.assets[0].uri);
+    const asset = result.assets?.[0];
+    if (!result.canceled && asset?.uri) {
+      // 413(Request Entity Too Large) 방지: 업로드 전 리사이즈·압축
+      const needResize = (asset.width ?? 0) > 1280;
+      const m = await ImageManipulator.manipulateAsync(
+        asset.uri,
+        needResize ? [{ resize: { width: 1280 } }] : [],
+        { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG },
+      );
+      setImage({ uri: m.uri, name: 'group.jpg', type: 'image/jpeg' });
     }
   };
 
@@ -75,7 +88,7 @@ export default function MeetCreateScreen(): React.JSX.Element {
           type: groupType,
           requiresApproval: isPrivate ? true : requiresApproval,
         },
-        imageUri,
+        image,
       );
       navigation.replace('MeetDetail', {
         groupUuid: group.uuid,
@@ -91,7 +104,7 @@ export default function MeetCreateScreen(): React.JSX.Element {
   return (
     <SafeAreaView style={s.screen} edges={['top']}>
       <View style={s.header}>
-        <TouchableOpacity style={s.backBtn} onPress={() => safeGoBack(navigation)}>
+        <TouchableOpacity activeOpacity={0.7} style={s.backBtn} onPress={() => safeGoBack(navigation)}>
           <ChevronLeft color="#0F172A" size={22} />
         </TouchableOpacity>
         <Text style={s.headerTitle}>모임 만들기</Text>
@@ -114,12 +127,12 @@ export default function MeetCreateScreen(): React.JSX.Element {
               onPress={pickImage}
               activeOpacity={0.8}
             >
-              {imageUri ? (
+              {image ? (
                 <>
-                  <Image source={{ uri: imageUri }} style={s.imagePreview} />
-                  <TouchableOpacity
+                  <Image source={{ uri: image.uri }} style={s.imagePreview} />
+                  <TouchableOpacity activeOpacity={0.7}
                     style={s.imageRemove}
-                    onPress={() => setImageUri(null)}
+                    onPress={() => setImage(null)}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
                     <X color="#fff" size={14} strokeWidth={2.5} />
@@ -132,7 +145,7 @@ export default function MeetCreateScreen(): React.JSX.Element {
               )}
             </TouchableOpacity>
             <Text style={s.imageHint}>
-              {imageUri ? '눌러서 변경' : '모임 대표 이미지 (선택)'}
+              {image ? '눌러서 변경' : '모임 대표 이미지 (선택)'}
             </Text>
           </View>
 
@@ -148,7 +161,7 @@ export default function MeetCreateScreen(): React.JSX.Element {
                 placeholder="모임 이름을 입력하세요"
                 placeholderTextColor="#CBD5E1"
                 maxLength={50}
-                selectionColor="#3B82F6"
+                selectionColor="#93C5FD"
               />
             </View>
 
@@ -163,7 +176,7 @@ export default function MeetCreateScreen(): React.JSX.Element {
                 maxLength={200}
                 multiline
                 textAlignVertical="top"
-                selectionColor="#3B82F6"
+                selectionColor="#93C5FD"
               />
               <Text style={s.charCount}>{description.length}/200</Text>
             </View>
@@ -174,7 +187,7 @@ export default function MeetCreateScreen(): React.JSX.Element {
           <View style={s.card}>
             <Text style={s.fieldLabel}>공개 범위</Text>
             <View style={s.typeRow}>
-              <TouchableOpacity
+              <TouchableOpacity activeOpacity={0.7}
                 style={[s.typeBtn, !isPrivate && s.typeBtnActive]}
                 onPress={() => setGroupType('PUBLIC')}
               >
@@ -186,7 +199,7 @@ export default function MeetCreateScreen(): React.JSX.Element {
                   누구나 가입
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity
+              <TouchableOpacity activeOpacity={0.7}
                 style={[s.typeBtn, isPrivate && s.typeBtnActive]}
                 onPress={() => setGroupType('PRIVATE')}
               >
@@ -216,7 +229,7 @@ export default function MeetCreateScreen(): React.JSX.Element {
             )}
           </View>
 
-          <TouchableOpacity
+          <TouchableOpacity activeOpacity={0.7}
             style={[s.submitBtn, { opacity: submitting ? 0.65 : 1 }]}
             onPress={handleSubmit}
             disabled={submitting}

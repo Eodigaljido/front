@@ -45,39 +45,35 @@ export async function getMyGroups(
 
 /**
  * POST /api/groups — 모임 생성
- * imageUri 가 있으면 multipart(request JSON + image 파일)로, 없으면 JSON 으로 전송.
+ * 서버가 multipart/form-data 만 받으므로 이미지 유무와 관계없이 항상 multipart 로
+ * 전송한다. request(JSON) 파트는 항상, image(파일) 파트는 선택했을 때만 포함.
  */
 export async function createGroup(
   accessToken: string,
   data: CreateGroupRequest,
-  imageUri?: string | null,
+  image?: { uri: string; name?: string; type?: string } | null,
 ): Promise<Group> {
-  if (imageUri) {
-    const { data: res } = await fetchMultipart(
-      "/api/groups",
-      "POST",
-      [
-        {
-          field: "image",
-          file: {
-            uri: imageUri,
-            name: fileNameFromUri(imageUri, "group.jpg"),
-            type: mimeFromUri(imageUri),
+  const { data: res } = await fetchMultipart(
+    "/api/groups",
+    "POST",
+    image?.uri
+      ? [
+          {
+            field: "image",
+            file: {
+              uri: image.uri,
+              name: image.name ?? fileNameFromUri(image.uri, "group.jpg"),
+              type: image.type ?? mimeFromUri(image.uri),
+            },
           },
-        },
-      ],
-      {
-        accessToken,
-        fields: [{ field: "request", value: JSON.stringify(data) }],
-      },
-    );
-    return res as Group;
-  }
-
-  const res = await instance.post<Group>("/api/groups", data, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  return res.data;
+        ]
+      : [],
+    {
+      accessToken,
+      fields: [{ field: "request", value: JSON.stringify(data) }],
+    },
+  );
+  return res as Group;
 }
 
 /** GET /api/groups/{groupUuid} — 모임 상세 조회 */
