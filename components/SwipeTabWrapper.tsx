@@ -8,6 +8,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useFocusEffect, useNavigation, useNavigationState } from '@react-navigation/native';
+import { useTabStore } from '../store/tabStore';
 
 const TAB_ORDER = ['Home', 'Route', 'Chat', 'Meet', 'All'] as const;
 const SWIPE_MIN_DISTANCE = 60;
@@ -39,6 +40,9 @@ export default function SwipeTabWrapper({ children }: Props) {
     opacity: opacity.value,
   }));
 
+  // 가로 스크롤 영역(예: 내 모임 캐러셀) 위에서는 탭 스와이프를 잠근다.
+  const swipeLocked = useTabStore(state => state.swipeLocked);
+
   const handleSwipe = useCallback(
     (dx: number, vx: number) => {
       if (dx < -SWIPE_MIN_DISTANCE || vx < -SWIPE_MIN_VELOCITY) {
@@ -55,11 +59,12 @@ export default function SwipeTabWrapper({ children }: Props) {
   const swipeGesture = useMemo(
     () =>
       Gesture.Pan()
+        .enabled(!swipeLocked)
         .activeOffsetX([-20, 20])
         .failOffsetY([-15, 15])
         .runOnJS(true)
         .onEnd(e => handleSwipe(e.translationX, e.velocityX)),
-    [handleSwipe],
+    [handleSwipe, swipeLocked],
   );
 
   return (

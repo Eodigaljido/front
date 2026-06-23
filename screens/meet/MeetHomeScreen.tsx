@@ -1,4 +1,10 @@
-import React, { useCallback, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   Dimensions,
@@ -18,16 +24,20 @@ import {
   useFocusEffect,
   useNavigation,
 } from "@react-navigation/native";
-import { Lock, Plus, Search, Users } from "lucide-react-native";
+import { ChevronRight, Lock, Plus, Search, Users } from "lucide-react-native";
 
 import { RootStackParamList } from "@/App";
 import { getPublicGroups, getMyGroups } from "@/api/meet/groups";
 import { useAuthStore } from "@/store/authStore";
+import { useTabStore } from "@/store/tabStore";
 import type { Group } from "@/api/meet/types";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
-const MY_CARD_WIDTH = SCREEN_WIDTH - 48;
 const MY_CARD_GAP = 12;
+// 한 화면에 2개 + 다음 카드 살짝 보이도록(peek)
+const MY_CARD_WIDTH = (SCREEN_WIDTH - 56) / 2;
+const MY_PREVIEW_LIMIT = 5;
+const PUBLIC_PAGE_SIZE = 5;
 
 const AVATAR_COLORS = [
   "#4F80FF",
@@ -45,28 +55,58 @@ function getAvatarColor(name: string): string {
 export default function MeetHomeScreen(): React.JSX.Element {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const accessToken = useAuthStore((s) => s.accessToken) ?? "";
+  const setSwipeLocked = useTabStore((s) => s.setSwipeLocked);
 
-  const [groups, setGroups] = useState<Group[]>([]);
+  // 가로 스크롤 잠금: 손을 떼도 모멘텀·빠른 재스와이프 사이 빈틈에
+  // 탭 이동이 새지 않도록 unlock 을 약간 지연시킨다.
+  const unlockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lockSwipe = useCallback(() => {
+    if (unlockTimer.current) {
+      clearTimeout(unlockTimer.current);
+      unlockTimer.current = null;
+    }
+    setSwipeLocked(true);
+  }, [setSwipeLocked]);
+  const unlockSwipeSoon = useCallback(() => {
+    if (unlockTimer.current) clearTimeout(unlockTimer.current);
+    unlockTimer.current = setTimeout(() => setSwipeLocked(false), 280);
+  }, [setSwipeLocked]);
+  useEffect(
+    () => () => {
+      if (unlockTimer.current) clearTimeout(unlockTimer.current);
+      setSwipeLocked(false);
+    },
+    [setSwipeLocked],
+  );
+
+  const [myGroupsRaw, setMyGroupsRaw] = useState<Group[]>([]);
+  const [publicGroups, setPublicGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [publicPage, setPublicPage] = useState(0);
+  const [reachedEnd, setReachedEnd] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const [publicRes, myRes] = await Promise.allSettled([
-        getPublicGroups(0, 50),
+        getPublicGroups(0, PUBLIC_PAGE_SIZE),
         accessToken ? getMyGroups(accessToken) : Promise.resolve([]),
       ]);
-      const publicList: Group[] =
-        publicRes.status === "fulfilled" ? (publicRes.value.content ?? []) : [];
-      const myList: Group[] = myRes.status === "fulfilled" ? myRes.value : [];
-
-      const merged = new Map<string, Group>();
-      publicList.forEach((g) => merged.set(g.uuid, g));
-      myList.forEach((g) => merged.set(g.uuid, { ...g, joinedByMe: true }));
-      setGroups(Array.from(merged.values()));
+      const page =
+        publicRes.status === "fulfilled" ? publicRes.value : null;
+      const publicList: Group[] = page?.content ?? [];
+      setPublicGroups(publicList);
+      setPublicPage(0);
+      setReachedEnd(
+        page ? (page.last ?? publicList.length < PUBLIC_PAGE_SIZE) : true,
+      );
+      setMyGroupsRaw(myRes.status === "fulfilled" ? myRes.value : []);
     } catch {
-      setGroups([]);
+      setPublicGroups([]);
+      setMyGroupsRaw([]);
+      setReachedEnd(true);
     } finally {
       setLoading(false);
     }
@@ -78,12 +118,42 @@ export default function MeetHomeScreen(): React.JSX.Element {
     }, [load]),
   );
 
-  const filtered = groups.filter((g) =>
-    g.name.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
+  const loadMorePublic = useCallback(async () => {
+    if (loadingMore || reachedEnd || loading) return;
+    setLoadingMore(true);
+    try {
+      const next = publicPage + 1;
+      const page = await getPublicGroups(next, PUBLIC_PAGE_SIZE);
+      const list = page.content ?? [];
+      setPublicGroups((prev) => {
+        const seen = new Set(prev.map((g) => g.uuid));
+        return [...prev, ...list.filter((g) => !seen.has(g.uuid))];
+      });
+      setPublicPage(next);
+      setReachedEnd(page.last ?? list.length < PUBLIC_PAGE_SIZE);
+    } catch {
+      setReachedEnd(true);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, reachedEnd, loading, publicPage]);
 
-  const myGroups = filtered.filter((g) => g.joinedByMe);
-  const exploreGroups = filtered.filter((g) => !g.joinedByMe);
+  const q = searchQuery.toLowerCase();
+  const myUuidSet = useMemo(
+    () => new Set(myGroupsRaw.map((g) => g.uuid)),
+    [myGroupsRaw],
+  );
+  const myGroups = useMemo(
+    () => myGroupsRaw.filter((g) => g.name.toLowerCase().includes(q)),
+    [myGroupsRaw, q],
+  );
+  const exploreGroups = useMemo(
+    () =>
+      publicGroups
+        .filter((g) => !g.joinedByMe && !myUuidSet.has(g.uuid))
+        .filter((g) => g.name.toLowerCase().includes(q)),
+    [publicGroups, myUuidSet, q],
+  );
 
   return (
     <SafeAreaView style={s.screen} edges={["top"]}>
@@ -91,7 +161,7 @@ export default function MeetHomeScreen(): React.JSX.Element {
         <View>
           <Text style={s.headerTitle}>모임</Text>
         </View>
-        <TouchableOpacity
+        <TouchableOpacity activeOpacity={0.7}
           style={s.createBtn}
           onPress={() => navigation.navigate("MeetCreate")}
         >
@@ -116,16 +186,74 @@ export default function MeetHomeScreen(): React.JSX.Element {
         </View>
       ) : (
         <FlatList
-          data={[]}
-          keyExtractor={() => ""}
-          renderItem={null}
+          data={exploreGroups}
+          keyExtractor={(item) => item.uuid}
+          renderItem={({ item }) => (
+            <View style={{ paddingHorizontal: 16 }}>
+              <GroupCard
+                group={item}
+                onPress={() =>
+                  navigation.navigate("MeetDetail", {
+                    groupUuid: item.uuid,
+                    groupName: item.name,
+                  })
+                }
+              />
+            </View>
+          )}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 120 }}
+          onEndReachedThreshold={0.4}
+          onEndReached={() => void loadMorePublic()}
+          ListEmptyComponent={
+            <View style={{ paddingHorizontal: 16 }}>
+              <EmptyState
+                icon={<Search color="#CBD5E1" size={26} />}
+                title="검색 결과가 없어요"
+                desc="다른 키워드로 검색하거나 더 불러와 보세요"
+              />
+            </View>
+          }
+          ListFooterComponent={
+            loadingMore ? (
+              <ActivityIndicator
+                color="#3B82F6"
+                style={{ marginVertical: 16 }}
+              />
+            ) : !reachedEnd ? (
+              <View style={{ paddingHorizontal: 16, marginTop: 4 }}>
+                <TouchableOpacity
+                  style={s.loadMoreBtn}
+                  onPress={() => void loadMorePublic()}
+                  activeOpacity={0.8}
+                >
+                  <Text style={s.loadMoreText}>공개 모임 더보기</Text>
+                  <ChevronRight color="#3B82F6" size={16} />
+                </TouchableOpacity>
+              </View>
+            ) : null
+          }
           ListHeaderComponent={
             <>
               <View style={{ marginTop: 18 }}>
                 <View style={[s.sectionHeader, { paddingHorizontal: 16 }]}>
-                  <Text style={s.sectionTitle}>내 모임</Text>
+                  <Text style={[s.sectionTitle, { flex: 0 }]}>내 모임</Text>
+                  {myGroups.length > 0 && (
+                    <View style={[s.countBadge, { marginLeft: 8 }]}>
+                      <Text style={s.countBadgeText}>{myGroups.length}</Text>
+                    </View>
+                  )}
+                  <View style={{ flex: 1 }} />
+                  {myGroups.length > 0 && (
+                    <TouchableOpacity activeOpacity={0.7}
+                      style={s.seeAllBtn}
+                      onPress={() => navigation.navigate("MeetMyGroups")}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={s.seeAllText}>전체 보기</Text>
+                      <ChevronRight color="#3B82F6" size={14} />
+                    </TouchableOpacity>
+                  )}
                 </View>
                 {myGroups.length === 0 ? (
                   <View style={{ paddingHorizontal: 16 }}>
@@ -148,8 +276,15 @@ export default function MeetHomeScreen(): React.JSX.Element {
                       gap: MY_CARD_GAP,
                       paddingBottom: 4,
                     }}
+                    // 가로 스크롤 중에는 스와이프 탭 이동 잠금
+                    onTouchStart={lockSwipe}
+                    onScrollBeginDrag={lockSwipe}
+                    onScrollEndDrag={unlockSwipeSoon}
+                    onMomentumScrollEnd={unlockSwipeSoon}
+                    onTouchEnd={unlockSwipeSoon}
+                    onTouchCancel={unlockSwipeSoon}
                   >
-                    {myGroups.map((group) => (
+                    {myGroups.slice(0, MY_PREVIEW_LIMIT).map((group) => (
                       <MyGroupCard
                         key={group.uuid}
                         group={group}
@@ -161,34 +296,20 @@ export default function MeetHomeScreen(): React.JSX.Element {
                         }
                       />
                     ))}
+                    {myGroups.length > MY_PREVIEW_LIMIT && (
+                      <MoreCard
+                        count={myGroups.length}
+                        onPress={() => navigation.navigate("MeetMyGroups")}
+                      />
+                    )}
                   </ScrollView>
                 )}
               </View>
 
-              <View style={s.section}>
+              <View style={[s.section, { marginBottom: 4 }]}>
                 <View style={s.sectionHeader}>
                   <Text style={s.sectionTitle}>공개 모임 탐색</Text>
                 </View>
-                {exploreGroups.length === 0 ? (
-                  <EmptyState
-                    icon={<Search color="#CBD5E1" size={26} />}
-                    title="검색 결과가 없어요"
-                    desc="다른 키워드로 검색해보세요"
-                  />
-                ) : (
-                  exploreGroups.map((group) => (
-                    <GroupCard
-                      key={group.uuid}
-                      group={group}
-                      onPress={() =>
-                        navigation.navigate("MeetDetail", {
-                          groupUuid: group.uuid,
-                          groupName: group.name,
-                        })
-                      }
-                    />
-                  ))
-                )}
               </View>
             </>
           }
@@ -261,6 +382,26 @@ function MyGroupCard({
           </Text>
         ) : null}
       </View>
+    </TouchableOpacity>
+  );
+}
+
+function MoreCard({ count, onPress }: { count: number; onPress: () => void }) {
+  return (
+    <TouchableOpacity
+      style={[s.moreCard, { width: MY_CARD_WIDTH }]}
+      onPress={onPress}
+      activeOpacity={0.85}
+    >
+      <View style={s.moreIconWrap}>
+        <ChevronRight color="#3B82F6" size={24} />
+      </View>
+      <Text style={s.moreTitle} numberOfLines={1}>
+        전체 보기
+      </Text>
+      <Text style={s.moreDesc} numberOfLines={1}>
+        {count}개 모두
+      </Text>
     </TouchableOpacity>
   );
 }
@@ -389,6 +530,20 @@ const s = StyleSheet.create({
     backgroundColor: "#3B82F6",
   },
   countBadgeText: { fontSize: 12, fontWeight: "700", color: "#fff" },
+  seeAllBtn: { flexDirection: "row", alignItems: "center", gap: 1 },
+  seeAllText: { fontSize: 13, fontWeight: "600", color: "#3B82F6" },
+  loadMoreBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    backgroundColor: "#EFF6FF",
+    borderRadius: 14,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: "#DBEAFE",
+  },
+  loadMoreText: { fontSize: 14, fontWeight: "700", color: "#3B82F6" },
 
   emptyBox: {
     backgroundColor: "#fff",
@@ -462,7 +617,7 @@ const s = StyleSheet.create({
   joinedBadgeText: { fontSize: 12, fontWeight: "700", color: "#3B82F6" },
 
   myCard: {
-    borderRadius: 22,
+    borderRadius: 18,
     backgroundColor: "#fff",
     overflow: "hidden",
     borderWidth: 1,
@@ -470,7 +625,7 @@ const s = StyleSheet.create({
     ...cardShadow,
   },
   myCardBanner: {
-    height: 160,
+    height: 110,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -480,49 +635,71 @@ const s = StyleSheet.create({
     position: "absolute",
   },
   myCardInitial: {
-    fontSize: 64,
+    fontSize: 44,
     fontWeight: "800",
     color: "rgba(255,255,255,0.85)",
   },
   myCardLockBadge: {
     position: "absolute",
-    top: 12,
-    right: 12,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    top: 10,
+    right: 10,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: "rgba(0,0,0,0.25)",
     alignItems: "center",
     justifyContent: "center",
   },
   myCardMemberBadge: {
     position: "absolute",
-    bottom: 12,
-    left: 14,
+    bottom: 10,
+    left: 10,
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
     backgroundColor: "rgba(0,0,0,0.22)",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 20,
   },
-  myCardMemberText: { fontSize: 12, fontWeight: "600", color: "#fff" },
+  myCardMemberText: { fontSize: 11, fontWeight: "600", color: "#fff" },
   myCardInfo: {
-    padding: 16,
-    gap: 6,
+    padding: 12,
+    gap: 4,
   },
   myCardName: {
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: "800",
     color: "#0F172A",
     letterSpacing: -0.3,
   },
   myCardDesc: {
-    fontSize: 13,
+    fontSize: 12,
     color: "#64748B",
-    lineHeight: 19,
+    lineHeight: 17,
   },
+
+  moreCard: {
+    borderRadius: 18,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#DBEAFE",
+    borderStyle: "dashed",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 20,
+  },
+  moreIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#EFF6FF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  moreTitle: { fontSize: 13, fontWeight: "800", color: "#1D4ED8" },
+  moreDesc: { fontSize: 11, color: "#94A3B8" },
   myCardMeta: {
     flexDirection: "row",
     alignItems: "center",
