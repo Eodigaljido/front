@@ -32,7 +32,7 @@ import { CHAT_PRESET_IMAGES } from '@/constants/chatPresetAvatars';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Friend = { id: string; name: string; uuid: string };
+type Friend = { id: string; name: string; uuid: string; profileImageUrl?: string };
 
 const AVATAR_COLORS = [
   '#FF6B6B',
@@ -90,6 +90,7 @@ export default function ChatCreatingScreen(): React.JSX.Element {
             id: String(f.friendId),
             name: f.nickname,
             uuid: f.uuid,
+            profileImageUrl: f.profileImageUrl,
           })),
         );
         setAllFriends(
@@ -97,6 +98,7 @@ export default function ChatCreatingScreen(): React.JSX.Element {
             id: String(f.friendId),
             name: f.nickname,
             uuid: f.uuid,
+            profileImageUrl: f.profileImageUrl,
           })),
         );
       })
@@ -138,35 +140,54 @@ export default function ChatCreatingScreen(): React.JSX.Element {
 
   const handleCreate = async () => {
     if (!accessToken) return;
-    const trimedName = roomName.trim();
-    if (trimedName.length === 0) {
-      Alert.alert('알림', '채팅방 이름을 입력해주세요.');
-      return;
-    }
     const allKnownFriends = [...recentFriends, ...allFriends];
     const selectedUuids = [...selectedFriends]
       .map(id => allKnownFriends.find(f => f.id === id)?.uuid)
       .filter((uuid): uuid is string => uuid != null);
     const memberUuids = myUuid ? [...new Set([myUuid, ...selectedUuids])] : selectedUuids;
+
+    const isOneToOne = selectedUuids.length === 1;
+
+    // 1대1 채팅방일 경우 상대방 정보 사용
+    let finalRoomName = roomName.trim();
+    let friendProfileImageUrl: string | null = null;
+
+    if (isOneToOne) {
+      const friendId = [...selectedFriends][0];
+      const friend = allKnownFriends.find(f => f.id === friendId);
+      if (friend) {
+        finalRoomName = friend.name; // 상대방 이름으로 설정
+        friendProfileImageUrl = friend.profileImageUrl ?? null; // 상대방 프로필 이미지
+      }
+    } else {
+      if (finalRoomName.length === 0) {
+        Alert.alert('알림', '채팅방 이름을 입력해주세요.');
+        return;
+      }
+    }
+
     setIsCreating(true);
     try {
-      const room = await createChatRoom(accessToken, memberUuids, trimedName, null);
+      const room = await createChatRoom(accessToken, memberUuids, finalRoomName, null);
 
-      // 이미지 선택된 경우 별도 업로드
-      let uploadUri: string | null = localImageUri;
-      if (!uploadUri && selectedPresetId) {
-        const preset = PRESET_IMAGES.find(p => p.id === selectedPresetId);
-        if (preset) {
-          const asset = Asset.fromModule(preset.source);
-          await asset.downloadAsync();
-          uploadUri = asset.localUri ?? null;
+      // 이미지 업로드 처리 (1대1이 아닐 경우에만)
+      if (!isOneToOne) {
+        let uploadUri: string | null = localImageUri;
+        if (!uploadUri && selectedPresetId) {
+          const preset = PRESET_IMAGES.find(p => p.id === selectedPresetId);
+          if (preset) {
+            const asset = Asset.fromModule(preset.source);
+            await asset.downloadAsync();
+            uploadUri = asset.localUri ?? null;
+          }
         }
-      }
-      if (uploadUri) {
-        try {
-          await updateChatRoomImage(accessToken, room.uuid, uploadUri);
-        } catch {
-          // 방은 생성됐으므로 이미지 실패는 무시
+
+        if (uploadUri) {
+          try {
+            await updateChatRoomImage(accessToken, room.uuid, uploadUri);
+          } catch {
+            // 방은 생성됐으므로 이미지 실패는 무시
+          }
         }
       }
 
@@ -179,6 +200,7 @@ export default function ChatCreatingScreen(): React.JSX.Element {
   };
 
   const currentPreset = PRESET_IMAGES.find(p => p.id === selectedPresetId);
+  const isOneToOne = selectedFriends.size === 1;
 
   // ── 공통 서브컴포넌트 ─────────────────────────────────────────────────────────
 
@@ -504,63 +526,74 @@ export default function ChatCreatingScreen(): React.JSX.Element {
 
       <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
         <View style={{ paddingTop: 32, paddingBottom: 40 }}>
-          {/* 채팅방 프로필 이미지 */}
-          <View style={{ alignItems: 'center', marginBottom: 32 }}>
-            <View
-              style={{
-                width: 96,
-                height: 96,
-                borderRadius: 48,
-                backgroundColor: '#E5E7EB',
-                alignItems: 'center',
-                justifyContent: 'center',
-                overflow: 'hidden',
-              }}
-            >
-              {localImageUri ? (
-                <Image source={{ uri: localImageUri }} style={{ width: 96, height: 96 }} />
-              ) : currentPreset ? (
-                <Image source={currentPreset.source} style={{ width: 96, height: 96 }} />
-              ) : (
-                <ImageIcon color="#9CA3AF" size={36} />
-              )}
+          {isOneToOne ? (
+            <View style={{ alignItems: 'center', marginBottom: 32 }}>
+              <Text style={{ fontSize: 14, color: '#6B7280', textAlign: 'center', paddingHorizontal: 16 }}>
+                1대1 채팅방입니다. 프로필은 상대방의 정보로 자동 설정됩니다.
+              </Text>
             </View>
-          </View>
-
-          {/* 채팅방 이름 입력 */}
-          <View style={{ paddingHorizontal: 16, marginBottom: 32 }}>
-            <View
-              style={{
-                borderWidth: 1,
-                borderColor: '#E5E7EB',
-                borderRadius: 16,
-                paddingHorizontal: 16,
-                paddingTop: 12,
-                paddingBottom: 10,
-              }}
-            >
-              <View
-                style={{
-                  flexDirection: 'row',
-                  justifyContent: 'space-between',
-                  marginBottom: 4,
-                }}
-              >
-                <Text style={{ fontSize: 11, color: '#9CA3AF' }}>채팅방 이름</Text>
-                <Text style={{ fontSize: 11, color: '#9CA3AF' }}>{roomName.length}/100</Text>
+          ) : (
+            <>
+              {/* 채팅방 프로필 이미지 */}
+              <View style={{ alignItems: 'center', marginBottom: 32 }}>
+                <View
+                  style={{
+                    width: 96,
+                    height: 96,
+                    borderRadius: 48,
+                    backgroundColor: '#E5E7EB',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    overflow: 'hidden',
+                  }}
+                >
+                  {localImageUri ? (
+                    <Image source={{ uri: localImageUri }} style={{ width: 96, height: 96 }} />
+                  ) : currentPreset ? (
+                    <Image source={currentPreset.source} style={{ width: 96, height: 96 }} />
+                  ) : (
+                    <ImageIcon color="#9CA3AF" size={36} />
+                  )}
+                </View>
               </View>
-              <TextInput
-                style={{ fontSize: 15, color: '#111827', paddingVertical: 0 }}
-                value={roomName}
-                onChangeText={t => setRoomName(t.slice(0, 100))}
-                maxLength={100}
-                placeholder="채팅방 이름을 입력하세요"
-                placeholderTextColor="#9CA3AF"
-              />
-            </View>
-          </View>
 
-          {/* 이미지 선택 그리드 (4열 × 5행) */}
+              {/* 채팅방 이름 입력 */}
+              <View style={{ paddingHorizontal: 16, marginBottom: 32 }}>
+                <View
+                  style={{
+                    borderWidth: 1,
+                    borderColor: '#E5E7EB',
+                    borderRadius: 16,
+                    paddingHorizontal: 16,
+                    paddingTop: 12,
+                    paddingBottom: 10,
+                  }}
+                >
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      justifyContent: 'space-between',
+                      marginBottom: 4,
+                    }}
+                  >
+                    <Text style={{ fontSize: 11, color: '#9CA3AF' }}>채팅방 이름</Text>
+                    <Text style={{ fontSize: 11, color: '#9CA3AF' }}>{roomName.length}/100</Text>
+                  </View>
+                  <TextInput
+                    style={{ fontSize: 15, color: '#111827', paddingVertical: 0 }}
+                    value={roomName}
+                    onChangeText={t => setRoomName(t.slice(0, 100))}
+                    maxLength={100}
+                    placeholder="채팅방 이름을 입력하세요"
+                    placeholderTextColor="#9CA3AF"
+                  />
+                </View>
+              </View>
+
+              {/* 이미지 선택 그리드 (4열 × 5행) */}
+            </>
+          )}
+          {!isOneToOne && (
           <View
             style={{
               paddingHorizontal: GRID_H_PADDING,
@@ -620,6 +653,7 @@ export default function ChatCreatingScreen(): React.JSX.Element {
               );
             })}
           </View>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>

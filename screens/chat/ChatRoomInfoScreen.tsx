@@ -44,6 +44,7 @@ import {
   leaveChatRoom,
   renameChatRoom,
   updateChatRoomImage,
+  createChatRoom,
 } from "@/api/chat/chat";
 import { useAuthStore } from "@/store/authStore";
 import { CHAT_PRESET_IMAGES } from "@/constants/chatPresetAvatars";
@@ -246,35 +247,81 @@ export default function ChatRoomInfoScreen() {
       return;
     }
 
+    // 1대1 채팅방 판별 (자신 + 상대방 = 2명)
+    const isOneToOne = members.length === 2;
+
     setIsInviting(true);
     let successCount = 0;
     const failedFriends: string[] = [];
 
     try {
-      for (const id of selectedFriends) {
-        const friend = friends.find((f) => f.id === id);
-        if (!friend) continue;
-        try {
-          await inviteChatMember(accessToken, roomUuid, friend.uuid);
-          successCount++;
-        } catch (err: any) {
-          const errMsg = err?.response?.data?.message || err?.message || String(err);
-          console.error(`초대 실패 (${friend.name}):`, errMsg);
-          failedFriends.push(friend.name);
+      if (isOneToOne) {
+        // 1대1 채팅방에서 새로운 멤버 추가 시 새로운 채팅방 생성
+        const newMemberUuids: string[] = [];
+        for (const id of selectedFriends) {
+          const friend = friends.find((f) => f.id === id);
+          if (friend) {
+            newMemberUuids.push(friend.uuid);
+          } else {
+            failedFriends.push(String(id));
+          }
         }
-      }
 
-      setSelectedFriends(new Set());
-      setInviteModalVisible(false);
-      void loadRoom();
+        if (newMemberUuids.length > 0 && myUuid) {
+          try {
+            // 현재 멤버 + 새 멤버로 새로운 채팅방 생성
+            const currentMembers = members.map((m) => m.uuid);
+            const allNewMembers = [...new Set([...currentMembers, ...newMemberUuids])];
 
-      if (failedFriends.length > 0) {
-        Alert.alert(
-          "초대 완료",
-          `${successCount}명 초대 성공${failedFriends.length > 0 ? `\n\n초대 실패: ${failedFriends.join(", ")}` : ""}`,
-        );
-      } else if (successCount > 0) {
-        Alert.alert("초대 완료", `${successCount}명을 채팅방으로 초대했습니다.`);
+            // 새 채팅방 이름: "A, B, C" 형식
+            const groupName = members
+              .map((m) => m.nickname)
+              .join(", ");
+
+            const newRoom = await createChatRoom(accessToken, allNewMembers, groupName, null);
+            successCount = newMemberUuids.length;
+
+            // 새로운 채팅방으로 이동
+            setInviteModalVisible(false);
+            setSelectedFriends(new Set());
+            navigation.navigate("ChatRoomScreen", {
+              roomUuid: newRoom.uuid,
+              roomName: newRoom.name,
+              memberCount: newRoom.memberCount,
+            });
+          } catch (err: any) {
+            const errMsg = err?.response?.data?.message || err?.message || "새 채팅방 생성 실패";
+            console.error("새 채팅방 생성 실패:", err);
+            Alert.alert("오류", errMsg);
+          }
+        }
+      } else {
+        // 그룹 채팅방: 기존 로직 사용
+        for (const id of selectedFriends) {
+          const friend = friends.find((f) => f.id === id);
+          if (!friend) continue;
+          try {
+            await inviteChatMember(accessToken, roomUuid, friend.uuid);
+            successCount++;
+          } catch (err: any) {
+            const errMsg = err?.response?.data?.message || err?.message || String(err);
+            console.error(`초대 실패 (${friend.name}):`, errMsg);
+            failedFriends.push(friend.name);
+          }
+        }
+
+        setSelectedFriends(new Set());
+        setInviteModalVisible(false);
+        void loadRoom();
+
+        if (failedFriends.length > 0) {
+          Alert.alert(
+            "초대 완료",
+            `${successCount}명 초대 성공${failedFriends.length > 0 ? `\n\n초대 실패: ${failedFriends.join(", ")}` : ""}`,
+          );
+        } else if (successCount > 0) {
+          Alert.alert("초대 완료", `${successCount}명을 채팅방으로 초대했습니다.`);
+        }
       }
     } finally {
       setIsInviting(false);
@@ -336,6 +383,8 @@ export default function ChatRoomInfoScreen() {
     });
   };
 
+  const isOneToOne = members.length === 2;
+
   return (
     <SafeAreaView style={s.screen} edges={["top"]}>
       {/* 헤더 */}
@@ -359,7 +408,7 @@ export default function ChatRoomInfoScreen() {
         <View style={s.profileCard}>
           <TouchableOpacity
             onPress={
-              isOwner
+              isOwner && !isOneToOne
                 ? () => {
                     setTempPresetId("");
                     setTempLocalImageUri(null);
@@ -367,8 +416,8 @@ export default function ChatRoomInfoScreen() {
                   }
                 : undefined
             }
-            activeOpacity={isOwner ? 0.85 : 1}
-            disabled={!isOwner}
+            activeOpacity={isOwner && !isOneToOne ? 0.85 : 1}
+            disabled={!isOwner || isOneToOne}
           >
             <View style={s.avatarShadow}>
               <View style={[s.profileCircle, { backgroundColor: "#E5E7EB" }]}>
@@ -382,14 +431,14 @@ export default function ChatRoomInfoScreen() {
                 )}
               </View>
             </View>
-            {isOwner && (
+            {isOwner && !isOneToOne && (
               <View style={s.editBadge}>
                 <Edit2 color="white" size={11} />
               </View>
             )}
           </TouchableOpacity>
 
-          {isOwner ? (
+          {isOwner && !isOneToOne ? (
             <TouchableOpacity
               style={s.roomNameRow}
               onPress={() => {
