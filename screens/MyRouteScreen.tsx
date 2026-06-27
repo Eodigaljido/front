@@ -963,26 +963,55 @@ export default function MyRouteScreen({
       // 1대1 채팅방이 없으면 채팅방 목록에서 1대1 채팅방 찾기
       if (!existingChatRoomUuid && friendUuids.length === 1) {
         try {
+          console.log("[MyRouteScreen] 채팅방 목록 조회 시작");
           const chatRooms = await getChatRooms(accessToken);
+          console.log("[MyRouteScreen] 전체 채팅방 수:", chatRooms.length);
+
           const friendUuid = friendUuids[0];
+          console.log("[MyRouteScreen] 현재 사용자:", myUuid);
+          console.log("[MyRouteScreen] 초대 대상 친구:", friendUuid);
 
           // 1대1 채팅방 찾기 (멤버수 2, 자신과 친구)
           const oneToOneRoom = chatRooms.find((room) => {
-            if (room.memberCount !== 2) return false;
+            console.log("[MyRouteScreen] 채팅방 확인:", {
+              uuid: room.uuid,
+              name: room.name,
+              memberCount: room.memberCount,
+              members: room.members?.map((m) => ({ uuid: m.uuid, nickname: m.nickname })),
+            });
+
+            if (room.memberCount !== 2) {
+              console.log("[MyRouteScreen] → 멤버수 다름 (필요: 2, 실제: " + room.memberCount + ")");
+              return false;
+            }
+
             const members = room.members ?? [];
             const hasCurrentUser = members.some((m) => m.uuid === myUuid);
             const hasFriend = members.some((m) => m.uuid === friendUuid);
+
+            console.log("[MyRouteScreen] → 멤버 확인:", {
+              hasCurrentUser,
+              hasFriend,
+            });
+
             return hasCurrentUser && hasFriend;
           });
 
           if (oneToOneRoom) {
             existingChatRoomUuid = oneToOneRoom.uuid;
-            console.log("[MyRouteScreen] 기존 1대1 채팅방 찾음:", oneToOneRoom.uuid);
+            console.log("[MyRouteScreen] ✓ 기존 1대1 채팅방 찾음:", oneToOneRoom.uuid);
+          } else {
+            console.log("[MyRouteScreen] ✗ 1대1 채팅방을 찾지 못함 → 새로운 채팅방 생성");
           }
         } catch (err) {
-          console.warn("[MyRouteScreen] 채팅방 목록 조회 실패:", err);
+          console.error("[MyRouteScreen] 채팅방 목록 조회 실패:", err);
           // 실패해도 계속 진행 (새로운 채팅방 생성)
         }
+      } else {
+        console.log("[MyRouteScreen] 기존 chatRoomUuid가 있거나 친구 수가 1명이 아님:", {
+          existingChatRoomUuid,
+          friendCount: friendUuids.length,
+        });
       }
 
       const result = await inviteFriendsToRouteChat({
