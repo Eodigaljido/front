@@ -43,6 +43,7 @@ import {
   normalizeCourseList,
   resolveCourseDetailForRoute,
 } from "../api/courses";
+import { getChatRooms } from "../api/chat/chat";
 import {
   UserSavedRoute,
   userRouteToCourseItem,
@@ -947,17 +948,60 @@ export default function MyRouteScreen({
 
     setInviteSubmitting(true);
     try {
+      console.log("[MyRouteScreen] 초대 대상 루트:", {
+        id: inviteTargetRoute.id,
+        title: inviteTargetRoute.title,
+        friendUuids,
+      });
       const ur = userSavedRoutes.find((r) =>
         sameCourseId(r.id, inviteTargetRoute.id)
       );
-      await inviteFriendsToRouteChat({
+
+      // 기존 채팅방 UUID 찾기
+      let existingChatRoomUuid = ur?.chatRoomUuid;
+
+      // 1대1 채팅방이 없으면 채팅방 목록에서 1대1 채팅방 찾기
+      if (!existingChatRoomUuid && friendUuids.length === 1) {
+        try {
+          const chatRooms = await getChatRooms(accessToken);
+          const friendUuid = friendUuids[0];
+
+          // 1대1 채팅방 찾기 (멤버수 2, 자신과 친구)
+          const oneToOneRoom = chatRooms.find((room) => {
+            if (room.memberCount !== 2) return false;
+            const members = room.members ?? [];
+            const hasCurrentUser = members.some((m) => m.uuid === myUuid);
+            const hasFriend = members.some((m) => m.uuid === friendUuid);
+            return hasCurrentUser && hasFriend;
+          });
+
+          if (oneToOneRoom) {
+            existingChatRoomUuid = oneToOneRoom.uuid;
+            console.log("[MyRouteScreen] 기존 1대1 채팅방 찾음:", oneToOneRoom.uuid);
+          }
+        } catch (err) {
+          console.warn("[MyRouteScreen] 채팅방 목록 조회 실패:", err);
+          // 실패해도 계속 진행 (새로운 채팅방 생성)
+        }
+      }
+
+      const result = await inviteFriendsToRouteChat({
         accessToken,
         myUuid,
         routeId: inviteTargetRoute.id,
         routeTitle: inviteTargetRoute.title,
         friendUuids,
-        existingChatRoomUuid: ur?.chatRoomUuid,
+        existingChatRoomUuid,
       });
+
+      // 생성된 채팅방 uuid 로컬에 저장 (다음 초대 시 기존 방 재사용)
+      if (result.chatRoomUuid && ur) {
+        upsertUserRoute({
+          ...ur,
+          chatRoomUuid: result.chatRoomUuid,
+        });
+      }
+
       Alert.alert("완료", `${friendUuids.length}명에게 공동 루트 초대를 보냈습니다.`);
       setCollaborativeInviteModalOpen(false);
       setInviteTargetRoute(null);
@@ -1161,6 +1205,7 @@ export default function MyRouteScreen({
           accessToken={useAuthStore((s) => s.accessToken)}
           onConfirm={handleCollaborativeInvite}
           submitting={inviteSubmitting}
+          routeName={inviteTargetRoute.title}
         />
       )}
 
