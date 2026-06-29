@@ -200,27 +200,8 @@ export default function AccountSettingsScreen(): React.JSX.Element {
         contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 24, paddingBottom: 40 }}
         keyboardShouldPersistTaps="handled"
       >
-        {/* 로그아웃 */}
-        <Text className="mb-2 ml-1 text-xs font-semibold tracking-wide text-gray-400 uppercase">
-          계정
-        </Text>
-        <View style={SECTION_STYLE} className="px-4 py-1">
-          <Pressable
-            onPress={handleLogout}
-            className="flex-row items-center justify-between py-4 active:opacity-70"
-          >
-            <View className="flex-row items-center gap-3">
-              <View className="items-center justify-center w-8 h-8 rounded-full bg-red-50">
-                <Ionicons name="log-out-outline" size={18} color="#ef4444" />
-              </View>
-              <Text className="text-[15px] font-semibold text-red-500">로그아웃</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color="#d1d5db" />
-          </Pressable>
-        </View>
-
         {/* 소셜 계정 연동 */}
-        <Text className="mt-8 mb-2 ml-1 text-xs font-semibold tracking-wide text-gray-400 uppercase">
+        <Text className="mb-2 ml-1 text-xs font-semibold tracking-wide text-gray-400 uppercase">
           소셜 계정 연동
         </Text>
         <View style={SECTION_STYLE} className="px-4 py-1">
@@ -304,6 +285,25 @@ export default function AccountSettingsScreen(): React.JSX.Element {
               </Pressable>
             )}
           </View>
+        </View>
+
+        {/* 로그아웃 */}
+        <Text className="mt-8 mb-2 ml-1 text-xs font-semibold tracking-wide text-gray-400 uppercase">
+          계정
+        </Text>
+        <View style={SECTION_STYLE} className="px-4 py-1">
+          <Pressable
+            onPress={handleLogout}
+            className="flex-row items-center justify-between py-4 active:opacity-70"
+          >
+            <View className="flex-row items-center gap-3">
+              <View className="items-center justify-center w-8 h-8 rounded-full bg-red-50">
+                <Ionicons name="log-out-outline" size={18} color="#ef4444" />
+              </View>
+              <Text className="text-[15px] font-semibold text-red-500">로그아웃</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color="#d1d5db" />
+          </Pressable>
         </View>
 
         {/* 회원 탈퇴 */}

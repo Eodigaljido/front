@@ -512,7 +512,12 @@ const s = StyleSheet.create({
     paddingVertical: 13,
     borderWidth: 1,
     borderColor: "#EEF2FF",
-    ...cardShadow,
+    // Android elevation은 탭 페이저 진입 초기 프레임에 검은 테두리 깜빡임을
+    // 유발한다. elevation 대신 boxShadow로 같은 그림자를 그린다(RN 0.81+).
+    ...Platform.select({
+      ios: { ...cardShadow, shadowOffset: { width: 0, height: 0 } },
+      android: { boxShadow: "0px 0px 10px rgba(30,58,138,0.12)" },
+    }),
   },
   searchInput: { flex: 1, fontSize: 14, color: "#0F172A", padding: 0 },
 
