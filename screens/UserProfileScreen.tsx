@@ -13,6 +13,7 @@ import {
   StyleSheet,
   Share,
 } from "react-native";
+import { appAlert } from "../utils/appAlert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -208,15 +209,15 @@ export default function UserProfileScreen(): React.JSX.Element {
     setMenuVisible(false);
     try {
       await instance.post("/api/friends/request", { targetUuid: uuid });
-      Alert.alert("친구 추가", "친구 요청을 보냈습니다.");
+      appAlert("친구 추가", "친구 요청을 보냈습니다.");
     } catch {
-      Alert.alert("오류", "친구 추가에 실패했습니다.");
+      appAlert("오류", "친구 추가에 실패했습니다.");
     }
   }, [uuid]);
 
   const handleBlock = useCallback(() => {
     setMenuVisible(false);
-    Alert.alert("차단", "이 사용자를 차단하시겠어요?", [
+    appAlert("차단", "이 사용자를 차단하시겠어요?", [
       { text: "취소", style: "cancel" },
       {
         text: "차단",
@@ -224,10 +225,10 @@ export default function UserProfileScreen(): React.JSX.Element {
         onPress: async () => {
           try {
             await instance.post(`/api/users/${uuid}/block`);
-            Alert.alert("완료", "사용자를 차단했습니다.");
+            appAlert("완료", "사용자를 차단했습니다.");
             safeGoBack(navigation);
           } catch {
-            Alert.alert("오류", "차단에 실패했습니다.");
+            appAlert("오류", "차단에 실패했습니다.");
           }
         },
       },
@@ -236,7 +237,7 @@ export default function UserProfileScreen(): React.JSX.Element {
 
   const handleReport = useCallback(() => {
     setMenuVisible(false);
-    Alert.alert("신고", "이 사용자를 신고하시겠어요?", [
+    appAlert("신고", "이 사용자를 신고하시겠어요?", [
       { text: "취소", style: "cancel" },
       {
         text: "신고",
@@ -244,9 +245,9 @@ export default function UserProfileScreen(): React.JSX.Element {
         onPress: async () => {
           try {
             await instance.post(`/api/users/${uuid}/report`);
-            Alert.alert("완료", "신고가 접수되었습니다.");
+            appAlert("완료", "신고가 접수되었습니다.");
           } catch {
-            Alert.alert("오류", "신고에 실패했습니다.");
+            appAlert("오류", "신고에 실패했습니다.");
           }
         },
       },

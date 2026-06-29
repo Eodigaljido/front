@@ -25,6 +25,7 @@ import {
   Switch,
   AppState,
 } from "react-native";
+import { appAlert } from "../utils/appAlert";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -3070,12 +3071,12 @@ export default function RouteCreateScreen(): React.JSX.Element {
   const removeStop = (id: string) => {
     const idx = stops.findIndex((s) => s.id === id);
     if (idx <= 0 || idx >= stops.length - 1) {
-      Alert.alert("", "출발·도착은 삭제할 수 없습니다.");
+      appAlert("", "출발·도착은 삭제할 수 없습니다.");
       return;
     }
     const target = stops[idx];
     const label = target.title || "이 경유지";
-    Alert.alert("경유지 삭제", `"${label}"을(를) 목록에서 삭제할까요?`, [
+    appAlert("경유지 삭제", `"${label}"을(를) 목록에서 삭제할까요?`, [
       { text: "취소", style: "cancel" },
       {
         text: "삭제",
@@ -3137,7 +3138,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
   const pickRouteCoverImage = useCallback(async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert("", "사진 접근 권한이 필요해요.");
+      appAlert("", "사진 접근 권한이 필요해요.");
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -3850,11 +3851,11 @@ export default function RouteCreateScreen(): React.JSX.Element {
       (await ensureCollaborativeRoutePersisted()) ??
       getServerBackedRouteId();
     if (!rid) {
-      Alert.alert("", "공동 루트를 저장한 뒤 친구에게 공유할 수 있어요.");
+      appAlert("", "공동 루트를 저장한 뒤 친구에게 공유할 수 있어요.");
       return;
     }
     if (!accessToken || !authUser?.uuid) {
-      Alert.alert("", "로그인 후 친구에게 공유할 수 있어요.");
+      appAlert("", "로그인 후 친구에게 공유할 수 있어요.");
       return;
     }
     setFriendInviteSubmitting(true);

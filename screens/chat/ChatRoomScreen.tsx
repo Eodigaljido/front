@@ -12,6 +12,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
+import { appAlert } from "../../utils/appAlert";
 import {
   KeyboardAwareScrollView,
   KeyboardStickyView,
@@ -315,7 +316,7 @@ export const ChatRoomScreen = () => {
         err?.response?.data?.message ??
         err?.message ??
         "이미지를 보내지 못했습니다.";
-      Alert.alert("이미지 전송 실패", String(detail));
+      appAlert("이미지 전송 실패", String(detail));
     }
   };
 

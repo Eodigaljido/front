@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { appAlert } from '../../utils/appAlert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationProp, useNavigation } from '@react-navigation/native';
 import { RootStackParamList } from '@/App';
@@ -140,7 +141,7 @@ export default function ChatCreatingScreen(): React.JSX.Element {
     if (!accessToken) return;
     const trimedName = roomName.trim();
     if (trimedName.length === 0) {
-      Alert.alert('알림', '채팅방 이름을 입력해주세요.');
+      appAlert('알림', '채팅방 이름을 입력해주세요.');
       return;
     }
     const allKnownFriends = [...recentFriends, ...allFriends];
@@ -172,7 +173,7 @@ export default function ChatCreatingScreen(): React.JSX.Element {
 
       navigation.goBack();
     } catch {
-      Alert.alert('오류', '채팅방 생성에 실패했습니다.');
+      appAlert('오류', '채팅방 생성에 실패했습니다.');
     } finally {
       setIsCreating(false);
     }

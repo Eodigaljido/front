@@ -21,6 +21,7 @@ export async function respondToFriendRequest(requestId: number, accept: boolean)
 
 export interface Friends {
   friendId: number;
+  userId?: number;
   uuid: string;
   nickname: string;
   profileImageUrl: string;

@@ -10,6 +10,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { appAlert } from '../utils/appAlert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { safeGoBack } from '../navigation/rootNavigation';
@@ -53,7 +54,7 @@ function FindIdSection({ onLoginPress }: { onLoginPress: () => void }) {
       setOtpVisible(true);
     } catch (err: any) {
       const msg = err?.response?.data?.message ?? '인증번호 발송에 실패했습니다.';
-      Alert.alert('오류', msg);
+      appAlert('오류', msg);
     } finally {
       setIsLoading(false);
     }
@@ -223,7 +224,7 @@ function FindPasswordSection({ onLoginPress }: { onLoginPress: () => void }) {
       setOtpVisible(true);
     } catch (err: any) {
       const msg = err?.response?.data?.message ?? '인증번호 발송에 실패했습니다.';
-      Alert.alert('오류', msg);
+      appAlert('오류', msg);
     } finally {
       setIsLoading(false);
     }
@@ -256,7 +257,7 @@ function FindPasswordSection({ onLoginPress }: { onLoginPress: () => void }) {
       setDone(true);
     } catch (err: any) {
       const msg = err?.response?.data?.message ?? '비밀번호 재설정에 실패했습니다.';
-      Alert.alert('오류', msg);
+      appAlert('오류', msg);
     } finally {
       setIsLoading(false);
     }

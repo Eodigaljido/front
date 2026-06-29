@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { appAlert } from '../../utils/appAlert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   NavigationProp,
@@ -70,7 +71,7 @@ export default function MeetManageScreen(): React.JSX.Element {
   const handleSave = async () => {
     const trimmedName = name.trim();
     if (!trimmedName) {
-      Alert.alert('입력 오류', '모임 이름을 입력해주세요.');
+      appAlert('입력 오류', '모임 이름을 입력해주세요.');
       return;
     }
     setSaving(true);
@@ -81,10 +82,10 @@ export default function MeetManageScreen(): React.JSX.Element {
         type: groupType,
         requiresApproval: groupType === 'PRIVATE' ? false : requiresApproval,
       });
-      Alert.alert('완료', '모임 정보가 저장되었습니다.');
+      appAlert('완료', '모임 정보가 저장되었습니다.');
       void load();
     } catch {
-      Alert.alert('오류', '저장에 실패했습니다.');
+      appAlert('오류', '저장에 실패했습니다.');
     } finally {
       setSaving(false);
     }
@@ -95,7 +96,7 @@ export default function MeetManageScreen(): React.JSX.Element {
       await processJoinRequest(accessToken, req.requestId, 'APPROVE');
       setJoinRequests((prev) => prev.filter((r) => r.requestId !== req.requestId));
     } catch {
-      Alert.alert('오류', '승인에 실패했습니다.');
+      appAlert('오류', '승인에 실패했습니다.');
     }
   };
 
@@ -104,12 +105,12 @@ export default function MeetManageScreen(): React.JSX.Element {
       await processJoinRequest(accessToken, req.requestId, 'REJECT');
       setJoinRequests((prev) => prev.filter((r) => r.requestId !== req.requestId));
     } catch {
-      Alert.alert('오류', '거절에 실패했습니다.');
+      appAlert('오류', '거절에 실패했습니다.');
     }
   };
 
   const handleDeleteGroup = () => {
-    Alert.alert(
+    appAlert(
       '모임 삭제',
       '모임을 삭제하면 복구할 수 없습니다. 계속하시겠습니까?',
       [
@@ -122,7 +123,7 @@ export default function MeetManageScreen(): React.JSX.Element {
               await deleteGroup(accessToken, groupUuid);
               navigation.navigate({ name: 'Tabs', params: { screen: 'Meet' } });
             } catch {
-              Alert.alert('오류', '모임 삭제에 실패했습니다.');
+              appAlert('오류', '모임 삭제에 실패했습니다.');
             }
           },
         },

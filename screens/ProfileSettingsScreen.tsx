@@ -13,6 +13,7 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
+import { appAlert } from '../utils/appAlert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -109,7 +110,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
       applyProfileToForm(me);
       await refreshProfile();
     } catch (e: any) {
-      Alert.alert(
+      appAlert(
         '오류',
         e?.response?.data?.message ??
           e?.message ??
@@ -131,7 +132,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
       const { status } =
         await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert(
+        appAlert(
           '권한 필요',
           '갤러리에서 사진을 선택하려면 사진 라이브러리 접근을 허용해 주세요.',
         );
@@ -162,7 +163,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
         showToast('프로필 사진을 변경했어요');
       }
     } catch (e: any) {
-      Alert.alert(
+      appAlert(
         '오류',
         e?.response?.data?.message ??
           e?.message ??
@@ -198,7 +199,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
     if (phoneSending) return;
     const trimmed = phone.replace(/-/g, '').trim();
     if (!trimmed) {
-      Alert.alert('입력 확인', '전화번호를 입력해 주세요.');
+      appAlert('입력 확인', '전화번호를 입력해 주세요.');
       return;
     }
     setPhoneSending(true);
@@ -212,7 +213,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
       setPhoneCode('');
       startTimer(res.expiresInSeconds ?? 180);
     } catch (e: any) {
-      Alert.alert(
+      appAlert(
         '오류',
         e?.response?.data?.message ??
           e?.message ??
@@ -226,7 +227,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
   const handleVerifyPhoneCode = useCallback(async () => {
     if (phoneVerifying) return;
     if (!phoneCode.trim()) {
-      Alert.alert('입력 확인', '인증번호를 입력해 주세요.');
+      appAlert('입력 확인', '인증번호를 입력해 주세요.');
       return;
     }
     setPhoneVerifying(true);
@@ -247,7 +248,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
       setCodeTimer(0);
       showToast('전화번호가 변경되었습니다.');
     } catch (e: any) {
-      Alert.alert(
+      appAlert(
         '오류',
         e?.response?.data?.message ??
           e?.message ??
@@ -261,7 +262,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
   const handleSave = useCallback(async () => {
     if (saving) return;
     if (!nickname.trim()) {
-      Alert.alert('입력 확인', '닉네임을 입력해 주세요.');
+      appAlert('입력 확인', '닉네임을 입력해 주세요.');
       return;
     }
     setSaving(true);
@@ -275,7 +276,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
       const phoneTrimmed = phone.replace(/-/g, '').trim();
       const originalPhoneTrimmed = originalPhone.replace(/-/g, '').trim();
       if (phoneTrimmed && phoneTrimmed !== originalPhoneTrimmed) {
-        Alert.alert(
+        appAlert(
           '인증 필요',
           '변경된 전화번호는 인증 후 저장할 수 있습니다.',
         );
@@ -305,7 +306,7 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
       await refreshProfile();
       showToast('기본 프로필 이미지로 변경했어요');
     } catch (e: any) {
-      Alert.alert(
+      appAlert(
         '오류',
         e?.response?.data?.message ??
           e?.message ??

@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { appAlert } from '../../utils/appAlert';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -68,7 +69,7 @@ export default function FriendCodeModal({
       await onAddFriendByCode(inputCode);
       setInputCode('');
       setInputError('');
-      Alert.alert('친구 추가 완료', `${inputCode} 코드로 친구를 추가했습니다.`);
+      appAlert('친구 추가 완료', `${inputCode} 코드로 친구를 추가했습니다.`);
     } catch (e: any) {
       const msg =
         e?.response?.data?.message ?? e?.message ?? '친구 추가에 실패했습니다.';
@@ -138,7 +139,7 @@ export default function FriendCodeModal({
                   <Pressable
                     onPress={async () => {
                       await Clipboard.setStringAsync(friendCode ?? '');
-                      Alert.alert(
+                      appAlert(
                         '복사 완료',
                         '친구 코드가 클립보드에 복사되었습니다.',
                       );
