@@ -48,6 +48,7 @@ import {
   pickCourseSaveCount,
   sortCoursesBySaveCount,
   saveSharedCourse,
+  unsaveSharedCourse,
   submitSharedCourseReview,
 } from "../api/courses";
 import { displayCourseRegionChip } from "../utils/inferCourseRegionLabel";
@@ -288,6 +289,8 @@ export default function SharedRouteScreen({
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewBody, setReviewBody] = useState("");
   const [savingMyRoute, setSavingMyRoute] = useState(false);
+  const [favoritedCourseIds, setFavoritedCourseIds] = useState<Set<string>>(new Set());
+  const [togglingFavorite, setTogglingFavorite] = useState(false);
   const [detailModalMounted, setDetailModalMounted] = useState(false);
   const detailBackdropOpacity = useRef(new Animated.Value(0)).current;
   const detailSheetTranslateY = useRef(new Animated.Value(500)).current;
@@ -568,6 +571,41 @@ export default function SharedRouteScreen({
   const handleSortToggle = (opt: string) => {
     setSelectedSort((prev) => (prev === opt ? null : opt));
   };
+
+  const handleToggleFavorite = useCallback(
+    async (courseId: string) => {
+      setTogglingFavorite(true);
+      try {
+        const isFavorited = favoritedCourseIds.has(courseId);
+        if (isFavorited) {
+          const success = await unsaveSharedCourse(courseId);
+          if (success) {
+            setFavoritedCourseIds((prev) => {
+              const next = new Set(prev);
+              next.delete(courseId);
+              return next;
+            });
+            showToast('즐겨찾기를 취소했어요');
+          } else {
+            showToast('즐겨찾기 취소에 실패했어요');
+          }
+        } else {
+          const result = await saveSharedCourse(courseId);
+          if (result.ok) {
+            setFavoritedCourseIds((prev) => new Set(prev).add(courseId));
+            showToast('즐겨찾기에 추가했어요');
+          } else if (result.reason === "NOT_ON_SERVER") {
+            showToast('코스를 찾을 수 없어요');
+          } else {
+            showToast('즐겨찾기 추가에 실패했어요');
+          }
+        }
+      } finally {
+        setTogglingFavorite(false);
+      }
+    },
+    [favoritedCourseIds, showToast],
+  );
 
   const ScreenRoot = embedded ? View : SafeAreaView;
   const screenRootProps = embedded
@@ -940,6 +978,43 @@ export default function SharedRouteScreen({
                               코스 상세
                             </Text>
                             <View className="flex-row items-center gap-2">
+                            <Pressable
+                              disabled={togglingFavorite}
+                              onPress={() => void handleToggleFavorite(course.id)}
+                              className="flex-row items-center px-3 py-2 bg-white border rounded-lg active:opacity-90"
+                              style={{
+                                borderColor: favoritedCourseIds.has(course.id)
+                                  ? "#ef4444"
+                                  : "#d1d5db",
+                                opacity: togglingFavorite ? 0.6 : 1,
+                              }}
+                            >
+                              <Ionicons
+                                name={
+                                  favoritedCourseIds.has(course.id)
+                                    ? "heart"
+                                    : "heart-outline"
+                                }
+                                size={18}
+                                color={
+                                  favoritedCourseIds.has(course.id)
+                                    ? "#ef4444"
+                                    : "#6b7280"
+                                }
+                              />
+                              <Text
+                                className="ml-1 text-xs font-semibold"
+                                style={{
+                                  color: favoritedCourseIds.has(course.id)
+                                    ? "#ef4444"
+                                    : "#4b5563",
+                                }}
+                              >
+                                {favoritedCourseIds.has(course.id)
+                                  ? "즐겨찾기됨"
+                                  : "즐겨찾기"}
+                              </Text>
+                            </Pressable>
                             <Pressable
                               onPress={() =>
                                 void sharePublicCourse({

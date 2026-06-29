@@ -7,19 +7,15 @@ import {
   Image,
   FlatList,
   ActivityIndicator,
-  Alert,
-  Modal,
-  TouchableOpacity,
   StyleSheet,
-  Share,
 } from "react-native";
+import { appAlert } from "../utils/appAlert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { safeGoBack } from "../navigation/rootNavigation";
 import { getUserProfileByUuid, type UserProfile } from "../api/users";
-import { fetchMySharedCourses } from "../api/courses";
-import { instance } from "../api/axios";
+import { fetchPublicCourses, fetchSavedCourses } from "../api/courses";
 import type { CourseItem } from "../data/mockData";
 import ProfileAvatar from "../components/ProfileAvatar";
 
@@ -88,7 +84,6 @@ export default function UserProfileScreen(): React.JSX.Element {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"routes" | "favorites">("routes");
-  const [menuVisible, setMenuVisible] = useState(false);
 
   const [routes, setRoutes] = useState<CourseItem[]>([]);
   const [routesLoading, setRoutesLoading] = useState(false);
@@ -117,7 +112,13 @@ export default function UserProfileScreen(): React.JSX.Element {
       routesBusyRef.current = true;
       setRoutesLoading(true);
       try {
-        const data = await fetchMySharedCourses();
+        const nickname = profile?.nickname ? String(profile.nickname).trim() : undefined;
+        const data = await fetchPublicCourses({
+          nickname,
+          sort: "date",
+          page,
+          size: PAGE_SIZE,
+        });
 
         setRoutes((prev) => (reset ? data : [...prev, ...data]));
         setRoutesHasMore(data.length >= PAGE_SIZE);
@@ -129,7 +130,7 @@ export default function UserProfileScreen(): React.JSX.Element {
         setRoutesLoading(false);
       }
     },
-    [uuid],
+    [uuid, profile?.nickname],
   );
 
   const loadFavorites = useCallback(
@@ -138,37 +139,14 @@ export default function UserProfileScreen(): React.JSX.Element {
       favoritesBusyRef.current = true;
       setFavoritesLoading(true);
       try {
-        const res = await instance.get("/api/courses/saved", {
-          params: { userUuid: uuid, sort: "latest", page, size: PAGE_SIZE },
+        const data = await fetchSavedCourses({
+          userUuid: uuid,
+          sort: "latest",
+          page,
+          size: PAGE_SIZE,
         });
-        const arr: any[] = Array.isArray(res.data?.items)
-          ? res.data.items
-          : Array.isArray(res.data)
-            ? res.data
-            : [];
-        const items: CourseItem[] = arr.map((c, i) => ({
-          id: String(c.id ?? c.uuid ?? `fav-${page}-${i}`),
-          title: c.title ?? "코스",
-          meta: c.meta ?? c.description ?? "",
-          departure: c.departure ?? "출발지",
-          arrival: c.arrival ?? "도착지",
-          thumbnail: c.thumbnail ?? c.imageUrl ?? null,
-          category: c.category ?? "기타",
-          region: c.region ?? "",
-          createdAt: c.createdAt ?? "",
-          views: Number(c.views ?? 0),
-          saveCount: Number(c.saveCount ?? 0),
-          overallDurationMinutes: Number(c.overallDurationMinutes ?? 120),
-          rating: Number(c.rating ?? 4.5),
-          reviewCount: Number(c.reviewCount ?? 0),
-          routeSteps: c.routeSteps ?? [
-            { id: "fb", name: "경유지", stayMinutes: 30 },
-          ],
-          routeLegs: c.routeLegs ?? [],
-          reviews: c.reviews ?? [],
-        }));
-        setFavorites((prev) => (reset ? items : [...prev, ...items]));
-        setFavoritesHasMore(items.length >= PAGE_SIZE);
+        setFavorites((prev) => (reset ? data : [...prev, ...data]));
+        setFavoritesHasMore(data.length >= PAGE_SIZE);
         setFavoritesPage(page);
       } catch {
         setFavoritesHasMore(false);
@@ -181,8 +159,10 @@ export default function UserProfileScreen(): React.JSX.Element {
   );
 
   useEffect(() => {
-    if (uuid) loadRoutes(0, true);
-  }, [uuid, loadRoutes]);
+    if (uuid && profile?.nickname) {
+      loadRoutes(0, true);
+    }
+  }, [uuid, profile?.nickname, loadRoutes]);
 
   const handleTabChange = useCallback(
     (tab: "routes" | "favorites") => {
@@ -204,62 +184,6 @@ export default function UserProfileScreen(): React.JSX.Element {
       loadFavorites(favoritesPage + 1);
   }, [favoritesHasMore, favoritesPage, loadFavorites]);
 
-  const handleAddFriend = useCallback(async () => {
-    setMenuVisible(false);
-    try {
-      await instance.post("/api/friends/request", { targetUuid: uuid });
-      Alert.alert("친구 추가", "친구 요청을 보냈습니다.");
-    } catch {
-      Alert.alert("오류", "친구 추가에 실패했습니다.");
-    }
-  }, [uuid]);
-
-  const handleBlock = useCallback(() => {
-    setMenuVisible(false);
-    Alert.alert("차단", "이 사용자를 차단하시겠어요?", [
-      { text: "취소", style: "cancel" },
-      {
-        text: "차단",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await instance.post(`/api/users/${uuid}/block`);
-            Alert.alert("완료", "사용자를 차단했습니다.");
-            safeGoBack(navigation);
-          } catch {
-            Alert.alert("오류", "차단에 실패했습니다.");
-          }
-        },
-      },
-    ]);
-  }, [uuid, navigation]);
-
-  const handleReport = useCallback(() => {
-    setMenuVisible(false);
-    Alert.alert("신고", "이 사용자를 신고하시겠어요?", [
-      { text: "취소", style: "cancel" },
-      {
-        text: "신고",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await instance.post(`/api/users/${uuid}/report`);
-            Alert.alert("완료", "신고가 접수되었습니다.");
-          } catch {
-            Alert.alert("오류", "신고에 실패했습니다.");
-          }
-        },
-      },
-    ]);
-  }, [uuid]);
-
-  const handleCopyUrl = useCallback(async () => {
-    setMenuVisible(false);
-    const url = `eodigaljido://profile/${uuid}`;
-    try {
-      await Share.share({ message: url, url });
-    } catch {}
-  }, [uuid]);
 
   const emailPrefix = extractEmailPrefix(profile?.email ?? paramEmail);
 
@@ -285,7 +209,11 @@ export default function UserProfileScreen(): React.JSX.Element {
           />
         ) : (
           <View style={styles.profileRow}>
-            <ProfileAvatar uri={profile?.profileImageUrl} size={72} style={styles.avatar} />
+            <ProfileAvatar
+              uri={profile?.profileImageUrl}
+              size={72}
+              style={styles.avatar}
+            />
             <View style={styles.profileInfo}>
               <Text style={styles.nickname}>
                 {profile?.nickname ?? "사용자"}
@@ -335,7 +263,6 @@ export default function UserProfileScreen(): React.JSX.Element {
             size={24}
             color={activeTab === "favorites" ? "#fff" : "#374151"}
           />
-          {activeTab === "favorites" && <View style={styles.tabIndicator} />}
         </Pressable>
       </View>
     </>
@@ -355,13 +282,7 @@ export default function UserProfileScreen(): React.JSX.Element {
         <Text style={styles.headerTitle} numberOfLines={1}>
           {emailPrefix || "프로필"}
         </Text>
-        <Pressable
-          onPress={() => setMenuVisible(true)}
-          hitSlop={8}
-          style={styles.headerBtn}
-        >
-          <Ionicons name="ellipsis-vertical" size={22} color="#111827" />
-        </Pressable>
+        <View style={styles.headerBtn} />
       </View>
 
       {/* Content FlatList (key resets scroll on tab change) */}
@@ -399,44 +320,6 @@ export default function UserProfileScreen(): React.JSX.Element {
         contentContainerStyle={{ paddingBottom: 40 }}
       />
 
-      {/* Three-dot action modal */}
-      <Modal
-        visible={menuVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setMenuVisible(false)}
-      >
-        <Pressable
-          style={styles.modalOverlay}
-          onPress={() => setMenuVisible(false)}
-        >
-          <View style={styles.menuSheet}>
-            <TouchableOpacity style={styles.menuItem} onPress={handleAddFriend}>
-              <Ionicons name="person-add-outline" size={20} color="#111827" />
-              <Text style={styles.menuItemText}>친구 추가</Text>
-            </TouchableOpacity>
-            <View style={styles.menuDivider} />
-            <TouchableOpacity style={styles.menuItem} onPress={handleBlock}>
-              <Ionicons name="ban-outline" size={20} color="#EF4444" />
-              <Text style={[styles.menuItemText, { color: "#EF4444" }]}>
-                차단
-              </Text>
-            </TouchableOpacity>
-            <View style={styles.menuDivider} />
-            <TouchableOpacity style={styles.menuItem} onPress={handleReport}>
-              <Ionicons name="flag-outline" size={20} color="#EF4444" />
-              <Text style={[styles.menuItemText, { color: "#EF4444" }]}>
-                신고
-              </Text>
-            </TouchableOpacity>
-            <View style={styles.menuDivider} />
-            <TouchableOpacity style={styles.menuItem} onPress={handleCopyUrl}>
-              <Ionicons name="link-outline" size={20} color="#111827" />
-              <Text style={styles.menuItemText}>프로필 URL 복사</Text>
-            </TouchableOpacity>
-          </View>
-        </Pressable>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -615,39 +498,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#9CA3AF",
     marginTop: 12,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
-    justifyContent: "flex-end",
-    alignItems: "center",
-    paddingBottom: 40,
-  },
-  menuSheet: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    width: "88%",
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 12,
-  },
-  menuItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    gap: 12,
-  },
-  menuItemText: {
-    fontSize: 16,
-    color: "#111827",
-  },
-  menuDivider: {
-    height: 1,
-    backgroundColor: "#F3F4F6",
-    marginHorizontal: 16,
   },
 });

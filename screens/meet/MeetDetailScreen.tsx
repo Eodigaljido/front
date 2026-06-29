@@ -17,6 +17,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { appAlert } from "../../utils/appAlert";
 import * as Clipboard from "expo-clipboard";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
@@ -199,14 +200,14 @@ export default function MeetDetailScreen(): React.JSX.Element {
     try {
       const res = await joinGroup(accessToken, groupUuid);
       if (res.status === "JOINED") {
-        Alert.alert("완료", "모임에 가입되었습니다.");
+        appAlert("완료", "모임에 가입되었습니다.");
       } else {
-        Alert.alert("신청 완료", "방장 승인 후 가입됩니다.");
+        appAlert("신청 완료", "방장 승인 후 가입됩니다.");
       }
       void loadGroup();
     } catch (err: any) {
       const msg = err?.response?.data?.message ?? "가입에 실패했습니다.";
-      Alert.alert("오류", msg);
+      appAlert("오류", msg);
     }
   };
 
@@ -219,7 +220,7 @@ export default function MeetDetailScreen(): React.JSX.Element {
       navigation.goBack();
     } catch (err: any) {
       setLeaveModalVisible(false);
-      Alert.alert("오류", err?.response?.data?.message ?? "탈퇴에 실패했습니다.");
+      appAlert("오류", err?.response?.data?.message ?? "탈퇴에 실패했습니다.");
     } finally {
       setLeaving(false);
     }
@@ -258,7 +259,7 @@ export default function MeetDetailScreen(): React.JSX.Element {
       setCreateRoomModalVisible(false);
       void loadChatRooms();
     } catch (err: unknown) {
-      Alert.alert(
+      appAlert(
         (err as { response?: { data?: { message?: string } } })?.response?.data
           ?.message ?? "채팅방 생성에 실패했습니다.",
       );
@@ -270,12 +271,12 @@ export default function MeetDetailScreen(): React.JSX.Element {
   const pickPostImages = async () => {
     const remaining = 10 - postImages.length;
     if (remaining <= 0) {
-      Alert.alert("", "이미지는 최대 10장까지 첨부할 수 있어요.");
+      appAlert("", "이미지는 최대 10장까지 첨부할 수 있어요.");
       return;
     }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert("", "사진 접근 권한이 필요해요.");
+      appAlert("", "사진 접근 권한이 필요해요.");
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -333,7 +334,7 @@ export default function MeetDetailScreen(): React.JSX.Element {
       setWritePostModalVisible(false);
       void loadFeed();
     } catch {
-      Alert.alert("오류", "게시물 작성에 실패했습니다.");
+      appAlert("오류", "게시물 작성에 실패했습니다.");
     } finally {
       setSubmittingPost(false);
     }
@@ -350,7 +351,7 @@ export default function MeetDetailScreen(): React.JSX.Element {
       setEditingPost(null);
       void loadFeed();
     } catch {
-      Alert.alert("오류", "게시물 수정에 실패했습니다.");
+      appAlert("오류", "게시물 수정에 실패했습니다.");
     } finally {
       setSubmittingEdit(false);
     }
@@ -369,7 +370,7 @@ export default function MeetDetailScreen(): React.JSX.Element {
       void loadFeed();
     } catch {
       setPostToDelete(null);
-      Alert.alert("오류", "게시물 삭제에 실패했습니다.");
+      appAlert("오류", "게시물 삭제에 실패했습니다.");
     } finally {
       setDeletingPost(false);
     }

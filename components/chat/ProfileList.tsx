@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import React from 'react';
 import { UserPlus } from 'lucide-react-native';
 import { rootNavigate } from '@/navigation/rootNavigation';
+import { useFocusEffect } from '@react-navigation/native';
 
 export interface FriendListItem {
   friendId: number;
@@ -20,7 +21,7 @@ export const ProfileList = ({ size = 60 }: { size?: number }) => {
 
   const accessToken = useAuthStore(s => s.accessToken);
 
-  useEffect(() => {
+  const loadFriends = React.useCallback(() => {
     if (!accessToken) return;
     setIsLoading(true);
     getFriends(accessToken)
@@ -31,6 +32,16 @@ export const ProfileList = ({ size = 60 }: { size?: number }) => {
       })
       .finally(() => setIsLoading(false));
   }, [accessToken]);
+
+  useEffect(() => {
+    loadFriends();
+  }, [loadFriends]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      loadFriends();
+    }, [loadFriends])
+  );
 
   if (isLoading) {
     return (

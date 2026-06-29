@@ -12,6 +12,7 @@ import {
   StyleSheet,
   Platform,
 } from "react-native";
+import { appAlert } from "../../utils/appAlert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   NavigationProp,
@@ -161,7 +162,7 @@ export default function ChatRoomInfoScreen() {
       return;
     }
     if (!accessToken) {
-      Alert.alert("오류", "인증 정보가 없습니다.");
+      appAlert("오류", "인증 정보가 없습니다.");
       return;
     }
     try {
@@ -171,7 +172,7 @@ export default function ChatRoomInfoScreen() {
       navigation.navigate("ChatRoomScreen", { roomUuid, roomName: trimmed });
     } catch (err) {
       console.error("채팅방 이름 변경 실패:", err);
-      Alert.alert("오류", "채팅방 이름 변경에 실패했습니다.");
+      appAlert("오류", "채팅방 이름 변경에 실패했습니다.");
     }
   };
 
@@ -206,7 +207,7 @@ export default function ChatRoomInfoScreen() {
       }
       setImageModalVisible(false);
     } catch (err) {
-      Alert.alert("오류", "프로필 이미지 변경에 실패했습니다.");
+      appAlert("오류", "프로필 이미지 변경에 실패했습니다.");
       console.error("프로필 이미지 변경 실패", err);
     } finally {
       setIsSavingImage(false);
@@ -214,7 +215,7 @@ export default function ChatRoomInfoScreen() {
   };
 
   const handleKickMember = (member: Member) => {
-    Alert.alert(
+    appAlert(
       "멤버 강퇴",
       `${member.nickname}님을 채팅방에서 강퇴하시겠습니까?`,
       [
@@ -222,20 +223,8 @@ export default function ChatRoomInfoScreen() {
         {
           text: "강퇴",
           style: "destructive",
-          onPress: async () => {
-            if (!accessToken) {
-              Alert.alert("오류", "인증 정보가 없습니다.");
-              return;
-            }
-            try {
-              await kickChatMember(accessToken, roomUuid, member.uuid);
-              setMembers((prev) => prev.filter((m) => m.uuid !== member.uuid));
-            } catch (err: any) {
-              const errorMessage = err?.response?.data?.message || err?.message || "멤버 강퇴에 실패했습니다.";
-              Alert.alert("오류", errorMessage);
-              console.error("멤버 강퇴 실패:", err);
-            }
-          },
+          onPress: () =>
+            setMembers((prev) => prev.filter((m) => m.uuid !== member.uuid)),
         },
       ],
     );
@@ -271,14 +260,19 @@ export default function ChatRoomInfoScreen() {
           try {
             // 현재 멤버 + 새 멤버로 새로운 채팅방 생성
             const currentMembers = members.map((m) => m.uuid);
-            const allNewMembers = [...new Set([...currentMembers, ...newMemberUuids])];
+            const allNewMembers = [
+              ...new Set([...currentMembers, ...newMemberUuids]),
+            ];
 
             // 새 채팅방 이름: "A, B, C" 형식
-            const groupName = members
-              .map((m) => m.nickname)
-              .join(", ");
+            const groupName = members.map((m) => m.nickname).join(", ");
 
-            const newRoom = await createChatRoom(accessToken, allNewMembers, groupName, null);
+            const newRoom = await createChatRoom(
+              accessToken,
+              allNewMembers,
+              groupName,
+              null,
+            );
             successCount = newMemberUuids.length;
 
             // 새로운 채팅방으로 이동
@@ -290,7 +284,10 @@ export default function ChatRoomInfoScreen() {
               memberCount: newRoom.memberCount,
             });
           } catch (err: any) {
-            const errMsg = err?.response?.data?.message || err?.message || "새 채팅방 생성 실패";
+            const errMsg =
+              err?.response?.data?.message ||
+              err?.message ||
+              "새 채팅방 생성 실패";
             console.error("새 채팅방 생성 실패:", err);
             Alert.alert("오류", errMsg);
           }
@@ -304,7 +301,8 @@ export default function ChatRoomInfoScreen() {
             await inviteChatMember(accessToken, roomUuid, friend.uuid);
             successCount++;
           } catch (err: any) {
-            const errMsg = err?.response?.data?.message || err?.message || String(err);
+            const errMsg =
+              err?.response?.data?.message || err?.message || String(err);
             console.error(`초대 실패 (${friend.name}):`, errMsg);
             failedFriends.push(friend.name);
           }
@@ -320,7 +318,10 @@ export default function ChatRoomInfoScreen() {
             `${successCount}명 초대 성공${failedFriends.length > 0 ? `\n\n초대 실패: ${failedFriends.join(", ")}` : ""}`,
           );
         } else if (successCount > 0) {
-          Alert.alert("초대 완료", `${successCount}명을 채팅방으로 초대했습니다.`);
+          Alert.alert(
+            "초대 완료",
+            `${successCount}명을 채팅방으로 초대했습니다.`,
+          );
         }
       }
     } finally {
@@ -329,7 +330,7 @@ export default function ChatRoomInfoScreen() {
   };
 
   const handleLeaveRoom = async () => {
-    Alert.alert("채팅방 나가기", "채팅방에서 나가시겠습니까?", [
+    appAlert("채팅방 나가기", "채팅방에서 나가시겠습니까?", [
       { text: "취소", style: "cancel" },
       {
         text: "나가기",
@@ -337,14 +338,14 @@ export default function ChatRoomInfoScreen() {
         onPress: async () => {
           try {
             if (!accessToken) {
-              Alert.alert("오류", "인증 정보가 없습니다.");
+              appAlert("오류", "인증 정보가 없습니다.");
               return;
             }
             await leaveChatRoom(accessToken, roomUuid);
             navigation.reset({ index: 0, routes: [{ name: "Tabs" }] });
           } catch (err) {
             console.error("채팅방 나가기 실패:", err);
-            Alert.alert("오류", "채팅방 나가기에 실패했습니다.");
+            appAlert("오류", "채팅방 나가기에 실패했습니다.");
           }
         },
       },
@@ -352,7 +353,7 @@ export default function ChatRoomInfoScreen() {
   };
 
   const handleDeleteRoom = async () => {
-    Alert.alert("채팅방 삭제", "채팅방을 삭제하면 복구할 수 없습니다.", [
+    appAlert("채팅방 삭제", "채팅방을 삭제하면 복구할 수 없습니다.", [
       { text: "취소", style: "cancel" },
       {
         text: "삭제",
@@ -360,14 +361,14 @@ export default function ChatRoomInfoScreen() {
         onPress: async () => {
           try {
             if (!accessToken) {
-              Alert.alert("오류", "인증 정보가 없습니다.");
+              appAlert("오류", "인증 정보가 없습니다.");
               return;
             }
             await deleteChatRoom(accessToken, roomUuid);
             navigation.reset({ index: 0, routes: [{ name: "Tabs" }] });
           } catch (err) {
             console.error("채팅방 삭제 실패:", err);
-            Alert.alert("오류", "채팅방 삭제에 실패했습니다.");
+            appAlert("오류", "채팅방 삭제에 실패했습니다.");
           }
         },
       },

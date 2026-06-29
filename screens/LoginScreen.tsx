@@ -13,6 +13,7 @@ import {
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
@@ -49,7 +50,8 @@ export default function LoginScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleOAuthPending, setIsGoogleOAuthPending] = useState(false);
   const [oauthModal, setOauthModal] = useState<'kakao' | 'google' | null>(null);
-  const { displayPassword, realPasswordRef, handleInput, maskAll } = usePasswordMask();
+  const { displayPassword, realPasswordRef, handleInput, maskAll, revealed, toggleReveal } =
+    usePasswordMask();
   const loginStore = useAuthStore(s => s.login);
   const setTokens = useAuthStore(s => s.setTokens);
   const setUser = useAuthStore(s => s.setUser);
@@ -230,18 +232,38 @@ export default function LoginScreen() {
                 className="w-full h-auto px-5 py-4 bg-gray-100 rounded-full"
                 style={authInputStyle()}
               />
-              <TextInput
-                {...authTextInputColorProps}
-                ref={passwordRef}
-                value={displayPassword}
-                onChangeText={handleInput}
-                onBlur={maskAll}
-                placeholder="비밀번호 입력"
-                returnKeyType="done"
-                onSubmitEditing={handleLogin}
-                className="w-full h-auto px-5 py-4 bg-gray-100 rounded-full"
-                style={authInputStyle()}
-              />
+              <View className="justify-center w-full">
+                <TextInput
+                  {...authTextInputColorProps}
+                  ref={passwordRef}
+                  value={displayPassword}
+                  onChangeText={handleInput}
+                  onBlur={maskAll}
+                  placeholder="비밀번호 입력"
+                  returnKeyType="done"
+                  onSubmitEditing={handleLogin}
+                  className="w-full h-auto px-5 py-4 pr-14 bg-gray-100 rounded-full"
+                  style={authInputStyle()}
+                />
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={toggleReveal}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  style={{
+                    position: 'absolute',
+                    right: 20,
+                    top: 0,
+                    bottom: 0,
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Ionicons
+                    name={revealed ? 'eye-off-outline' : 'eye-outline'}
+                    size={22}
+                    color="#9ca3af"
+                  />
+                </TouchableOpacity>
+              </View>
             </View>
 
             {/* 로그인 에러 */}

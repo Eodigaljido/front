@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,9 +7,11 @@ import {
   Modal,
   Pressable,
   StyleSheet,
-  Alert,
   ActivityIndicator,
+  Animated,
+  Dimensions,
 } from 'react-native';
+import { appAlert } from '../utils/appAlert';
 
 const OTP_LENGTH = 6;
 
@@ -36,6 +38,43 @@ export function OtpModal({
   const inputRefs = useRef<(TextInput | null)[]>([]);
   const secondsRef = useRef(initialSeconds);
   const isFirstOpen = useRef(true);
+
+  // FilterBottomSheet 와 동일한 진입/퇴장 애니메이션 (배경 페이드 + 시트 슬라이드)
+  const windowH = Dimensions.get('window').height;
+  const sheetOffY = useMemo(() => Math.min(420, windowH * 0.5), [windowH]);
+  const backdropOpacity = useRef(new Animated.Value(0)).current;
+  const sheetTranslateY = useRef(new Animated.Value(sheetOffY)).current;
+  const [renderModal, setRenderModal] = useState(false);
+
+  useEffect(() => {
+    if (visible) setRenderModal(true);
+  }, [visible]);
+
+  useEffect(() => {
+    if (!renderModal) return;
+    if (visible) {
+      sheetTranslateY.setValue(sheetOffY);
+      backdropOpacity.setValue(0);
+      const id = requestAnimationFrame(() => {
+        Animated.parallel([
+          Animated.timing(backdropOpacity, { toValue: 1, duration: 220, useNativeDriver: true }),
+          Animated.spring(sheetTranslateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            friction: 100,
+            tension: 68,
+          }),
+        ]).start();
+      });
+      return () => cancelAnimationFrame(id);
+    }
+    Animated.parallel([
+      Animated.timing(backdropOpacity, { toValue: 0, duration: 180, useNativeDriver: true }),
+      Animated.timing(sheetTranslateY, { toValue: sheetOffY, duration: 220, useNativeDriver: true }),
+    ]).start(({ finished }) => {
+      if (finished) setRenderModal(false);
+    });
+  }, [visible, renderModal, sheetOffY]);
 
   useEffect(() => {
     if (!visible) return;
@@ -109,14 +148,14 @@ export function OtpModal({
       setSeconds(newSeconds);
       setTimeout(() => inputRefs.current[0]?.focus(), 100);
     } catch {
-      Alert.alert('오류', '인증번호 재발송에 실패했습니다.');
+      appAlert('오류', '인증번호 재발송에 실패했습니다.');
     }
   };
 
   const handleVerify = async () => {
     const code = otp.join('');
     if (code.length < OTP_LENGTH) {
-      Alert.alert('입력 오류', `${OTP_LENGTH}자리 인증번호를 모두 입력해주세요.`);
+      appAlert('입력 오류', `${OTP_LENGTH}자리 인증번호를 모두 입력해주세요.`);
       return;
     }
     setIsLoading(true);
@@ -125,16 +164,29 @@ export function OtpModal({
       onVerified();
     } catch (err: any) {
       const msg = err?.response?.data?.message ?? '인증번호가 올바르지 않습니다.';
-      Alert.alert('인증 실패', msg);
+      appAlert('인증 실패', msg);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={StyleSheet.absoluteFill} className="bg-black/40" onPress={onClose} />
-      <View style={styles.sheet}>
+    <Modal
+      visible={renderModal}
+      transparent
+      animationType="none"
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
+      <Animated.View
+        style={[
+          StyleSheet.absoluteFillObject,
+          { backgroundColor: 'rgba(0,0,0,0.4)', opacity: backdropOpacity },
+        ]}
+      >
+        <Pressable style={{ flex: 1 }} onPress={onClose} />
+      </Animated.View>
+      <Animated.View style={[styles.sheet, { transform: [{ translateY: sheetTranslateY }] }]}>
         <TouchableOpacity onPress={onClose} style={styles.closeBtn} activeOpacity={0.6}>
           <Text style={styles.closeIcon}>✕</Text>
         </TouchableOpacity>
@@ -178,7 +230,7 @@ export function OtpModal({
             인증번호 재발급
           </Text>
         </TouchableOpacity>
-      </View>
+      </Animated.View>
     </Modal>
   );
 }

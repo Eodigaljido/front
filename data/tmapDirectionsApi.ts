@@ -175,7 +175,7 @@ async function fetchTmapJson(
     const res = await fetch(url, {
       method: 'POST',
       headers: {
-        appKey,
+        'X-SK-Tmap-Appkey': appKey,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),

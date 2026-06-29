@@ -608,6 +608,20 @@ export async function fetchSharedCourses(
   return fetchCoursesFromCandidates(CANDIDATE_ENDPOINTS.shared, params);
 }
 
+/** Swagger: GET /api/courses/public — 공유 코스 목록 (필터/검색 포함) */
+export async function fetchPublicCourses(params?: {
+  tab?: string;
+  category?: string;
+  region?: string;
+  sort?: string;
+  q?: string;
+  nickname?: string;
+  page?: number;
+  size?: number;
+}): Promise<CourseItem[]> {
+  return fetchCoursesFromCandidates(["/api/courses/public"], params);
+}
+
 export async function fetchMyCourses(): Promise<CourseItem[]> {
   const courses = await fetchCoursesFromCandidates(CANDIDATE_ENDPOINTS.my);
   if (courses.length > 0) return courses;
@@ -662,6 +676,43 @@ export async function unsaveSharedCourse(courseId: string): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+/** Swagger: GET /api/courses/saved — 즐겨찾기한 코스 목록 조회 */
+export async function fetchSavedCourses(params?: {
+  userUuid?: string;
+  sort?: string;
+  page?: number;
+  size?: number;
+}): Promise<CourseItem[]> {
+  try {
+    const res = await instance.get("/api/courses/saved", {
+      params: {
+        sort: "latest",
+        page: 0,
+        size: 20,
+        ...params,
+      },
+    });
+    const arr = pickArrayPayload(res.data);
+    return normalizeCourseList(
+      arr
+        .filter((item) => item != null && typeof item === "object")
+        .map((item, idx) => {
+          try {
+            return toCourseItem(item, idx);
+          } catch (e) {
+            if (__DEV__) {
+              console.warn("[fetchSavedCourses] skip item", idx, e);
+            }
+            return null;
+          }
+        })
+        .filter((item): item is CourseItem => item != null),
+    );
+  } catch {
+    return [];
   }
 }
 

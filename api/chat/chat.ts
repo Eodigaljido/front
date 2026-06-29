@@ -21,7 +21,7 @@ export type ChatMemberSummary = {
 export interface ChatRoom {
   uuid: string;
   name: string;
-  profileImageUrl: string;
+  profileImageUrl: string | null;
   memberCount: number;
   ownerUuid: string;
   ownerUserId: string;
@@ -31,6 +31,7 @@ export interface ChatRoom {
   lastMessage: string;
   lastMessageAt: string;
   unreadCount: number;
+  roomType?: "DIRECT" | "GROUP";
 }
 
 /** Swagger: GET /chats/{roomUuid} */

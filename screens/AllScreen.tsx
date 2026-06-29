@@ -121,6 +121,14 @@ export default function AllScreen(): React.JSX.Element {
 
   const friendMenus: MenuItem[] = [
     {
+      id: "friend-list",
+      title: "친구 목록",
+      icon: "people-outline",
+      iconColor: "#16a34a",
+      iconBg: "#dcfce7",
+      onPress: () => navigation.getParent()?.navigate("FriendsList"),
+    },
+    {
       id: "friend-requests",
       title: "친구 요청",
       icon: "person-add-outline",
@@ -166,7 +174,7 @@ export default function AllScreen(): React.JSX.Element {
       setFriendCode(code);
       return code;
     } catch (e: any) {
-      Alert.alert(
+      appAlert(
         "오류",
         e?.response?.data?.message ??
           e?.message ??
@@ -195,7 +203,7 @@ export default function AllScreen(): React.JSX.Element {
   const confirmAddFriendFromLink = useCallback(
     (code: string) => {
       if (addFriendSubmitting) return;
-      Alert.alert("친구 추가", `친구 코드「${code}」로 추가할까요?`, [
+      appAlert("친구 추가", `친구 코드「${code}」로 추가할까요?`, [
         { text: "취소", style: "cancel" },
         {
           text: "추가",
@@ -203,10 +211,10 @@ export default function AllScreen(): React.JSX.Element {
             setAddFriendSubmitting(true);
             try {
               await addFriendByCode(code);
-              Alert.alert("", "친구가 추가되었습니다.");
+              appAlert("", "친구가 추가되었습니다.");
               navigation.navigate("Chat");
             } catch (e: any) {
-              Alert.alert(
+              appAlert(
                 "오류",
                 e?.response?.data?.message ??
                   e?.message ??

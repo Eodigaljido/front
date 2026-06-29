@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
 } from "react-native";
+import { appAlert } from "../../utils/appAlert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
@@ -40,7 +41,7 @@ export default function OnBoardEnd(): React.JSX.Element {
 
       resetToMainAfterAuth(navigation);
     } catch (e) {
-      Alert.alert("오류", "다시 시도");
+      appAlert("오류", "다시 시도");
     } finally {
       setLoading(false);
     }

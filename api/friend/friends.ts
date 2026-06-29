@@ -24,7 +24,7 @@ export async function respondToFriendRequest(
 
 export interface Friends {
   friendId: number;
-  userId: string;
+  userId?: number;
   uuid: string;
   nickname: string;
   profileImageUrl: string;
@@ -45,7 +45,9 @@ export async function addFriendByCode(friendCode: string): Promise<void> {
   await instance.post("/api/friends/add", { friendCode });
 }
 
-export async function getFriendsRecent(): Promise<Friends[]> {
+export async function getFriendsRecent(
+  accessToken: string,
+): Promise<Friends[]> {
   const res = await instance.get<Friends[]>("/api/friends/recent");
   return Array.isArray(res.data) ? res.data : [];
 }

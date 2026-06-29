@@ -25,6 +25,7 @@ import {
   PanResponder,
   Platform,
 } from "react-native";
+import { appAlert } from "../utils/appAlert";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -922,49 +923,45 @@ export default function MyRouteScreen({
   );
 
   const handleRemove = (item: CourseItem) => {
-    Alert.alert(
-      "저장 삭제",
-      `"${item.title}" 코스를 저장 목록에서 삭제할까요?`,
-      [
-        { text: "취소", style: "cancel" },
-        {
-          text: "삭제",
-          style: "destructive",
-          onPress: async () => {
-            const prevApi = apiMyCourses;
-            const prevEnriched = enrichedMyCourses;
-            const prevSnapshot = viewingCourseSnapshot;
-            const prevDetail = myDetailCourseApi;
-            const prevViewingId = viewingCourseId;
-            try {
-              // 삭제 버튼 즉시 반영 (낙관적 UI)
-              removeCourseFromUi(item.id);
-              if (isUserSavedRouteId(item.id)) {
-                // 기기에만 저장된 루트 — 서버 DELETE 호출 시 404
-                deleteUserRoute(item.id);
-              } else if (isOwnServerCourse(item, authorCtx)) {
-                await deleteMyCourse(item.id);
-              } else {
-                // 공유 코스 북마크(내 루트 추가) — save 해제
-                await unsaveSharedCourse(item.id);
-              }
-              removeSavedCourse(item.id);
-            } catch {
-              // 실패 시 UI 롤백
-              setApiMyCourses(prevApi);
-              setEnrichedMyCourses(prevEnriched);
-              setViewingCourseSnapshot(prevSnapshot);
-              setMyDetailCourseApi(prevDetail);
-              if (prevViewingId) setViewingCourseId(prevViewingId);
-              Alert.alert(
-                "오류",
-                "코스 삭제에 실패했어요. 잠시 후 다시 시도해 주세요.",
-              );
+    appAlert("저장 삭제", `"${item.title}" 코스를 저장 목록에서 삭제할까요?`, [
+      { text: "취소", style: "cancel" },
+      {
+        text: "삭제",
+        style: "destructive",
+        onPress: async () => {
+          const prevApi = apiMyCourses;
+          const prevEnriched = enrichedMyCourses;
+          const prevSnapshot = viewingCourseSnapshot;
+          const prevDetail = myDetailCourseApi;
+          const prevViewingId = viewingCourseId;
+          try {
+            // 삭제 버튼 즉시 반영 (낙관적 UI)
+            removeCourseFromUi(item.id);
+            if (isUserSavedRouteId(item.id)) {
+              // 기기에만 저장된 루트 — 서버 DELETE 호출 시 404
+              deleteUserRoute(item.id);
+            } else if (isOwnServerCourse(item, authorCtx)) {
+              await deleteMyCourse(item.id);
+            } else {
+              // 공유 코스 북마크(내 루트 추가) — save 해제
+              await unsaveSharedCourse(item.id);
             }
-          },
+            removeSavedCourse(item.id);
+          } catch {
+            // 실패 시 UI 롤백
+            setApiMyCourses(prevApi);
+            setEnrichedMyCourses(prevEnriched);
+            setViewingCourseSnapshot(prevSnapshot);
+            setMyDetailCourseApi(prevDetail);
+            if (prevViewingId) setViewingCourseId(prevViewingId);
+            appAlert(
+              "오류",
+              "코스 삭제에 실패했어요. 잠시 후 다시 시도해 주세요.",
+            );
+          }
         },
-      ],
-    );
+      },
+    ]);
   };
 
   const openRouteCreateEdit = (routeId: string, collaborative: boolean) => {

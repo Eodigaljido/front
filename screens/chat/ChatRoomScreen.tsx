@@ -12,11 +12,13 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { appAlert } from "../../utils/appAlert";
 import {
   KeyboardAwareScrollView,
   KeyboardStickyView,
 } from "react-native-keyboard-controller";
-import { RouteProp, useRoute, useNavigation } from "@react-navigation/native";
+import { RouteProp, useRoute, CommonActions } from "@react-navigation/native";
+import { navigationRef } from "@/navigation/rootNavigation";
 import { RoomHeader } from "@/components/chat/RoomHeader";
 import { RouteShareMessageCard } from "@/components/chat/RouteShareMessageCard";
 import { BubbleChat } from "@/stories/chat/BubbleChat";
@@ -41,7 +43,6 @@ type ChatRoomRouteProp = RouteProp<RootStackParamList, "ChatRoomScreen">;
 
 export const ChatRoomScreen = () => {
   const route = useRoute<ChatRoomRouteProp>();
-  const navigation = useNavigation();
   const { roomUuid, roomName, memberCount = 2, parentRoomUuid } = route.params;
 
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -106,7 +107,12 @@ export const ChatRoomScreen = () => {
     handleTypingEvent,
     () => {
       console.log("[ChatRoomScreen] 토큰 만료 - 로그인 화면으로 이동");
-      navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+      navigationRef.dispatch(
+        CommonActions.reset({
+          index: 0,
+          routes: [{ name: 'Login' }],
+        })
+      );
     },
   );
 
@@ -201,26 +207,22 @@ export const ChatRoomScreen = () => {
       editedAt: null,
       isDeleted: false,
     };
-    setMessages((prev) => [...prev, optimistic]);
-    setTimeout(
-      () => scrollViewRef.current?.scrollToEnd({ animated: true }),
-      50,
-    );
+
     try {
       const saved = await socketSend(text);
-      if (saved) {
-        setMessages((prev) => {
-          const pendingIdx = prev.findIndex((m) => m.uuid === pendingUuid);
-          if (pendingIdx === -1) {
-            if (prev.some((m) => m.uuid === saved.uuid)) return prev;
-            return [...prev, saved];
-          }
-          return prev.map((m, i) => (i === pendingIdx ? saved : m));
-        });
-      }
+      setTimeout(() => {
+        const messageToAdd: ChatMessage = saved ?? optimistic;
+        setMessages((prev) => [...prev, messageToAdd]);
+        setTimeout(
+          () => scrollViewRef.current?.scrollToEnd({ animated: true }),
+          50,
+        );
+      }, 200);
     } catch (err) {
       console.error("[Chat] 메시지 전송 실패:", err);
-      setMessages((prev) => prev.filter((m) => m.uuid !== pendingUuid));
+      setTimeout(() => {
+        appAlert("전송 실패", "메시지를 보내지 못했습니다.");
+      }, 200);
     }
   };
 
@@ -262,12 +264,14 @@ export const ChatRoomScreen = () => {
       editedAt: null,
       isDeleted: false,
     };
+
     setMessages((prev) => [...prev, optimistic]);
     scrollOnImageLoadRef.current = pendingUuid;
     setTimeout(
       () => scrollViewRef.current?.scrollToEnd({ animated: true }),
       50,
     );
+
     try {
       await sendImageMessage(accessToken, roomUuid, imageUri);
     } catch (err: any) {
@@ -281,7 +285,7 @@ export const ChatRoomScreen = () => {
         err?.response?.data?.message ??
         err?.message ??
         "이미지를 보내지 못했습니다.";
-      Alert.alert("이미지 전송 실패", String(detail));
+      appAlert("이미지 전송 실패", String(detail));
     }
   };
 

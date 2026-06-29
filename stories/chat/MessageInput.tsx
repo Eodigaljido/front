@@ -1,6 +1,7 @@
 import { Image, Send, X } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
+import { appAlert } from "../../utils/appAlert";
 
 import * as ImagePicker from "expo-image-picker";
 

@@ -24,6 +24,7 @@ import {
   KeyboardAwareScrollView,
   KeyboardStickyView,
 } from "react-native-keyboard-controller";
+import { useNavigation } from "@react-navigation/native";
 import {
   getRoomMessages,
   markAsRead,
@@ -169,6 +170,7 @@ export function RouteCollaborativeChatSheet({
   linkedChatRoom = null,
   onSelectChatRoom,
 }: Props): React.JSX.Element {
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const windowH = Dimensions.get("window").height;
   const sheetMaxHeight = Math.min(
@@ -267,6 +269,11 @@ export function RouteCollaborativeChatSheet({
   const { sendMessage: socketSend, isConnected } = useChatSocket(
     useApi ? roomId : "",
     handleSocketEvent,
+    undefined,
+    () => {
+      console.log("[RouteCollaborativeChatSheet] 토큰 만료 - 로그인 화면으로 이동");
+      navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+    },
   );
 
   const runOpen = useCallback(() => {

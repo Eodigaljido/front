@@ -9,9 +9,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StatusBar } from "expo-status-bar";
 import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
 import { useAuthStore } from "./store/authStore";
-import {
-  type NavigatorScreenParams,
-} from "@react-navigation/native";
+import { type NavigatorScreenParams } from "@react-navigation/native";
 import { navigationRef } from "./navigation/rootNavigation";
 import {
   BottomTabBar,
@@ -69,6 +67,8 @@ import MeetPostDetailScreen from "./screens/meet/MeetPostDetailScreen";
 import { restorePendingShareLinkFromStorage } from "./utils/pendingShareLink";
 
 import * as Sentry from "@sentry/react-native";
+import AppAlert from "./components/AppAlert";
+import FriendsListScreen from "./screens/FriendsListScreen";
 
 Sentry.init({
   dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
@@ -129,6 +129,7 @@ export type RootStackParamList = {
     | undefined;
   ProfileSettings: undefined;
   FriendRequests: undefined;
+  FriendsList: undefined;
   UserProfile: {
     uuid?: string;
     userUuid?: string;
@@ -414,7 +415,10 @@ export default function App(): React.JSX.Element {
       <SafeAreaProvider>
         <ToastProvider>
           <MockDataProvider>
-            <Sentry.NavigationContainer ref={navigationRef} linking={appLinking}>
+            <Sentry.NavigationContainer
+              ref={navigationRef}
+              linking={appLinking}
+            >
               <KeyboardProvider>
                 <StatusBar style="auto" />
                 <Stack.Navigator
@@ -444,6 +448,10 @@ export default function App(): React.JSX.Element {
                   <Stack.Screen
                     name="FriendRequests"
                     component={FriendRequestsScreen}
+                  />
+                  <Stack.Screen
+                    name="FriendsList"
+                    component={FriendsListScreen}
                   />
                   <Stack.Screen
                     name="UserProfile"
@@ -517,6 +525,7 @@ export default function App(): React.JSX.Element {
                 </Stack.Navigator>
               </KeyboardProvider>
             </Sentry.NavigationContainer>
+            <AppAlert />
           </MockDataProvider>
         </ToastProvider>
       </SafeAreaProvider>
