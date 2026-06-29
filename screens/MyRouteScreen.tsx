@@ -19,6 +19,7 @@ import {
   PanResponder,
   Platform,
 } from "react-native";
+import { appAlert } from "../utils/appAlert";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -877,7 +878,7 @@ export default function MyRouteScreen({
   }, [viewingCourseId]);
 
   const handleRemove = (item: CourseItem) => {
-    Alert.alert(
+    appAlert(
       "저장 삭제",
       `"${item.title}" 코스를 저장 목록에서 삭제할까요?`,
       [
@@ -911,7 +912,7 @@ export default function MyRouteScreen({
               setViewingCourseSnapshot(prevSnapshot);
               setMyDetailCourseApi(prevDetail);
               if (prevViewingId) setViewingCourseId(prevViewingId);
-              Alert.alert("오류", "코스 삭제에 실패했어요. 잠시 후 다시 시도해 주세요.");
+              appAlert("오류", "코스 삭제에 실패했어요. 잠시 후 다시 시도해 주세요.");
             }
           },
         },

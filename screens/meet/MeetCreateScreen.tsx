@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { appAlert } from '../../utils/appAlert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -45,7 +46,7 @@ export default function MeetCreateScreen(): React.JSX.Element {
   const pickImage = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('', '사진 접근 권한이 필요해요.');
+      appAlert('', '사진 접근 권한이 필요해요.');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -70,11 +71,11 @@ export default function MeetCreateScreen(): React.JSX.Element {
   const handleSubmit = async () => {
     const trimmedName = name.trim();
     if (!trimmedName) {
-      Alert.alert('입력 오류', '모임 이름을 입력해주세요.');
+      appAlert('입력 오류', '모임 이름을 입력해주세요.');
       return;
     }
     if (!accessToken) {
-      Alert.alert('오류', '로그인이 필요합니다.');
+      appAlert('오류', '로그인이 필요합니다.');
       return;
     }
 
@@ -95,7 +96,7 @@ export default function MeetCreateScreen(): React.JSX.Element {
         groupName: group.name,
       });
     } catch (err: any) {
-      Alert.alert('오류', err?.response?.data?.message ?? '모임 생성에 실패했습니다.');
+      appAlert('오류', err?.response?.data?.message ?? '모임 생성에 실패했습니다.');
     } finally {
       setSubmitting(false);
     }

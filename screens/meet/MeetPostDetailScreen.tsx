@@ -15,6 +15,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { appAlert } from "../../utils/appAlert";
 import {
   SafeAreaView,
   useSafeAreaInsets,
@@ -98,7 +99,7 @@ export default function MeetPostDetailScreen(): React.JSX.Element {
       setNotFound(false);
     } catch (err: any) {
       if (err?.response?.status === 404) setNotFound(true);
-      else Alert.alert("오류", "게시물을 불러오지 못했습니다.");
+      else appAlert("오류", "게시물을 불러오지 못했습니다.");
     } finally {
       setLoading(false);
     }
@@ -142,7 +143,7 @@ export default function MeetPostDetailScreen(): React.JSX.Element {
       setPost(updated);
       setEditing(false);
     } catch {
-      Alert.alert("오류", "게시물 수정에 실패했습니다.");
+      appAlert("오류", "게시물 수정에 실패했습니다.");
     } finally {
       setSubmittingEdit(false);
     }
@@ -157,7 +158,7 @@ export default function MeetPostDetailScreen(): React.JSX.Element {
       navigation.goBack();
     } catch {
       setDeleteVisible(false);
-      Alert.alert("오류", "게시물 삭제에 실패했습니다.");
+      appAlert("오류", "게시물 삭제에 실패했습니다.");
     } finally {
       setDeleting(false);
     }

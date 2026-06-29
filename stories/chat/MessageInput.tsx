@@ -1,6 +1,7 @@
 import { Image, ImageUp, Key, Map, Send, Sticker, X } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
+import { appAlert } from '../../utils/appAlert';
 
 import * as ImagePicker from 'expo-image-picker';
 
@@ -126,7 +127,7 @@ export const MessageInput = ({
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       const { Alert } = await import('react-native');
-      Alert.alert('권한 필요', '갤러리에서 사진을 선택하려면 사진 접근을 허용해 주세요.');
+      appAlert('권한 필요', '갤러리에서 사진을 선택하려면 사진 접근을 허용해 주세요.');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({

@@ -12,6 +12,7 @@ import {
   StyleSheet,
   Platform,
 } from 'react-native';
+import { appAlert } from '../../utils/appAlert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationProp, RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { RootStackParamList } from '@/App';
@@ -137,7 +138,7 @@ export default function ChatRoomInfoScreen() {
       return;
     }
     if (!accessToken) {
-      Alert.alert('오류', '인증 정보가 없습니다.');
+      appAlert('오류', '인증 정보가 없습니다.');
       return;
     }
     try {
@@ -147,7 +148,7 @@ export default function ChatRoomInfoScreen() {
       navigation.navigate('ChatRoomScreen', { roomUuid, roomName: trimmed });
     } catch (err) {
       console.error('채팅방 이름 변경 실패:', err);
-      Alert.alert('오류', '채팅방 이름 변경에 실패했습니다.');
+      appAlert('오류', '채팅방 이름 변경에 실패했습니다.');
     }
   };
 
@@ -182,7 +183,7 @@ export default function ChatRoomInfoScreen() {
       }
       setImageModalVisible(false);
     } catch (err) {
-      Alert.alert('오류', '프로필 이미지 변경에 실패했습니다.');
+      appAlert('오류', '프로필 이미지 변경에 실패했습니다.');
       console.error('프로필 이미지 변경 실패', err);
     } finally {
       setIsSavingImage(false);
@@ -190,7 +191,7 @@ export default function ChatRoomInfoScreen() {
   };
 
   const handleKickMember = (member: Member) => {
-    Alert.alert('멤버 강퇴', `${member.nickname}님을 채팅방에서 강퇴하시겠습니까?`, [
+    appAlert('멤버 강퇴', `${member.nickname}님을 채팅방에서 강퇴하시겠습니까?`, [
       { text: '취소', style: 'cancel' },
       {
         text: '강퇴',
@@ -223,7 +224,7 @@ export default function ChatRoomInfoScreen() {
   };
 
   const handleLeaveRoom = async () => {
-    Alert.alert('채팅방 나가기', '채팅방에서 나가시겠습니까?', [
+    appAlert('채팅방 나가기', '채팅방에서 나가시겠습니까?', [
       { text: '취소', style: 'cancel' },
       {
         text: '나가기',
@@ -231,14 +232,14 @@ export default function ChatRoomInfoScreen() {
         onPress: async () => {
           try {
             if (!accessToken) {
-              Alert.alert('오류', '인증 정보가 없습니다.');
+              appAlert('오류', '인증 정보가 없습니다.');
               return;
             }
             await leaveChatRoom(accessToken, roomUuid);
             navigation.navigate('Tabs');
           } catch (err) {
             console.error('채팅방 나가기 실패:', err);
-            Alert.alert('오류', '채팅방 나가기에 실패했습니다.');
+            appAlert('오류', '채팅방 나가기에 실패했습니다.');
           }
         },
       },
@@ -246,7 +247,7 @@ export default function ChatRoomInfoScreen() {
   };
 
   const handleDeleteRoom = async () => {
-    Alert.alert('채팅방 삭제', '채팅방을 삭제하면 복구할 수 없습니다.', [
+    appAlert('채팅방 삭제', '채팅방을 삭제하면 복구할 수 없습니다.', [
       { text: '취소', style: 'cancel' },
       {
         text: '삭제',
@@ -254,14 +255,14 @@ export default function ChatRoomInfoScreen() {
         onPress: async () => {
           try {
             if (!accessToken) {
-              Alert.alert('오류', '인증 정보가 없습니다.');
+              appAlert('오류', '인증 정보가 없습니다.');
               return;
             }
             await deleteChatRoom(accessToken, roomUuid);
             navigation.navigate('Tabs');
           } catch (err) {
             console.error('채팅방 삭제 실패:', err);
-            Alert.alert('오류', '채팅방 삭제에 실패했습니다.');
+            appAlert('오류', '채팅방 삭제에 실패했습니다.');
           }
         },
       },
