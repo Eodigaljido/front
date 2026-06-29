@@ -69,30 +69,30 @@ export const ChatRoomScreen = () => {
     roomUuid,
     (event: ChatSocketEvent) => {
       if (event.eventType === "MESSAGE_CREATED") {
-        if (event.payload.senderUuid === userUuid) {
-          setMessages((prev) => {
+        setMessages((prev) => {
+          if (prev.some((m) => m.uuid === event.payload.uuid)) return prev;
+
+          if (event.payload.senderUuid === userUuid) {
             const pendingIdx = prev.findIndex((m) =>
               m.uuid.startsWith("pending-"),
             );
             if (pendingIdx === -1) {
-              if (prev.some((m) => m.uuid === event.payload.uuid)) return prev;
               return [...prev, event.payload];
             }
             if (scrollOnImageLoadRef.current?.startsWith("pending-")) {
               scrollOnImageLoadRef.current = event.payload.uuid;
             }
             return prev.map((m, i) => (i === pendingIdx ? event.payload : m));
-          });
-          return;
-        }
-        setMessages((prev) => {
-          if (prev.some((m) => m.uuid === event.payload.uuid)) return prev;
+          }
           return [...prev, event.payload];
         });
-        setTimeout(
-          () => scrollViewRef.current?.scrollToEnd({ animated: true }),
-          50,
-        );
+
+        if (event.payload.senderUuid !== userUuid) {
+          setTimeout(
+            () => scrollViewRef.current?.scrollToEnd({ animated: true }),
+            50,
+          );
+        }
       } else if (event.eventType === "MESSAGE_EDITED") {
         setMessages((prev) =>
           prev.map((m) => (m.uuid === event.payload.uuid ? event.payload : m)),
@@ -123,7 +123,13 @@ export const ChatRoomScreen = () => {
           .reverse()
           .filter((m) => !m.isDeleted);
         if (beforeUuid) {
-          setMessages((prev) => [...chronological, ...prev]);
+          setMessages((prev) => {
+            const existingIds = new Set(prev.map((m) => m.uuid));
+            const newMessages = chronological.filter(
+              (m) => !existingIds.has(m.uuid)
+            );
+            return [...newMessages, ...prev];
+          });
         } else {
           setMessages(chronological);
         }
@@ -179,7 +185,7 @@ export const ChatRoomScreen = () => {
       return;
     }
 
-    const pendingUuid = `pending-${Date.now()}`;
+    const pendingUuid = `pending-${Date.now()}-${Math.random()}`;
     const optimistic: ChatMessage = {
       uuid: pendingUuid,
       senderUuid: userUuid ?? "",
@@ -240,7 +246,7 @@ export const ChatRoomScreen = () => {
   const handleImageSend = async (imageUri: string) => {
     if (!accessToken) return;
 
-    const pendingUuid = `pending-${Date.now()}`;
+    const pendingUuid = `pending-${Date.now()}-${Math.random()}`;
     const optimistic: ChatMessage = {
       uuid: pendingUuid,
       senderUuid: userUuid ?? "",
@@ -329,7 +335,14 @@ export const ChatRoomScreen = () => {
             {loadingMore && (
               <ActivityIndicator size="small" style={{ marginBottom: 8 }} />
             )}
-            {messages.map((msg) => {
+            {(() => {
+              const seen = new Set<string>();
+              return messages.filter((msg) => {
+                if (seen.has(msg.uuid)) return false;
+                seen.add(msg.uuid);
+                return true;
+              });
+            })().map((msg) => {
               const isMine = msg.senderUuid === userUuid;
               if (
                 String(msg.messageType ?? "")
