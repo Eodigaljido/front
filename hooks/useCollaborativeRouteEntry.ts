@@ -40,7 +40,9 @@ export function useCollaborativeRouteEntry({
   onGrantedRef.current = onGranted;
 
   const courseId = String(editRouteId ?? '').trim();
-  const shouldCheck = collaborative === true && Boolean(courseId);
+  // 로컬 사용자 저장 루트(ur-로 시작)는 서버 확인 불필요
+  const isLocalRoute = courseId.startsWith('ur-');
+  const shouldCheck = collaborative === true && Boolean(courseId) && !isLocalRoute;
 
   useEffect(() => {
     if (!shouldCheck) {
