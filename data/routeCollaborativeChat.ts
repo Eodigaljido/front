@@ -1,6 +1,7 @@
 import {
   createChatRoom,
   getChatRoom,
+  getChatRooms,
   inviteChatMember,
   shareRouteToChat,
   sendMessage,
@@ -65,12 +66,17 @@ async function createRouteGroupChatRoom(opts: {
   memberUuids: string[];
 }): Promise<string | null> {
   try {
+    console.log("[createRouteGroupChatRoom] 새 채팅방 생성:", {
+      routeTitle: opts.routeTitle,
+      memberUuids: opts.memberUuids,
+    });
     const room: ChatRoom = await createChatRoom(
       opts.accessToken,
       opts.memberUuids,
       buildRouteGroupChatName(opts.routeTitle),
       null,
     );
+    console.log("[createRouteGroupChatRoom] ✓ 새 채팅방 생성 완료:", room.uuid);
     return String(room.uuid ?? '').trim() || null;
   } catch (e) {
     console.warn('[createRouteGroupChatRoom]', e);
@@ -224,7 +230,7 @@ export async function linkCourseChatRoomForShare(opts: {
   });
 }
 
-/** 친구 초대: 멤버 추가 + 루트 공유(또는 텍스트 초대) */
+/** 친구 초대: 멤버 추가 + 초대 메시지 전송 */
 export async function inviteFriendsToRouteChat(opts: {
   accessToken: string;
   myUuid: string;
@@ -240,83 +246,103 @@ export async function inviteFriendsToRouteChat(opts: {
 
   let routeId = String(opts.routeId ?? '').trim();
 
-  // 로컬 루트(ur-*)인 경우 먼저 서버에 업로드해야 ROUTE 기록방 연결 가능
   if (routeId.startsWith('ur-')) {
     console.warn('[inviteFriendsToRouteChat] 로컬 루트는 공동 편집을 위해 먼저 서버에 저장되어야 합니다');
-    // 로컬 루트는 공동 편집 미지원 - 로컬에서만 사용 가능
     return { chatRoomUuid: null, sent: false };
   }
 
-  let chatRoomUuid = await ensureRouteGroupChat({
-    accessToken: opts.accessToken,
-    myUuid: opts.myUuid,
-    routeTitle: opts.routeTitle,
-    existingChatRoomUuid: opts.existingChatRoomUuid,
-    memberUuids: friends,
-  });
+  let oneToOneChatRoomUuid: string | null = null;
+  let chatRoomUuid: string | null = null;
 
-  if (!chatRoomUuid) {
-    return { chatRoomUuid: null, sent: false };
+  // 1명 초대: 기존 1대1 채팅방 찾기
+  if (friends.length === 1) {
+    try {
+      console.log("[inviteFriendsToRouteChat] 1명 초대: 1대1 채팅방 검색", { myUuid: opts.myUuid, friendUuid: friends[0] });
+      const chatRooms = await getChatRooms(opts.accessToken);
+      const friendUuid = friends[0];
+
+      const oneToOneRoom = chatRooms.find((room) => {
+        if (room.memberCount !== 2) return false;
+        const members = room.members ?? [];
+        return members.some((m) => m.uuid === opts.myUuid) && members.some((m) => m.uuid === friendUuid);
+      });
+
+      if (oneToOneRoom) {
+        oneToOneChatRoomUuid = oneToOneRoom.uuid;
+        console.log("[inviteFriendsToRouteChat] ✓ 기존 1대1 채팅방 발견:", oneToOneRoom.uuid);
+      } else {
+        console.log("[inviteFriendsToRouteChat] 1대1 채팅방 없음 - 그룹 채팅방 생성");
+      }
+    } catch (err) {
+      console.error("[inviteFriendsToRouteChat] 1대1 채팅방 검색 실패:", err);
+    }
   }
 
+  // 1대1 초대인 경우: 두 개의 채팅방 사용
+  // - 1대1 채팅방: 초대 메시지 표시 (부모 역할)
+  // - 그룹 기록방: 편집 기록 (자식 역할) - 백엔드가 자동 생성
+  let parentChatRoomUuid = chatRoomUuid;
+
+  if (oneToOneChatRoomUuid) {
+    // 1대1 초대: 1대1 채팅방이 부모 역할
+    parentChatRoomUuid = oneToOneChatRoomUuid;
+    chatRoomUuid = oneToOneChatRoomUuid;
+    console.log('[inviteFriendsToRouteChat] 1대1 채팅방 사용 (부모):', { chatRoomUuid });
+  } else {
+    // 그룹 초대 또는 1대1 없음: 새로운 채팅방 생성
+    console.log('[inviteFriendsToRouteChat] 새 채팅방 생성:', { friendCount: friends.length });
+    chatRoomUuid = await ensureRouteGroupChat({
+      accessToken: opts.accessToken,
+      myUuid: opts.myUuid,
+      routeTitle: opts.routeTitle,
+      existingChatRoomUuid: opts.existingChatRoomUuid,
+      memberUuids: friends,
+    });
+
+    if (!chatRoomUuid) {
+      return { chatRoomUuid: null, sent: false };
+    }
+
+    parentChatRoomUuid = chatRoomUuid;
+  }
+
+  // 멤버 추가
   try {
     const memberResult = await addCollaborativeCourseMembers(routeId, friends);
     if (memberResult.failed > 0) {
-      console.warn('[inviteFriendsToRouteChat] 멤버 추가 부분 실패:', { added: memberResult.added, failed: memberResult.failed, friends: friends.length });
-      // 주의: 멤버 추가가 실패해도 초대 메시지는 계속 보냄
+      console.warn('[inviteFriendsToRouteChat] 멤버 추가 부분 실패:', { added: memberResult.added, failed: memberResult.failed });
+    } else {
+      console.log('[inviteFriendsToRouteChat] ✓ 멤버 추가 성공:', { added: memberResult.added, routeId });
     }
-    // 루트와 채팅방 연결 - 자식 ROUTE 기록방 생성됨
-    console.log('[inviteFriendsToRouteChat] 루트와 채팅방 연결 시작:', { routeId, chatRoomUuid });
-    const linked = await linkCollaborativeCourseChatRoom(routeId, chatRoomUuid);
-    console.log('[inviteFriendsToRouteChat] 루트와 채팅방 연결 결과:', { routeId, chatRoomUuid, linked });
   } catch (err: any) {
-    // 루트가 collaborative 모드가 아니면 addCollaborativeCourseMembers 400 에러 발생
-    // 이 경우 채팅방은 생성했으니 계속 진행 (협업 기능은 제한됨)
     console.warn('[inviteFriendsToRouteChat] 협업 멤버 설정 실패:', err?.response?.data ?? err);
   }
 
-  const title = String(opts.routeTitle ?? '').trim() || '루트';
-  const url = buildCollaborativeRouteShareUrl(routeId);
-
-  const sendInvitePayload = async (roomId: string): Promise<boolean> => {
-    console.log('[inviteFriendsToRouteChat] 초대 메시지 전송 시작:', {
-      routeId,
-      isLocal: routeId?.startsWith('ur-'),
-    });
-
-    if (routeId && !routeId.startsWith('ur-')) {
-      console.log('[inviteFriendsToRouteChat] 루트 공유 메시지 전송 중...');
-      const afterShare = await postRouteShareToChat({
-        accessToken: opts.accessToken,
-        myUuid: opts.myUuid,
-        routeId,
-        routeTitle: opts.routeTitle,
-        chatRoomUuid: roomId,
-      });
-      if (!afterShare) {
-        console.warn('[inviteFriendsToRouteChat] 루트 공유 메시지 전송 실패');
-        throw new Error('route share failed');
-      }
-      console.log('[inviteFriendsToRouteChat] 루트 공유 메시지 전송 성공');
-    } else {
-      console.log('[inviteFriendsToRouteChat] 텍스트 초대 메시지 전송 중... (로컬 루트)');
-      const content =
-        `「${title}」 공동 루트에 초대합니다.\n함께 편집해 보세요.` +
-        (url ? `\n${url}` : '');
-      await sendMessage(opts.accessToken, roomId, content);
-      console.log('[inviteFriendsToRouteChat] 텍스트 초대 메시지 전송 성공');
-    }
-    return true;
-  };
-
+  // 루트와 부모 채팅방 연결 (백엔드가 자동으로 자식 기록방 생성)
   try {
-    await sendInvitePayload(chatRoomUuid);
-    console.log('[inviteFriendsToRouteChat] 초대 완료:', { chatRoomUuid, sent: true });
+    console.log('[inviteFriendsToRouteChat] 루트와 부모 채팅방 연결:', { routeId, parentChatRoomUuid, isOneToOne: !!oneToOneChatRoomUuid });
+    await linkCollaborativeCourseChatRoom(routeId, parentChatRoomUuid);
+    console.log('[inviteFriendsToRouteChat] ✓ 루트와 부모 채팅방 연결 성공:', { parentChatRoomUuid });
+  } catch (err: any) {
+    console.warn('[inviteFriendsToRouteChat] 루트 연결 실패:', err?.response?.data ?? err);
+  }
+
+  // ROUTE 메시지로 초대 전송 (컴포넌트 형태)
+  try {
+    console.log('[inviteFriendsToRouteChat] ROUTE 메시지로 초대 전송:', { chatRoomUuid, routeId, isOneToOne: !!oneToOneChatRoomUuid });
+    await postRouteShareToChat({
+      accessToken: opts.accessToken,
+      myUuid: opts.myUuid,
+      routeId,
+      routeTitle: opts.routeTitle,
+      chatRoomUuid,
+    });
+    console.log('[inviteFriendsToRouteChat] 초대 완료');
     return { chatRoomUuid, sent: true };
   } catch (e: any) {
-    console.error('[inviteFriendsToRouteChat] 초대 메시지 전송 실패:', e?.response?.data ?? e?.message ?? e);
-    if (e?.response?.status === 404) {
-      console.log('[inviteFriendsToRouteChat] 채팅방 404 - 재생성 시도 중...');
+    console.error('[inviteFriendsToRouteChat] ROUTE 메시지 전송 실패:', e?.response?.data ?? e?.message ?? e);
+    if (e?.response?.status === 404 && !oneToOneChatRoomUuid) {
+      console.log('[inviteFriendsToRouteChat] 채팅방 404 - 재생성 시도');
       chatRoomUuid = await ensureRouteGroupChat({
         accessToken: opts.accessToken,
         myUuid: opts.myUuid,
@@ -329,7 +355,13 @@ export async function inviteFriendsToRouteChat(opts: {
         return { chatRoomUuid: null, sent: false };
       }
       try {
-        await sendInvitePayload(chatRoomUuid);
+        await postRouteShareToChat({
+          accessToken: opts.accessToken,
+          myUuid: opts.myUuid,
+          routeId,
+          routeTitle: opts.routeTitle,
+          chatRoomUuid,
+        });
         console.log('[inviteFriendsToRouteChat] 재시도 초대 완료');
         return { chatRoomUuid, sent: true };
       } catch (retryErr) {

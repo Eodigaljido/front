@@ -68,12 +68,26 @@ export interface ChatMessage {
 function normalizeChatMessage(raw: unknown): ChatMessage | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (typeof o.uuid === "string") return raw as ChatMessage;
-  const inner = o.data;
-  if (inner && typeof inner === "object" && typeof (inner as ChatMessage).uuid === "string") {
-    return inner as ChatMessage;
+  let msg = null;
+
+  if (typeof o.uuid === "string") {
+    msg = raw as ChatMessage;
+  } else {
+    const inner = o.data;
+    if (inner && typeof inner === "object" && typeof (inner as ChatMessage).uuid === "string") {
+      msg = inner as ChatMessage;
+    }
   }
-  return null;
+
+  if (!msg) return null;
+
+  // routeId → routeUuid 필드 매핑 (백엔드 응답 정규화)
+  const normalized = { ...msg } as ChatMessage & { routeId?: unknown };
+  if (normalized.routeUuid === null && (normalized as any).routeId !== undefined) {
+    normalized.routeUuid = String((normalized as any).routeId ?? "").trim() || null;
+  }
+
+  return normalized;
 }
 
 function normalizeChatMessageList(raw: unknown): ChatMessage[] {

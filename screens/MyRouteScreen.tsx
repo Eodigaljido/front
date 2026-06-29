@@ -960,6 +960,12 @@ export default function MyRouteScreen({
       // 기존 채팅방 UUID 찾기
       let existingChatRoomUuid = ur?.chatRoomUuid;
 
+      console.log("[MyRouteScreen] 초대 시작 - 루트 정보:", {
+        existingChatRoomUuid,
+        friendUuidCount: friendUuids.length,
+        willSearchFor1to1: !existingChatRoomUuid && friendUuids.length === 1,
+      });
+
       // 1대1 채팅방이 없으면 채팅방 목록에서 1대1 채팅방 찾기
       if (!existingChatRoomUuid && friendUuids.length === 1) {
         try {

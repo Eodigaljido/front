@@ -102,12 +102,22 @@ function mergeMessages(
   incoming: ChatMessage[],
 ): ChatMessage[] {
   const map = new Map<string, ChatMessage>();
+
+  // incoming 메시지 추가 (서버의 최신 데이터 우선)
   for (const m of incoming) {
-    if (!m.isDeleted) map.set(m.uuid, m);
+    if (!m.isDeleted && m.uuid) {
+      map.set(m.uuid, m);
+    }
   }
+
+  // prev의 pending 메시지만 추가 (아직 서버에 저장되지 않은 메시지)
   for (const m of prev) {
-    if (m.uuid.startsWith("pending-")) map.set(m.uuid, m);
+    if (m.uuid.startsWith("pending-") && !map.has(m.uuid)) {
+      map.set(m.uuid, m);
+    }
   }
+
+  // 시간 순으로 정렬
   return [...map.values()].sort(
     (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
   );
@@ -118,12 +128,25 @@ function replacePendingMessage(
   pendingUuid: string,
   saved: ChatMessage,
 ): ChatMessage[] {
-  const pendingIdx = prev.findIndex((m) => m.uuid === pendingUuid);
-  if (pendingIdx === -1) {
-    if (prev.some((m) => m.uuid === saved.uuid)) return prev;
-    return [...prev, saved];
+  // 중복 제거하며 업데이트
+  const map = new Map<string, ChatMessage>();
+
+  for (const m of prev) {
+    if (m.uuid === pendingUuid) {
+      // pending 메시지를 saved로 대체
+      continue;
+    }
+    map.set(m.uuid, m);
   }
-  return prev.map((m, i) => (i === pendingIdx ? saved : m));
+
+  // saved 메시지 추가 (기존에 같은 uuid가 있으면 덮어씀)
+  if (saved.uuid) {
+    map.set(saved.uuid, saved);
+  }
+
+  return [...map.values()].sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+  );
 }
 
 export function RouteCollaborativeChatSheet({
@@ -132,6 +155,7 @@ export function RouteCollaborativeChatSheet({
   accessToken,
   myUuid,
   chatRoomUuid,
+  routeId,
   routeTitle,
   roomName,
   memberCount = 2,
@@ -148,6 +172,7 @@ export function RouteCollaborativeChatSheet({
   const sheetY = useRef(new Animated.Value(SHEET_SLIDE)).current;
   const scrollRef = useRef<ScrollView>(null);
   const messageCountRef = useRef(0);
+  const lastSendTimeRef = useRef(0);
   const [rendered, setRendered] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [apiMessages, setApiMessages] = useState<ChatMessage[]>([]);
@@ -191,10 +216,19 @@ export function RouteCollaborativeChatSheet({
     (incoming: ChatMessage[], scroll = false) => {
       setApiMessages((prev) => {
         const merged = mergeMessages(prev, incoming);
+
+        // 최종 중복 제거 (백엔드 중복 대응)
+        const seen = new Set<string>();
+        const deduplicated = merged.filter((m) => {
+          if (!m.uuid || seen.has(m.uuid)) return false;
+          seen.add(m.uuid);
+          return true;
+        });
+
         const same =
-          merged.length === prev.length &&
-          merged.every((m, i) => m.uuid === prev[i]?.uuid);
-        return same ? prev : merged;
+          deduplicated.length === prev.length &&
+          deduplicated.every((m, i) => m.uuid === prev[i]?.uuid);
+        return same ? prev : deduplicated;
       });
       if (scroll) maybeScrollToEnd(false);
     },
@@ -374,7 +408,15 @@ export function RouteCollaborativeChatSheet({
     const t = chatInput.trim();
     if (!t || !useApi) return;
 
-    const pendingUuid = `pending-${Date.now()}`;
+    // 전송 속도 제한 (최소 300ms 간격)
+    const now = Date.now();
+    if (now - lastSendTimeRef.current < 300) {
+      console.warn("[Chat] 메시지 전송 간격이 너무 짧습니다. 잠시 후 다시 시도해주세요.");
+      return;
+    }
+    lastSendTimeRef.current = now;
+
+    const pendingUuid = `pending-${now}`;
     const optimistic: ChatMessage = {
       uuid: pendingUuid,
       senderUuid: myUuid ?? "",
@@ -592,87 +634,111 @@ export function RouteCollaborativeChatSheet({
               ) : loadingMsgs ? (
                 <ActivityIndicator className="py-6" color="#2563eb" />
               ) : (
-                apiMessages.map((msg) => {
-                  const isMe = msg.senderUuid === myUuid;
+                (() => {
+                  // 메시지 중복 제거 (uuid 기반) - 두 번 검증
+                  const seen = new Set<string>();
+                  const uniqueMessages = apiMessages
+                    .filter((m) => {
+                      if (!m.uuid || seen.has(m.uuid)) return false;
+                      if (m.isDeleted) return false;
+                      seen.add(m.uuid);
+                      return true;
+                    });
 
-                  // 이미지: 썸네일(작게) + 클릭 시 확대
-                  if (isImageMessage(msg)) {
-                    const uri =
-                      String(msg.attachmentUrl ?? "").trim() ||
-                      String(msg.content ?? "").trim();
-                    if (!uri) return null;
-                    return (
-                      <View
-                        key={msg.uuid}
-                        style={{
-                          alignSelf: isMe ? "flex-end" : "flex-start",
-                          maxWidth: 260,
-                          marginBottom: 10,
-                        }}
-                      >
-                        <TouchableOpacity
-                          activeOpacity={0.85}
-                          onPress={() => setExpandedImageUrl(uri)}
+                  return uniqueMessages
+                    .filter((msg) => {
+                      // 내용이 없는 텍스트 메시지 제외
+                      const body = messageBody(msg);
+                      if (
+                        String(msg.messageType ?? "").trim().toUpperCase() ===
+                          "TEXT" &&
+                        !body
+                      )
+                        return false;
+                      return true;
+                    })
+                    .map((msg, index) => {
+                    const isMe = msg.senderUuid === myUuid;
+
+                    // 이미지: 썸네일(작게) + 클릭 시 확대
+                    if (isImageMessage(msg)) {
+                      const uri =
+                        String(msg.attachmentUrl ?? "").trim() ||
+                        String(msg.content ?? "").trim();
+                      if (!uri) return null;
+                      return (
+                        <View
+                          key={msg.uuid}
+                          style={{
+                            alignSelf: isMe ? "flex-end" : "flex-start",
+                            maxWidth: 260,
+                            marginBottom: 10,
+                          }}
                         >
-                          <Image
-                            source={{ uri }}
-                            resizeMode="cover"
-                            style={{
-                              width: 170,
-                              height: 130,
-                              borderRadius: 14,
-                              backgroundColor: "#e5e7eb",
-                            }}
-                          />
-                        </TouchableOpacity>
-                      </View>
-                    );
-                  }
+                          <TouchableOpacity
+                            activeOpacity={0.85}
+                            onPress={() => setExpandedImageUrl(uri)}
+                          >
+                            <Image
+                              source={{ uri }}
+                              resizeMode="cover"
+                              style={{
+                                width: 170,
+                                height: 130,
+                                borderRadius: 14,
+                                backgroundColor: "#e5e7eb",
+                              }}
+                            />
+                          </TouchableOpacity>
+                        </View>
+                      );
+                    }
 
-                  // ROUTE 공유 카드
-                  if (
-                    String(msg.messageType ?? "")
-                      .trim()
-                      .toUpperCase() === "ROUTE"
-                  ) {
+                    // ROUTE 공유 카드
+                    if (
+                      String(msg.messageType ?? "")
+                        .trim()
+                        .toUpperCase() === "ROUTE"
+                    ) {
+                      return (
+                        <View
+                          key={msg.uuid}
+                          style={{
+                            alignSelf: isMe ? "flex-end" : "flex-start",
+                            maxWidth: "92%",
+                            marginBottom: 10,
+                          }}
+                        >
+                          <Text className="mb-1 text-[10px] font-semibold text-gray-500">
+                            {msg.senderNickname || (isMe ? "나" : "멤버")}
+                          </Text>
+                          <RouteShareMessageCard message={msg} isMine={isMe} />
+                        </View>
+                      );
+                    }
+
+                    // 텍스트
+                    const body = messageBody(msg);
+                    if (!body) return null;
                     return (
                       <View
                         key={msg.uuid}
+                        className={`mb-2 rounded-xl px-3 py-2 ${
+                          isMe ? "self-end bg-sky-100" : "self-start bg-gray-100"
+                        }`}
                         style={{
                           alignSelf: isMe ? "flex-end" : "flex-start",
-                          maxWidth: "92%",
-                          marginBottom: 10,
+                          maxWidth: "88%",
                         }}
                       >
-                        <Text className="mb-1 text-[10px] font-semibold text-gray-500">
+                        <Text className="text-[10px] font-semibold text-gray-500">
                           {msg.senderNickname || (isMe ? "나" : "멤버")}
                         </Text>
-                        <RouteShareMessageCard message={msg} isMine={isMe} />
+                        <Text className="text-sm text-gray-900">{body}</Text>
                       </View>
                     );
-                  }
-
-                  // 텍스트
-                  const body = messageBody(msg);
-                  if (!body) return null;
-                  return (
-                    <View
-                      key={msg.uuid}
-                      className={`mb-2 rounded-xl px-3 py-2 ${
-                        isMe ? "self-end bg-sky-100" : "self-start bg-gray-100"
-                      }`}
-                      style={{
-                        alignSelf: isMe ? "flex-end" : "flex-start",
-                        maxWidth: "88%",
-                      }}
-                    >
-                      <Text className="text-[10px] font-semibold text-gray-500">
-                        {msg.senderNickname || (isMe ? "나" : "멤버")}
-                      </Text>
-                      <Text className="text-sm text-gray-900">{body}</Text>
-                    </View>
-                  );
-                })
+                    });
+                })()
               )}
               {useApi && !loadingMsgs && apiMessages.length === 0 ? (
                 <Text className="py-6 text-center text-xs text-gray-400">
@@ -684,15 +750,6 @@ export function RouteCollaborativeChatSheet({
               visible={showScrollToBottom && useApi && apiMessages.length > 0}
               onPress={scrollToBottomPress}
             />
-            <Pressable
-              onPress={() => void sendChat()}
-              disabled={!useApi || sending}
-              className="rounded-xl bg-blue-600 px-4 py-2.5 active:opacity-90"
-            >
-              <Text className="font-bold text-white">
-                {sending ? "…" : "전송"}
-              </Text>
-            </Pressable>
           </View>
           <KeyboardStickyView
             offset={{ closed: 0, opened: Math.max(insets.bottom, 8) }}

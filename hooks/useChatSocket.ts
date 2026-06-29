@@ -5,9 +5,11 @@ import { useAuthStore } from "@/store/authStore";
 import { ChatMessage, sendMessage as sendMessageHttp } from "@/api/chat/chat";
 
 // SockJS는 http/https URL 사용 (ws:// 아님)
-const STOMP_URL =
-  (process.env.EXPO_PUBLIC_API_BASE_URL ?? process.env.EXPO_SOCKET_URL) +
-  "/ws/chat";
+const getStompUrl = () => {
+  const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL ?? process.env.EXPO_SOCKET_URL ?? "";
+  const cleanUrl = baseUrl.replace(/\/$/, ""); // trailing slash 제거
+  return `${cleanUrl}/ws/chat`;
+};
 
 export type ChatSocketEvent =
   | { eventType: "MESSAGE_CREATED"; payload: ChatMessage }
@@ -24,13 +26,17 @@ export function useChatSocket(
   roomUuid: string | string[],
   onEvent: (event: ChatSocketEvent) => void,
   onTypingEvent?: (event: TypingEvent) => void,
+  onAuthError?: () => void,
 ) {
   const clientRef = useRef<Client | null>(null);
+  const subscriptionsRef = useRef<Map<string, any>>(new Map());
   const [isConnected, setIsConnected] = useState(false);
-  const readyRef = useRef(false); // true only after onConnect + brief settle delay
+  const readyRef = useRef(false);
   const accessToken = useAuthStore((s) => s.accessToken);
+  const logout = useAuthStore((s) => s.logout);
   const onEventRef = useRef(onEvent);
   const onTypingEventRef = useRef(onTypingEvent);
+  const onAuthErrorRef = useRef(onAuthError);
 
   useEffect(() => {
     onEventRef.current = onEvent;
@@ -40,7 +46,10 @@ export function useChatSocket(
     onTypingEventRef.current = onTypingEvent;
   });
 
-  // Stable string key so the effect only re-runs when UUIDs actually change
+  useEffect(() => {
+    onAuthErrorRef.current = onAuthError;
+  });
+
   const roomUuidKey = Array.isArray(roomUuid)
     ? [...roomUuid].filter(Boolean).sort().join(",")
     : (roomUuid ?? "");
@@ -49,43 +58,101 @@ export function useChatSocket(
     if (!accessToken || !roomUuidKey) return;
     const uuids = roomUuidKey.split(",").filter(Boolean);
 
+    // 기존 구독 정리
+    const unsubscribeAll = () => {
+      subscriptionsRef.current.forEach((sub) => {
+        try {
+          sub.unsubscribe();
+        } catch (e) {
+          console.warn("[STOMP] 구독 해제 오류:", e);
+        }
+      });
+      subscriptionsRef.current.clear();
+    };
+
     const client = new Client({
-      webSocketFactory: () => new SockJS(STOMP_URL),
+      webSocketFactory: () => new SockJS(getStompUrl()),
       connectHeaders: { Authorization: `Bearer ${accessToken}` },
       reconnectDelay: 5000,
+      heartbeatIncoming: 4000,
+      heartbeatOutgoing: 4000,
       onConnect: () => {
+        console.log("[STOMP] 연결 성공:", getStompUrl());
         setIsConnected(true);
-        // Small settle delay so the server finishes processing CONNECT before
-        // we publish anything (prevents the "clientInboundChannel" STOMP error).
-        setTimeout(() => { readyRef.current = true; }, 300);
-        uuids.forEach((uuid) => {
-          console.log("[STOMP] 연결됨 →", `/topic/chat/${uuid}`);
-          client.subscribe(`/topic/chat/${uuid}`, (frame) => {
+        readyRef.current = false;
+
+        // 기존 구독 정리 (재연결 시)
+        unsubscribeAll();
+
+        // 새로운 구독 시작 (연결 확인 후 즉시)
+        try {
+          uuids.forEach((uuid) => {
+            if (!client.connected) {
+              console.warn("[STOMP] 클라이언트 미연결 상태, 구독 취소");
+              return;
+            }
+
+            console.log("[STOMP] 구독 시작 →", `/topic/chat/${uuid}`);
+
             try {
-              const event: ChatSocketEvent = JSON.parse(frame.body);
-              onEventRef.current(event);
-            } catch {
-              console.warn("[STOMP] 메시지 파싱 오류:", frame.body);
+              const sub1 = client.subscribe(`/topic/chat/${uuid}`, (frame) => {
+                try {
+                  const event: ChatSocketEvent = JSON.parse(frame.body);
+                  onEventRef.current(event);
+                } catch {
+                  console.warn("[STOMP] 메시지 파싱 오류:", frame.body);
+                }
+              });
+              subscriptionsRef.current.set(`chat-${uuid}`, sub1);
+
+              const sub2 = client.subscribe(`/topic/chat/${uuid}/typing`, (frame) => {
+                try {
+                  const event: TypingEvent = JSON.parse(frame.body);
+                  onTypingEventRef.current?.(event);
+                } catch {
+                  console.warn("[STOMP] 타이핑 이벤트 파싱 오류:", frame.body);
+                }
+              });
+              subscriptionsRef.current.set(`typing-${uuid}`, sub2);
+            } catch (err) {
+              console.error("[STOMP] 구독 실패:", err);
             }
           });
-          client.subscribe(`/topic/chat/${uuid}/typing`, (frame) => {
-            try {
-              const event: TypingEvent = JSON.parse(frame.body);
-              onTypingEventRef.current?.(event);
-            } catch {
-              console.warn("[STOMP] 타이핑 이벤트 파싱 오류:", frame.body);
-            }
+
+          const errorSub = client.subscribe("/user/queue/errors", (frame) => {
+            console.warn("[STOMP] 서버 에러:", frame.body);
           });
-        });
-        client.subscribe("/user/queue/errors", (frame) => {
-          console.warn("[STOMP] 서버 에러:", frame.body);
-        });
+          subscriptionsRef.current.set("errors", errorSub);
+
+          readyRef.current = true;
+        } catch (err) {
+          console.error("[STOMP] onConnect 중 오류:", err);
+          setIsConnected(false);
+          readyRef.current = false;
+        }
+      },
+      onDisconnect: () => {
+        console.log("[STOMP] 연결 해제됨");
+        setIsConnected(false);
+        readyRef.current = false;
       },
       onStompError: (frame) => {
-        console.warn("[STOMP] STOMP 오류:", frame.headers["message"]);
+        const errorMessage = frame.headers["message"] as string || '';
+        console.error("[STOMP] STOMP 오류:", errorMessage, frame);
+        setIsConnected(false);
+        readyRef.current = false;
+
+        // 토큰 만료 감지
+        if (errorMessage.includes('token_expired') || errorMessage.includes('authentication failed')) {
+          console.warn("[STOMP] 토큰 만료 - 로그아웃 처리");
+          logout();
+          onAuthErrorRef.current?.();
+        }
       },
       onWebSocketError: (event) => {
-        console.warn("[STOMP] WebSocket 오류:", event);
+        console.error("[STOMP] WebSocket 오류:", event);
+        setIsConnected(false);
+        readyRef.current = false;
       },
     });
 
@@ -95,7 +162,12 @@ export function useChatSocket(
     return () => {
       setIsConnected(false);
       readyRef.current = false;
-      client.deactivate();
+      unsubscribeAll();
+      try {
+        client.deactivate();
+      } catch (e) {
+        console.warn("[STOMP] 연결 해제 오류:", e);
+      }
       clientRef.current = null;
     };
   }, [accessToken, roomUuidKey]);

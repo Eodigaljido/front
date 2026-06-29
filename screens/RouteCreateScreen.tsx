@@ -3884,6 +3884,9 @@ export default function RouteCreateScreen(): React.JSX.Element {
     }
     setFriendInviteSubmitting(true);
     try {
+      // 먼저 루트를 collaborativeMode로 전환 (멤버 추가 가능하게)
+      await commitCollaborativeMode();
+
       const title = routeTitle.trim() || "루트";
       const { chatRoomUuid, sent } = await inviteFriendsToRouteChat({
         accessToken,
@@ -3891,13 +3894,14 @@ export default function RouteCreateScreen(): React.JSX.Element {
         routeId: rid,
         routeTitle: title,
         friendUuids,
-        existingChatRoomUuid: routeChatRoomUuid,
+        // 1명 초대: 기존 1대1 채팅방 재사용, existingChatRoomUuid 무시
+        // 여러 명 초대: 새 그룹 채팅방 생성
+        existingChatRoomUuid: friendUuids.length > 1 ? routeChatRoomUuid : null,
       });
       if (chatRoomUuid) patchRouteChatRoom(rid, chatRoomUuid);
       refreshCollabMembers();
       setFriendInviteOpen(false);
       if (sent) {
-        commitCollaborativeMode();
         showToast(`${friendUuids.length}명에게 초대했어요 · 채팅 탭에서 확인`);
       } else {
         Alert.alert(

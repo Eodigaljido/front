@@ -19,6 +19,7 @@ type Props = {
   accessToken: string | null;
   onConfirm: (friendUuids: string[]) => void | Promise<void>;
   submitting?: boolean;
+  routeName?: string;
 };
 
 export function CollaborativeFriendInviteModal({
@@ -27,6 +28,7 @@ export function CollaborativeFriendInviteModal({
   accessToken,
   onConfirm,
   submitting = false,
+  routeName,
 }: Props): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const [search, setSearch] = useState('');
@@ -77,8 +79,13 @@ export function CollaborativeFriendInviteModal({
           className="max-h-[78%] rounded-t-3xl bg-white"
           style={{ paddingBottom: Math.max(insets.bottom, 12) }}
         >
-          <View className="flex-row items-center justify-between border-b border-gray-100 px-4 py-3">
-            <Text className="text-lg font-bold text-gray-900">친구에게 공유</Text>
+          <View className="flex-row items-start justify-between border-b border-gray-100 px-4 py-3">
+            <View className="flex-1">
+              <Text className="text-lg font-bold text-gray-900">친구에게 공유</Text>
+              {routeName && (
+                <Text className="mt-1 text-sm text-gray-600">「{routeName}」</Text>
+              )}
+            </View>
             <Pressable onPress={onClose} hitSlop={8}>
               <Ionicons name="close" size={26} color="#64748b" />
             </Pressable>

@@ -16,7 +16,7 @@ import {
   KeyboardAwareScrollView,
   KeyboardStickyView,
 } from "react-native-keyboard-controller";
-import { RouteProp, useRoute } from "@react-navigation/native";
+import { RouteProp, useRoute, useNavigation } from "@react-navigation/native";
 import { RoomHeader } from "@/components/chat/RoomHeader";
 import { RouteShareMessageCard } from "@/components/chat/RouteShareMessageCard";
 import { BubbleChat } from "@/stories/chat/BubbleChat";
@@ -41,7 +41,8 @@ type ChatRoomRouteProp = RouteProp<RootStackParamList, "ChatRoomScreen">;
 
 export const ChatRoomScreen = () => {
   const route = useRoute<ChatRoomRouteProp>();
-  const { roomUuid, roomName, memberCount = 2 } = route.params;
+  const navigation = useNavigation();
+  const { roomUuid, roomName, memberCount = 2, parentRoomUuid } = route.params;
 
   const accessToken = useAuthStore((s) => s.accessToken);
   const userUuid = useAuthStore((s) => s.user?.uuid);
@@ -103,6 +104,10 @@ export const ChatRoomScreen = () => {
       }
     },
     handleTypingEvent,
+    () => {
+      console.log("[ChatRoomScreen] 토큰 만료 - 로그인 화면으로 이동");
+      navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+    },
   );
 
   const fetchMessages = useCallback(
@@ -309,7 +314,7 @@ export const ChatRoomScreen = () => {
     <>
       <StatusBar style="dark" />
       <View className="flex-1 bg-white">
-        <RoomHeader roomName={roomName} roomUuid={roomUuid} />
+        <RoomHeader roomName={roomName} roomUuid={roomUuid} parentRoomUuid={parentRoomUuid} />
         <View style={{ flex: 1 }}>
           <KeyboardAwareScrollView
             ref={scrollViewRef}

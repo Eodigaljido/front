@@ -32,7 +32,9 @@ export function RouteHistoryFeed({
       if (!accessToken || !courseId) return;
       setLoading(true);
       try {
+        console.log(`[RouteHistoryFeed] 피드 로드 시작: courseId=${courseId}, page=${pageNum}`);
         const result = await getRouteFeed(accessToken, courseId, pageNum, 30);
+        console.log(`[RouteHistoryFeed] 피드 로드 완료: ${result.items?.length ?? 0}개 항목`);
         if (pageNum === 0) {
           setItems(result.items ?? []);
         } else {
@@ -42,7 +44,7 @@ export function RouteHistoryFeed({
           (result.pageInfo?.page ?? 0) < ((result.pageInfo?.totalPages ?? 1) - 1)
         );
       } catch (err) {
-        console.error("루트 기록 로드 실패:", err);
+        console.error("[RouteHistoryFeed] 루트 기록 로드 실패:", err);
       } finally {
         setLoading(false);
       }

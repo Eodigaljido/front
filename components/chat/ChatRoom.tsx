@@ -8,7 +8,7 @@ import {
 import { useFocusEffect } from "@react-navigation/native";
 import { rootNavigate } from "@/navigation/rootNavigation";
 import { getChatRooms, ChatRoom as ChatRoomType } from "@/api/chat/chat";
-import { useCallback, useState } from "react";
+import { useCallback, useState, useRef } from "react";
 import { useAuthStore } from "@/store/authStore";
 import { useChatSocket, ChatSocketEvent } from "@/hooks/useChatSocket";
 import { MessageSquare, Search } from "lucide-react-native";
@@ -47,13 +47,51 @@ export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
   const [chatRooms, setChatRooms] = useState<ChatRoomType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const accessToken = useAuthStore((s) => s.accessToken);
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 중복 제거를 보장하는 setState wrapper
+  const setUniqueChatRooms = useCallback((rooms: ChatRoomType[] | ((prev: ChatRoomType[]) => ChatRoomType[])) => {
+    setChatRooms((prev) => {
+      const newRooms = typeof rooms === "function" ? rooms(prev) : rooms;
+      // 항상 uuid 기반으로 중복 제거
+      const uniqueMap = new Map<string, ChatRoomType>();
+      for (const room of newRooms) {
+        if (room.uuid) {
+          uniqueMap.set(room.uuid, room);
+        }
+      }
+      const result = Array.from(uniqueMap.values());
+      if (result.length !== newRooms.length) {
+        console.log(`[ChatRoom] 중복 제거: ${newRooms.length} → ${result.length}개`);
+      }
+      return result;
+    });
+  }, []);
+
+  // debounce된 새로고침 함수 - 연속 메시지 전송 시 race condition 방지
+  const debouncedRefreshChatRooms = useCallback(() => {
+    if (refreshTimeoutRef.current) {
+      clearTimeout(refreshTimeoutRef.current);
+    }
+    refreshTimeoutRef.current = setTimeout(() => {
+      if (!accessToken) return;
+      getChatRooms(accessToken)
+        .then((rooms) => {
+          if (Array.isArray(rooms)) {
+            setUniqueChatRooms(rooms);
+          }
+        })
+        .catch(console.error);
+    }, 800); // 800ms debounce
+  }, [accessToken, setUniqueChatRooms]);
 
   // 방 목록이 로드된 후 모든 방을 구독해 실시간 업데이트 수신
   useChatSocket(
     (Array.isArray(chatRooms) ? chatRooms : []).map((r) => r.uuid),
     (event: ChatSocketEvent) => {
-      if (event.eventType === "MESSAGE_CREATED" && accessToken) {
-        getChatRooms(accessToken).then(setChatRooms).catch(console.error);
+      if (event.eventType === "MESSAGE_CREATED") {
+        // 연속 메시지로 인한 race condition 방지
+        debouncedRefreshChatRooms();
       }
     },
   );
@@ -62,7 +100,14 @@ export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
     if (!accessToken) return;
     setIsLoading(true);
     getChatRooms(accessToken)
-      .then((rooms) => setChatRooms(Array.isArray(rooms) ? rooms : []))
+      .then((rooms) => {
+        if (Array.isArray(rooms)) {
+          console.log("[ChatRoom] API 응답:", rooms.length, "개");
+          setUniqueChatRooms(rooms);
+        } else {
+          setUniqueChatRooms([]);
+        }
+      })
       .catch((err) => {
         console.error("채팅방 목록 불러오기 실패:", err);
       })
@@ -72,10 +117,18 @@ export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
   useFocusEffect(
     useCallback(() => {
       fetchChatRooms();
+      return () => {
+        // cleanup: debounce timeout 취소
+        if (refreshTimeoutRef.current) {
+          clearTimeout(refreshTimeoutRef.current);
+        }
+      };
     }, [accessToken]),
   );
 
   const roomList = Array.isArray(chatRooms) ? chatRooms : [];
+
+  // 상태에서 이미 중복이 제거되어 있으므로 직접 필터링
   const filteredRooms = searchQuery
     ? roomList.filter(
         (room) =>
