@@ -4,6 +4,7 @@ import { login as apiLogin, register as apiRegister, logout as apiLogout } from 
 import type { LoginRequest, RegisterRequest } from '../api/auth';
 import { tokenStorage } from '../utils/tokenStorage';
 import { getMyProfile } from '../api/users';
+import { preloadNotificationSettings } from '../api/notificationSettings';
 
 interface AuthState {
   accessToken: string | null;
@@ -56,6 +57,7 @@ export const useAuthStore = create<AuthState>(set => ({
     try {
       const me = await getMyProfile();
       set({ user: userFromProfile(me) });
+      void preloadNotificationSettings(me.uuid);
     } catch {
       // login 응답 user를 fallback으로 유지
     }
@@ -126,6 +128,7 @@ export const useAuthStore = create<AuthState>(set => ({
         user: userFromProfile(me),
         isAuthenticated: true,
       });
+      void preloadNotificationSettings(me.uuid);
     } catch {
       const stillValid = await tokenStorage.getAccessToken();
       if (stillValid) {
