@@ -105,22 +105,29 @@ function mergeMessages(
 
   // incoming 메시지 추가 (서버의 최신 데이터 우선)
   for (const m of incoming) {
-    if (!m.isDeleted && m.uuid) {
+    if (m.uuid && !m.isDeleted) {
       map.set(m.uuid, m);
     }
   }
 
   // prev의 pending 메시지만 추가 (아직 서버에 저장되지 않은 메시지)
   for (const m of prev) {
-    if (m.uuid.startsWith("pending-") && !map.has(m.uuid)) {
+    if (m.uuid?.startsWith("pending-") && !map.has(m.uuid)) {
       map.set(m.uuid, m);
     }
   }
 
-  // 시간 순으로 정렬
-  return [...map.values()].sort(
+  // 시간 순으로 정렬하고 중복 제거
+  const sorted = [...map.values()].sort(
     (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
   );
+
+  const seen = new Set<string>();
+  return sorted.filter((m) => {
+    if (seen.has(m.uuid)) return false;
+    seen.add(m.uuid);
+    return true;
+  });
 }
 
 function replacePendingMessage(
@@ -216,19 +223,7 @@ export function RouteCollaborativeChatSheet({
     (incoming: ChatMessage[], scroll = false) => {
       setApiMessages((prev) => {
         const merged = mergeMessages(prev, incoming);
-
-        // 최종 중복 제거 (백엔드 중복 대응)
-        const seen = new Set<string>();
-        const deduplicated = merged.filter((m) => {
-          if (!m.uuid || seen.has(m.uuid)) return false;
-          seen.add(m.uuid);
-          return true;
-        });
-
-        const same =
-          deduplicated.length === prev.length &&
-          deduplicated.every((m, i) => m.uuid === prev[i]?.uuid);
-        return same ? prev : deduplicated;
+        return merged;
       });
       if (scroll) maybeScrollToEnd(false);
     },
@@ -338,7 +333,16 @@ export function RouteCollaborativeChatSheet({
         const chronological = [...(Array.isArray(fetched) ? fetched : [])]
           .reverse()
           .filter((m) => !m.isDeleted);
-        applyIncomingMessages(chronological, Boolean(opts?.showSpinner));
+
+        // 중복 제거: 백엔드에서 중복이 올 수 있으므로 한 번 더 처리
+        const seen = new Set<string>();
+        const deduplicated = chronological.filter((m) => {
+          if (!m.uuid || seen.has(m.uuid)) return false;
+          seen.add(m.uuid);
+          return true;
+        });
+
+        applyIncomingMessages(deduplicated, Boolean(opts?.showSpinner));
       } catch (err) {
         if (isChatApiNotFoundError(err)) {
           setRoomUnavailable(true);
@@ -416,7 +420,7 @@ export function RouteCollaborativeChatSheet({
     }
     lastSendTimeRef.current = now;
 
-    const pendingUuid = `pending-${now}`;
+    const pendingUuid = `pending-${now}-${Math.random()}`;
     const optimistic: ChatMessage = {
       uuid: pendingUuid,
       senderUuid: myUuid ?? "",
@@ -635,17 +639,7 @@ export function RouteCollaborativeChatSheet({
                 <ActivityIndicator className="py-6" color="#2563eb" />
               ) : (
                 (() => {
-                  // 메시지 중복 제거 (uuid 기반) - 두 번 검증
-                  const seen = new Set<string>();
-                  const uniqueMessages = apiMessages
-                    .filter((m) => {
-                      if (!m.uuid || seen.has(m.uuid)) return false;
-                      if (m.isDeleted) return false;
-                      seen.add(m.uuid);
-                      return true;
-                    });
-
-                  return uniqueMessages
+                  return apiMessages
                     .filter((msg) => {
                       // 내용이 없는 텍스트 메시지 제외
                       const body = messageBody(msg);
@@ -657,7 +651,7 @@ export function RouteCollaborativeChatSheet({
                         return false;
                       return true;
                     })
-                    .map((msg, index) => {
+                    .map((msg) => {
                     const isMe = msg.senderUuid === myUuid;
 
                     // 이미지: 썸네일(작게) + 클릭 시 확대

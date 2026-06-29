@@ -35,11 +35,42 @@ export function RouteHistoryFeed({
         console.log(`[RouteHistoryFeed] 피드 로드 시작: courseId=${courseId}, page=${pageNum}`);
         const result = await getRouteFeed(accessToken, courseId, pageNum, 30);
         console.log(`[RouteHistoryFeed] 피드 로드 완료: ${result.items?.length ?? 0}개 항목`);
+
+        const incoming = result.items ?? [];
+
         if (pageNum === 0) {
-          setItems(result.items ?? []);
+          // 처음 로드할 때 백엔드 중복 제거
+          const seen = new Set<string>();
+          const deduplicated = incoming.filter((item) => {
+            const key = item.uuid || `${item.type}-${item.itemId}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+          setItems(deduplicated);
         } else {
-          setItems((prev) => [...prev, ...(result.items ?? [])]);
+          setItems((prev) => {
+            // 중복 제거: uuid 또는 type-itemId 기반
+            const existingKeys = new Set(
+              prev.map((item) => item.uuid || `${item.type}-${item.itemId}`)
+            );
+            const newItems = incoming.filter((item) => {
+              const key = item.uuid || `${item.type}-${item.itemId}`;
+              return !existingKeys.has(key);
+            });
+
+            // 전체 목록의 중복도 제거
+            const allItems = [...prev, ...newItems];
+            const finalSeen = new Set<string>();
+            return allItems.filter((item) => {
+              const key = item.uuid || `${item.type}-${item.itemId}`;
+              if (finalSeen.has(key)) return false;
+              finalSeen.add(key);
+              return true;
+            });
+          });
         }
+
         setHasMore(
           (result.pageInfo?.page ?? 0) < ((result.pageInfo?.totalPages ?? 1) - 1)
         );
@@ -262,22 +293,36 @@ export function RouteHistoryFeed({
       </View>
 
       {/* 피드 리스트 */}
-      <FlatList
-        data={items}
-        renderItem={renderItem}
-        keyExtractor={(item) => `${item.type}-${item.itemId}`}
-        ListEmptyComponent={!loading ? renderEmpty : null}
-        ListFooterComponent={renderFooter}
-        onEndReached={() => {
-          if (hasMore && !loading) {
-            const nextPage = page + 1;
-            setPage(nextPage);
-            void loadFeed(nextPage);
-          }
-        }}
-        onEndReachedThreshold={0.5}
-        scrollEnabled
-      />
+      {(() => {
+        // 최종 중복 제거: uuid 또는 type-itemId 기반
+        const seen = new Set<string>();
+        const uniqueItems = items.filter((item) => {
+          const key = item.uuid || `${item.type}-${item.itemId}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+
+        return (
+          <FlatList
+            data={uniqueItems}
+            renderItem={renderItem}
+            keyExtractor={(item) => item.uuid || `${item.type}-${item.itemId}`}
+            ListEmptyComponent={!loading ? renderEmpty : null}
+            ListFooterComponent={renderFooter}
+            onEndReached={() => {
+              if (hasMore && !loading) {
+                const nextPage = page + 1;
+                setPage(nextPage);
+                void loadFeed(nextPage);
+              }
+            }}
+            onEndReachedThreshold={0.5}
+            scrollEnabled
+            removeClippedSubviews={false}
+          />
+        );
+      })()}
     </View>
   );
 }

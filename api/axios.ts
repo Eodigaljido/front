@@ -1,6 +1,7 @@
 // @ts-nocheck
 import axios from 'axios';
 import { tokenStorage } from '../utils/tokenStorage';
+import { navigationRef } from '../navigation/rootNavigation';
 
 /** preview APK 등 __DEV__=false 빌드에서 EAS env `EXPO_PUBLIC_APK_DEBUG=1` 로 API 로그 활성화 */
 const apkDebug = String(process.env.EXPO_PUBLIC_APK_DEBUG ?? '').trim() === '1';
@@ -121,6 +122,15 @@ instance.interceptors.response.use(
         user: null,
         isAuthenticated: false,
       });
+
+      // 로그인 화면으로 이동
+      if (navigationRef.isReady()) {
+        navigationRef.reset({
+          index: 0,
+          routes: [{ name: 'Login' }],
+        });
+      }
+
       return Promise.reject(refreshErr);
     } finally {
       isRefreshing = false;
