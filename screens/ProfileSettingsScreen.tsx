@@ -59,7 +59,6 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
   const [saving, setSaving] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [publicProfile, setPublicProfile] = useState(true);
-  const [emailNotif, setEmailNotif] = useState(false);
 
   // 전화번호 인증 상태
   const [phoneSending, setPhoneSending] = useState(false);
@@ -98,7 +97,6 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
           : DEFAULT_AVATAR_URI,
       );
       setPublicProfile(me.publicProfile ?? true);
-      setEmailNotif(me.emailNotif ?? false);
       syncAuthUser(me);
     },
     [profileImageCacheBust, syncAuthUser],
@@ -544,14 +542,8 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
                   </Text>
                 )}
             </View>
-          </View>
 
-          <View className="px-4 py-2 mt-4 bg-white border border-gray-200 rounded-2xl">
-            <Text className="py-3 text-xs font-semibold tracking-wide text-gray-400 uppercase">
-              공개 · 알림
-            </Text>
-
-            <View className="flex-row items-center justify-between border-b border-gray-100 py-3.5">
+            <View className="flex-row items-center justify-between border-t border-gray-100 py-3.5">
               <View className="flex-1 pr-3">
                 <Text className="text-base font-semibold text-gray-900">
                   공개 프로필
@@ -565,23 +557,6 @@ export default function ProfileSettingsScreen(): React.JSX.Element {
                 onValueChange={setPublicProfile}
                 trackColor={{ false: '#e5e7eb', true: '#86efac' }}
                 thumbColor={publicProfile ? '#16a34a' : '#f3f4f6'}
-              />
-            </View>
-
-            <View className="flex-row items-center justify-between py-3.5">
-              <View className="flex-1 pr-3">
-                <Text className="text-base font-semibold text-gray-900">
-                  이메일 알림
-                </Text>
-                <Text className="mt-0.5 text-xs text-gray-500">
-                  이벤트·공지 등 메일로 받기
-                </Text>
-              </View>
-              <Switch
-                value={emailNotif}
-                onValueChange={setEmailNotif}
-                trackColor={{ false: '#e5e7eb', true: '#93c5fd' }}
-                thumbColor={emailNotif ? '#2563eb' : '#f3f4f6'}
               />
             </View>
           </View>

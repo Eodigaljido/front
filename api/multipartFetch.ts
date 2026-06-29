@@ -47,7 +47,12 @@ export async function fetchMultipart(
   path: string,
   method: "POST" | "PATCH",
   parts: { field: string; file: MultipartFilePart }[],
-  options?: { accessToken?: string | null; silent?: boolean },
+  options?: {
+    accessToken?: string | null;
+    silent?: boolean;
+    /** 파일 외에 함께 보낼 텍스트/JSON 파트 (예: Spring @RequestPart 객체) */
+    fields?: { field: string; value: string; type?: string }[];
+  },
 ): Promise<{ status: number; data: unknown }> {
   const base = getApiBaseUrl();
   if (!base) {
@@ -59,6 +64,16 @@ export async function fetchMultipart(
   const url = joinUrl(base, path);
 
   const form = new FormData();
+  for (const { field, value, type } of options?.fields ?? []) {
+    // 일반 문자열로 append 하면 RN 이 content-type 을 지정하지 않아
+    // 서버에서 application/octet-stream 으로 처리되어 415 가 난다.
+    // { string, type, name } 객체로 넘겨 파트별 Content-Type 을 명시한다.
+    form.append(field, {
+      string: value,
+      type: type ?? "application/json",
+      name: field,
+    } as unknown as Blob);
+  }
   for (const { field, file } of parts) {
     form.append(field, {
       uri: file.uri,

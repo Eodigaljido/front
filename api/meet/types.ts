@@ -29,6 +29,7 @@ export interface GroupPost {
   authorUserId: string;
   authorNickname: string;
   authorProfileImageUrl: string | null;
+  title: string;
   content: string;
   imageUrls: string[];
   createdAt: string;
@@ -111,11 +112,13 @@ export interface UpdateGroupRequest {
 }
 
 export interface CreatePostRequest {
+  title: string;
   content: string;
   imageUrls?: string[];
 }
 
 export interface UpdatePostRequest {
+  title: string;
   content: string;
   imageUrls?: string[];
 }

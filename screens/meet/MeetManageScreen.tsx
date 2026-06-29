@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   Alert,
   Image,
@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   NavigationProp,
   RouteProp,
+  useFocusEffect,
   useNavigation,
   useRoute,
 } from '@react-navigation/native';
@@ -25,7 +26,7 @@ import { safeGoBack } from '@/navigation/rootNavigation';
 import { useAuthStore } from '@/store/authStore';
 import { getGroup, updateGroup, deleteGroup } from '@/api/meet/groups';
 import { getJoinRequests, processJoinRequest } from '@/api/meet/members';
-import type { Group, JoinRequest, GroupType } from '@/api/meet/types';
+import type { JoinRequest, GroupType } from '@/api/meet/types';
 
 type ManageRouteProp = RouteProp<RootStackParamList, 'MeetManage'>;
 
@@ -36,9 +37,7 @@ export default function MeetManageScreen(): React.JSX.Element {
 
   const accessToken = useAuthStore((s) => s.accessToken) ?? '';
 
-  const [group, setGroup] = useState<Group | null>(null);
   const [joinRequests, setJoinRequests] = useState<JoinRequest[]>([]);
-  const [loading, setLoading] = useState(true);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -47,13 +46,11 @@ export default function MeetManageScreen(): React.JSX.Element {
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
       const [g, reqs] = await Promise.all([
         getGroup(groupUuid),
         getJoinRequests(accessToken, groupUuid).catch(() => [] as JoinRequest[]),
       ]);
-      setGroup(g);
       setName(g.name);
       setDescription(g.description);
       setGroupType(g.type);
@@ -61,14 +58,14 @@ export default function MeetManageScreen(): React.JSX.Element {
       setJoinRequests(reqs);
     } catch {
       /* ignore */
-    } finally {
-      setLoading(false);
     }
   }, [accessToken, groupUuid]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
 
   const handleSave = async () => {
     const trimmedName = name.trim();
@@ -136,7 +133,7 @@ export default function MeetManageScreen(): React.JSX.Element {
   return (
     <SafeAreaView style={s.screen} edges={['top']}>
       <View style={s.header}>
-        <TouchableOpacity style={s.backBtn} onPress={() => safeGoBack(navigation)}>
+        <TouchableOpacity activeOpacity={0.7} style={s.backBtn} onPress={() => safeGoBack(navigation)}>
           <ChevronLeft color="#0F172A" size={22} />
         </TouchableOpacity>
         <Text style={s.headerTitle}>모임 관리</Text>
@@ -175,13 +172,13 @@ export default function MeetManageScreen(): React.JSX.Element {
                       <Text style={s.reqName}>{req.requesterNickname}</Text>
                       <Text style={s.reqId}>@{req.requesterUserId}</Text>
                     </View>
-                    <TouchableOpacity
+                    <TouchableOpacity activeOpacity={0.7}
                       style={s.approveBtn}
                       onPress={() => handleApprove(req)}
                     >
                       <Check color="#22C55E" size={17} strokeWidth={2.5} />
                     </TouchableOpacity>
-                    <TouchableOpacity
+                    <TouchableOpacity activeOpacity={0.7}
                       style={s.rejectBtn}
                       onPress={() => handleReject(req)}
                     >
@@ -206,7 +203,7 @@ export default function MeetManageScreen(): React.JSX.Element {
               placeholder="모임 이름"
               placeholderTextColor="#CBD5E1"
               maxLength={50}
-              selectionColor="#3B82F6"
+              selectionColor="#93C5FD"
             />
           </View>
 
@@ -221,14 +218,14 @@ export default function MeetManageScreen(): React.JSX.Element {
               maxLength={200}
               multiline
               textAlignVertical="top"
-              selectionColor="#3B82F6"
+              selectionColor="#93C5FD"
             />
           </View>
 
           <View style={s.fieldWrap}>
             <Text style={s.fieldLabel}>공개 범위</Text>
             <View style={s.typeRow}>
-              <TouchableOpacity
+              <TouchableOpacity activeOpacity={0.7}
                 style={[s.typeBtn, groupType === 'PUBLIC' && s.typeBtnActive]}
                 onPress={() => setGroupType('PUBLIC')}
               >
@@ -240,7 +237,7 @@ export default function MeetManageScreen(): React.JSX.Element {
                   공개
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity
+              <TouchableOpacity activeOpacity={0.7}
                 style={[s.typeBtn, groupType === 'PRIVATE' && s.typeBtnActive]}
                 onPress={() => setGroupType('PRIVATE')}
               >
@@ -272,7 +269,7 @@ export default function MeetManageScreen(): React.JSX.Element {
             </View>
           )}
 
-          <TouchableOpacity
+          <TouchableOpacity activeOpacity={0.7}
             style={[s.saveBtn, { opacity: saving ? 0.65 : 1 }]}
             onPress={handleSave}
             disabled={saving}
