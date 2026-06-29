@@ -12,6 +12,8 @@ export type UserProfile = {
   introduction?: string | null;
   phone?: string | null;
   role?: string;
+  /** 계정에 연결된 로그인 수단: 'LOCAL' | 'KAKAO' | 'GOOGLE' */
+  loginMethods?: string[];
 };
 
 type UserSearchItem = {
