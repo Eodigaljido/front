@@ -40,6 +40,8 @@ import CourseGuideScreen from './screens/CourseGuideScreen';
 import AppSettingsScreen from './screens/AccountSettingsScreen';
 import NotificationSettingsScreen from './screens/NotificationSettingsScreen';
 import FriendRequestsScreen from './screens/FriendRequestsScreen';
+import FriendsListScreen from './screens/FriendsListScreen';
+import AppAlert from './components/AppAlert';
 import { appLinking } from './constants/shareLinking';
 import UserProfileScreen from './screens/UserProfileScreen';
 import { ChatRouteHistory } from './screens/chat/ChatRouteHistory';
@@ -96,6 +98,7 @@ export type RootStackParamList = {
     | undefined;
   ProfileSettings: undefined;
   FriendRequests: undefined;
+  FriendsList: undefined;
   UserProfile: {
     uuid?: string;
     userUuid?: string;
@@ -378,6 +381,7 @@ export default function App(): React.JSX.Element {
                   <Stack.Screen name="CourseGuide" component={CourseGuideScreen} />
                   <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
                   <Stack.Screen name="FriendRequests" component={FriendRequestsScreen} />
+                  <Stack.Screen name="FriendsList" component={FriendsListScreen} />
                   <Stack.Screen name="UserProfile" component={UserProfileScreen} />
                   <Stack.Screen name="OnBoardStart" component={OnBoardStart} />
                   <Stack.Screen name="AreaOnBoard" component={AreaOnBoard} />
@@ -402,6 +406,7 @@ export default function App(): React.JSX.Element {
                 </Stack.Navigator>
               </KeyboardProvider>
             </NavigationContainer>
+            <AppAlert />
           </MockDataProvider>
         </ToastProvider>
       </SafeAreaProvider>
