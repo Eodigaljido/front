@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -11,12 +11,17 @@ import {
   Dimensions,
   StyleSheet,
   Platform,
-} from 'react-native';
-import { appAlert } from '../../utils/appAlert';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { NavigationProp, RouteProp, useNavigation, useRoute } from '@react-navigation/native';
-import { RootStackParamList } from '@/App';
-import { safeGoBack } from '@/navigation/rootNavigation';
+} from "react-native";
+import { appAlert } from "../../utils/appAlert";
+import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  NavigationProp,
+  RouteProp,
+  useNavigation,
+  useRoute,
+} from "@react-navigation/native";
+import { RootStackParamList } from "@/App";
+import { safeGoBack } from "@/navigation/rootNavigation";
 import {
   ChevronLeft,
   Edit2,
@@ -27,24 +32,28 @@ import {
   X,
   Check,
   Users,
-} from 'lucide-react-native';
-import * as ImagePicker from 'expo-image-picker';
-import { Asset } from 'expo-asset';
+} from "lucide-react-native";
+import * as ImagePicker from "expo-image-picker";
+import { Asset } from "expo-asset";
 
 import {
   deleteChatRoom,
   getChatRoom,
+  getInvitableFriends,
   inviteChatMember,
+  kickChatMember,
   leaveChatRoom,
   renameChatRoom,
   updateChatRoomImage,
-} from '@/api/chat/chat';
-import { getFriends } from '@/api/friend/friends';
-import { getUserProfileByUuid } from '@/api/users';
-import { useAuthStore } from '@/store/authStore';
-import { CHAT_PRESET_IMAGES } from '@/constants/chatPresetAvatars';
+  createChatRoom,
+} from "@/api/chat/chat";
+import { useAuthStore } from "@/store/authStore";
+import { CHAT_PRESET_IMAGES } from "@/constants/chatPresetAvatars";
 
-type ChatRoomInfoRouteProp = RouteProp<RootStackParamList, 'ChatRoomInfoScreen'>;
+type ChatRoomInfoRouteProp = RouteProp<
+  RootStackParamList,
+  "ChatRoomInfoScreen"
+>;
 
 type Member = {
   uuid: string;
@@ -56,16 +65,24 @@ type Member = {
 
 type InvitableFriend = {
   id: string;
+  userId: number;
   uuid: string;
   name: string;
-  userId?: string;
+  profileImageUrl?: string;
 };
 
 const PRESET_IMAGES = CHAT_PRESET_IMAGES;
 
-const FRIEND_COLORS = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD'];
+const FRIEND_COLORS = [
+  "#FF6B6B",
+  "#4ECDC4",
+  "#45B7D1",
+  "#96CEB4",
+  "#FFEAA7",
+  "#DDA0DD",
+];
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const CELL_SIZE = (SCREEN_WIDTH - 32 - 8 * 3) / 4;
 
 export default function ChatRoomInfoScreen() {
@@ -73,8 +90,8 @@ export default function ChatRoomInfoScreen() {
   const route = useRoute<ChatRoomInfoRouteProp>();
   const { roomUuid, roomName: initialRoomName } = route.params;
 
-  const accessToken = useAuthStore(s => s.accessToken);
-  const myUuid = useAuthStore(s => s.user?.uuid);
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const myUuid = useAuthStore((s) => s.user?.uuid);
 
   const [isOwner, setIsOwner] = useState(false);
   const [roomName, setRoomName] = useState(initialRoomName);
@@ -86,19 +103,24 @@ export default function ChatRoomInfoScreen() {
   const [imageModalVisible, setImageModalVisible] = useState(false);
   const [inviteModalVisible, setInviteModalVisible] = useState(false);
   const [isSavingImage, setIsSavingImage] = useState(false);
+  const [isInviting, setIsInviting] = useState(false);
 
-  const [editingName, setEditingName] = useState('');
-  const [tempPresetId, setTempPresetId] = useState('');
-  const [tempLocalImageUri, setTempLocalImageUri] = useState<string | null>(null);
-  const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set());
+  const [editingName, setEditingName] = useState("");
+  const [tempPresetId, setTempPresetId] = useState("");
+  const [tempLocalImageUri, setTempLocalImageUri] = useState<string | null>(
+    null,
+  );
+  const [selectedFriends, setSelectedFriends] = useState<Set<string>>(
+    new Set(),
+  );
 
-  const tempPreset = PRESET_IMAGES.find(p => p.id === tempPresetId);
+  const tempPreset = PRESET_IMAGES.find((p) => p.id === tempPresetId);
 
   const loadRoom = useCallback(async () => {
     if (!accessToken) return;
     const room = await getChatRoom(accessToken, roomUuid);
     if (!room) return;
-    setIsOwner(String(room.ownerUuid) === String(myUuid ?? ''));
+    setIsOwner(String(room.ownerUuid) === String(myUuid ?? ""));
     setProfileImageUrl(room.profileImageUrl || null);
     const mapped: Member[] = (room.members ?? []).map((m, i) => ({
       uuid: m.uuid,
@@ -116,20 +138,22 @@ export default function ChatRoomInfoScreen() {
 
   useEffect(() => {
     if (!inviteModalVisible || !accessToken) return;
-    getFriends(accessToken)
-      .then(list =>
+    getInvitableFriends(accessToken, roomUuid)
+      .then((list) =>
         setFriends(
-          list.map(f => ({
+          list.map((f) => ({
             id: String(f.friendId),
+            userId: f.userId,
             uuid: f.uuid,
             name: f.nickname,
+            profileImageUrl: f.profileImageUrl,
           })),
         ),
       )
       .catch(() => setFriends([]));
-  }, [inviteModalVisible, accessToken]);
+  }, [inviteModalVisible, accessToken, roomUuid]);
 
-  const invitableFriends = friends.filter(f => !members.some(m => m.uuid === f.uuid));
+  const invitableFriends = friends;
 
   const handleSaveName = async () => {
     const trimmed = editingName.trim();
@@ -138,17 +162,17 @@ export default function ChatRoomInfoScreen() {
       return;
     }
     if (!accessToken) {
-      appAlert('오류', '인증 정보가 없습니다.');
+      appAlert("오류", "인증 정보가 없습니다.");
       return;
     }
     try {
       await renameChatRoom(accessToken, roomUuid, trimmed);
       setRoomName(trimmed);
       setNameModalVisible(false);
-      navigation.navigate('ChatRoomScreen', { roomUuid, roomName: trimmed });
+      navigation.navigate("ChatRoomScreen", { roomUuid, roomName: trimmed });
     } catch (err) {
-      console.error('채팅방 이름 변경 실패:', err);
-      appAlert('오류', '채팅방 이름 변경에 실패했습니다.');
+      console.error("채팅방 이름 변경 실패:", err);
+      appAlert("오류", "채팅방 이름 변경에 실패했습니다.");
     }
   };
 
@@ -160,7 +184,7 @@ export default function ChatRoomInfoScreen() {
     });
     if (!result.canceled) {
       setTempLocalImageUri(result.assets[0].uri);
-      setTempPresetId('');
+      setTempPresetId("");
     }
   };
 
@@ -170,7 +194,7 @@ export default function ChatRoomInfoScreen() {
     try {
       let uploadUri: string | null = tempLocalImageUri;
       if (!uploadUri && tempPresetId) {
-        const preset = PRESET_IMAGES.find(p => p.id === tempPresetId);
+        const preset = PRESET_IMAGES.find((p) => p.id === tempPresetId);
         if (preset) {
           const asset = Asset.fromModule(preset.source);
           await asset.downloadAsync();
@@ -183,22 +207,27 @@ export default function ChatRoomInfoScreen() {
       }
       setImageModalVisible(false);
     } catch (err) {
-      appAlert('오류', '프로필 이미지 변경에 실패했습니다.');
-      console.error('프로필 이미지 변경 실패', err);
+      appAlert("오류", "프로필 이미지 변경에 실패했습니다.");
+      console.error("프로필 이미지 변경 실패", err);
     } finally {
       setIsSavingImage(false);
     }
   };
 
   const handleKickMember = (member: Member) => {
-    appAlert('멤버 강퇴', `${member.nickname}님을 채팅방에서 강퇴하시겠습니까?`, [
-      { text: '취소', style: 'cancel' },
-      {
-        text: '강퇴',
-        style: 'destructive',
-        onPress: () => setMembers(prev => prev.filter(m => m.uuid !== member.uuid)),
-      },
-    ]);
+    appAlert(
+      "멤버 강퇴",
+      `${member.nickname}님을 채팅방에서 강퇴하시겠습니까?`,
+      [
+        { text: "취소", style: "cancel" },
+        {
+          text: "강퇴",
+          style: "destructive",
+          onPress: () =>
+            setMembers((prev) => prev.filter((m) => m.uuid !== member.uuid)),
+        },
+      ],
+    );
   };
 
   const handleConfirmInvite = async () => {
@@ -206,40 +235,117 @@ export default function ChatRoomInfoScreen() {
       setInviteModalVisible(false);
       return;
     }
-    for (const id of selectedFriends) {
-      const friend = friends.find(f => f.id === id);
-      if (!friend) continue;
-      try {
-        const profile = await getUserProfileByUuid(friend.uuid);
-        const userId = profile.userId;
-        if (!userId) continue;
-        await inviteChatMember(accessToken, roomUuid, userId);
-      } catch {
-        /* skip failed invite */
+
+    // 1대1 채팅방 판별 (자신 + 상대방 = 2명)
+    const isOneToOne = members.length === 2;
+
+    setIsInviting(true);
+    let successCount = 0;
+    const failedFriends: string[] = [];
+
+    try {
+      if (isOneToOne) {
+        // 1대1 채팅방에서 새로운 멤버 추가 시 새로운 채팅방 생성
+        const newMemberUuids: string[] = [];
+        for (const id of selectedFriends) {
+          const friend = friends.find((f) => f.id === id);
+          if (friend) {
+            newMemberUuids.push(friend.uuid);
+          } else {
+            failedFriends.push(String(id));
+          }
+        }
+
+        if (newMemberUuids.length > 0 && myUuid) {
+          try {
+            // 현재 멤버 + 새 멤버로 새로운 채팅방 생성
+            const currentMembers = members.map((m) => m.uuid);
+            const allNewMembers = [
+              ...new Set([...currentMembers, ...newMemberUuids]),
+            ];
+
+            // 새 채팅방 이름: "A, B, C" 형식
+            const groupName = members.map((m) => m.nickname).join(", ");
+
+            const newRoom = await createChatRoom(
+              accessToken,
+              allNewMembers,
+              groupName,
+              null,
+            );
+            successCount = newMemberUuids.length;
+
+            // 새로운 채팅방으로 이동
+            setInviteModalVisible(false);
+            setSelectedFriends(new Set());
+            navigation.navigate("ChatRoomScreen", {
+              roomUuid: newRoom.uuid,
+              roomName: newRoom.name,
+              memberCount: newRoom.memberCount,
+            });
+          } catch (err: any) {
+            const errMsg =
+              err?.response?.data?.message ||
+              err?.message ||
+              "새 채팅방 생성 실패";
+            console.error("새 채팅방 생성 실패:", err);
+            Alert.alert("오류", errMsg);
+          }
+        }
+      } else {
+        // 그룹 채팅방: 기존 로직 사용
+        for (const id of selectedFriends) {
+          const friend = friends.find((f) => f.id === id);
+          if (!friend) continue;
+          try {
+            await inviteChatMember(accessToken, roomUuid, friend.uuid);
+            successCount++;
+          } catch (err: any) {
+            const errMsg =
+              err?.response?.data?.message || err?.message || String(err);
+            console.error(`초대 실패 (${friend.name}):`, errMsg);
+            failedFriends.push(friend.name);
+          }
+        }
+
+        setSelectedFriends(new Set());
+        setInviteModalVisible(false);
+        void loadRoom();
+
+        if (failedFriends.length > 0) {
+          Alert.alert(
+            "초대 완료",
+            `${successCount}명 초대 성공${failedFriends.length > 0 ? `\n\n초대 실패: ${failedFriends.join(", ")}` : ""}`,
+          );
+        } else if (successCount > 0) {
+          Alert.alert(
+            "초대 완료",
+            `${successCount}명을 채팅방으로 초대했습니다.`,
+          );
+        }
       }
+    } finally {
+      setIsInviting(false);
     }
-    setSelectedFriends(new Set());
-    setInviteModalVisible(false);
-    void loadRoom();
   };
 
   const handleLeaveRoom = async () => {
-    appAlert('채팅방 나가기', '채팅방에서 나가시겠습니까?', [
-      { text: '취소', style: 'cancel' },
+    appAlert("채팅방 나가기", "채팅방에서 나가시겠습니까?", [
+      { text: "취소", style: "cancel" },
       {
-        text: '나가기',
-        style: 'destructive',
+        text: "나가기",
+        style: "destructive",
         onPress: async () => {
           try {
             if (!accessToken) {
-              appAlert('오류', '인증 정보가 없습니다.');
+              appAlert("오류", "인증 정보가 없습니다.");
               return;
             }
             await leaveChatRoom(accessToken, roomUuid);
-            navigation.navigate('Tabs');
+            navigation.reset({ index: 0, routes: [{ name: "Tabs" }] });
           } catch (err) {
-            console.error('채팅방 나가기 실패:', err);
-            appAlert('오류', '채팅방 나가기에 실패했습니다.');
+            console.error("채팅방 나가기 실패:", err);
+            appAlert("오류", "채팅방 나가기에 실패했습니다.");
           }
         },
       },
@@ -247,22 +353,22 @@ export default function ChatRoomInfoScreen() {
   };
 
   const handleDeleteRoom = async () => {
-    appAlert('채팅방 삭제', '채팅방을 삭제하면 복구할 수 없습니다.', [
-      { text: '취소', style: 'cancel' },
+    appAlert("채팅방 삭제", "채팅방을 삭제하면 복구할 수 없습니다.", [
+      { text: "취소", style: "cancel" },
       {
-        text: '삭제',
-        style: 'destructive',
+        text: "삭제",
+        style: "destructive",
         onPress: async () => {
           try {
             if (!accessToken) {
-              appAlert('오류', '인증 정보가 없습니다.');
+              appAlert("오류", "인증 정보가 없습니다.");
               return;
             }
             await deleteChatRoom(accessToken, roomUuid);
-            navigation.navigate('Tabs');
+            navigation.reset({ index: 0, routes: [{ name: "Tabs" }] });
           } catch (err) {
-            console.error('채팅방 삭제 실패:', err);
-            appAlert('오류', '채팅방 삭제에 실패했습니다.');
+            console.error("채팅방 삭제 실패:", err);
+            appAlert("오류", "채팅방 삭제에 실패했습니다.");
           }
         },
       },
@@ -270,7 +376,7 @@ export default function ChatRoomInfoScreen() {
   };
 
   const toggleFriendSelect = (id: string) => {
-    setSelectedFriends(prev => {
+    setSelectedFriends((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -278,11 +384,16 @@ export default function ChatRoomInfoScreen() {
     });
   };
 
+  const isOneToOne = members.length === 2;
+
   return (
-    <SafeAreaView style={s.screen} edges={['top']}>
+    <SafeAreaView style={s.screen} edges={["top"]}>
       {/* 헤더 */}
       <View style={s.header}>
-        <TouchableOpacity onPress={() => safeGoBack(navigation)} style={s.headerBackBtn}>
+        <TouchableOpacity
+          onPress={() => safeGoBack(navigation)}
+          style={s.headerBackBtn}
+        >
           <ChevronLeft color="#111827" size={22} />
         </TouchableOpacity>
         <Text style={s.headerTitle}>채팅방 정보</Text>
@@ -298,34 +409,37 @@ export default function ChatRoomInfoScreen() {
         <View style={s.profileCard}>
           <TouchableOpacity
             onPress={
-              isOwner
+              isOwner && !isOneToOne
                 ? () => {
-                    setTempPresetId('');
+                    setTempPresetId("");
                     setTempLocalImageUri(null);
                     setImageModalVisible(true);
                   }
                 : undefined
             }
-            activeOpacity={isOwner ? 0.85 : 1}
-            disabled={!isOwner}
+            activeOpacity={isOwner && !isOneToOne ? 0.85 : 1}
+            disabled={!isOwner || isOneToOne}
           >
             <View style={s.avatarShadow}>
-              <View style={[s.profileCircle, { backgroundColor: '#E5E7EB' }]}>
+              <View style={[s.profileCircle, { backgroundColor: "#E5E7EB" }]}>
                 {profileImageUrl ? (
-                  <Image source={{ uri: profileImageUrl }} style={{ width: 112, height: 112 }} />
+                  <Image
+                    source={{ uri: profileImageUrl }}
+                    style={{ width: 112, height: 112 }}
+                  />
                 ) : (
                   <ImageIcon color="#9CA3AF" size={44} />
                 )}
               </View>
             </View>
-            {isOwner && (
+            {isOwner && !isOneToOne && (
               <View style={s.editBadge}>
                 <Edit2 color="white" size={11} />
               </View>
             )}
           </TouchableOpacity>
 
-          {isOwner ? (
+          {isOwner && !isOneToOne ? (
             <TouchableOpacity
               style={s.roomNameRow}
               onPress={() => {
@@ -369,7 +483,9 @@ export default function ChatRoomInfoScreen() {
               <TouchableOpacity
                 style={s.memberRow}
                 activeOpacity={0.7}
-                onPress={() => navigation.navigate('UserProfile', { uuid: member.uuid })}
+                onPress={() =>
+                  navigation.navigate("UserProfile", { uuid: member.uuid })
+                }
               >
                 {member.profileImageUrl ? (
                   <Image
@@ -377,7 +493,9 @@ export default function ChatRoomInfoScreen() {
                     style={[s.memberAvatar, { backgroundColor: member.color }]}
                   />
                 ) : (
-                  <View style={[s.memberAvatar, { backgroundColor: member.color }]}>
+                  <View
+                    style={[s.memberAvatar, { backgroundColor: member.color }]}
+                  >
                     <Text style={s.memberAvatarText}>{member.nickname[0]}</Text>
                   </View>
                 )}
@@ -405,25 +523,39 @@ export default function ChatRoomInfoScreen() {
 
         {/* 위험 액션 카드 */}
         <View style={[s.card, s.dangerCard]}>
-          <TouchableOpacity style={s.dangerRow} onPress={handleLeaveRoom} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={s.dangerRow}
+            onPress={handleLeaveRoom}
+            activeOpacity={0.7}
+          >
             <View style={s.dangerIconWrap}>
               <LogOut color="#EF4444" size={18} />
             </View>
             <Text style={s.dangerText}>채팅방 나가기</Text>
-            <ChevronLeft color="#D1D5DB" size={18} style={{ transform: [{ rotate: '180deg' }] }} />
+            <ChevronLeft
+              color="#D1D5DB"
+              size={18}
+              style={{ transform: [{ rotate: "180deg" }] }}
+            />
           </TouchableOpacity>
           {isOwner && (
             <>
               <View style={s.dangerDivider} />
-              <TouchableOpacity style={s.dangerRow} onPress={handleDeleteRoom} activeOpacity={0.7}>
-                <View style={[s.dangerIconWrap, { backgroundColor: '#FEE2E2' }]}>
+              <TouchableOpacity
+                style={s.dangerRow}
+                onPress={handleDeleteRoom}
+                activeOpacity={0.7}
+              >
+                <View
+                  style={[s.dangerIconWrap, { backgroundColor: "#FEE2E2" }]}
+                >
                   <Trash2 color="#EF4444" size={18} />
                 </View>
                 <Text style={s.dangerText}>채팅방 삭제</Text>
                 <ChevronLeft
                   color="#D1D5DB"
                   size={18}
-                  style={{ transform: [{ rotate: '180deg' }] }}
+                  style={{ transform: [{ rotate: "180deg" }] }}
                 />
               </TouchableOpacity>
             </>
@@ -464,7 +596,10 @@ export default function ChatRoomInfoScreen() {
               >
                 <Text style={s.modalBtnCancelText}>취소</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[s.modalBtn, s.modalBtnConfirm]} onPress={handleSaveName}>
+              <TouchableOpacity
+                style={[s.modalBtn, s.modalBtnConfirm]}
+                onPress={handleSaveName}
+              >
                 <Text style={s.modalBtnConfirmText}>저장</Text>
               </TouchableOpacity>
             </View>
@@ -480,13 +615,16 @@ export default function ChatRoomInfoScreen() {
         onRequestClose={() => setImageModalVisible(false)}
       >
         <View style={s.bottomSheetWrap}>
-          <TouchableOpacity style={{ flex: 1 }} onPress={() => setImageModalVisible(false)} />
+          <TouchableOpacity
+            style={{ flex: 1 }}
+            onPress={() => setImageModalVisible(false)}
+          />
           <View style={s.bottomSheet}>
             <View style={s.sheetHandle} />
             <Text style={s.sheetTitle}>프로필 이미지 변경</Text>
 
-            <View style={{ alignItems: 'center', marginBottom: 20 }}>
-              <View style={[s.previewCircle, { backgroundColor: '#E5E7EB' }]}>
+            <View style={{ alignItems: "center", marginBottom: 20 }}>
+              <View style={[s.previewCircle, { backgroundColor: "#E5E7EB" }]}>
                 {tempLocalImageUri ? (
                   <Image
                     source={{ uri: tempLocalImageUri }}
@@ -513,7 +651,7 @@ export default function ChatRoomInfoScreen() {
                 onPress={handlePickImage}
                 style={[
                   s.presetCell,
-                  { backgroundColor: '#F3F4F6' },
+                  { backgroundColor: "#F3F4F6" },
                   tempLocalImageUri ? s.presetSelected : undefined,
                 ]}
               >
@@ -527,10 +665,13 @@ export default function ChatRoomInfoScreen() {
                     }}
                   />
                 ) : (
-                  <ImageIcon color="#9CA3AF" size={Math.round(CELL_SIZE * 0.35)} />
+                  <ImageIcon
+                    color="#9CA3AF"
+                    size={Math.round(CELL_SIZE * 0.35)}
+                  />
                 )}
               </TouchableOpacity>
-              {PRESET_IMAGES.map(preset => (
+              {PRESET_IMAGES.map((preset) => (
                 <TouchableOpacity
                   key={preset.id}
                   onPress={() => {
@@ -539,7 +680,9 @@ export default function ChatRoomInfoScreen() {
                   }}
                   style={[
                     s.presetCell,
-                    tempPresetId === preset.id && !tempLocalImageUri ? s.presetSelected : undefined,
+                    tempPresetId === preset.id && !tempLocalImageUri
+                      ? s.presetSelected
+                      : undefined,
                   ]}
                 >
                   <Image
@@ -563,13 +706,19 @@ export default function ChatRoomInfoScreen() {
                   <Text style={s.modalBtnCancelText}>취소</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[s.modalBtn, s.modalBtnConfirm, { opacity: isSavingImage ? 0.6 : 1 }]}
+                  style={[
+                    s.modalBtn,
+                    s.modalBtnConfirm,
+                    { opacity: isSavingImage ? 0.6 : 1 },
+                  ]}
                   onPress={() => {
                     void handleSaveImage();
                   }}
                   disabled={isSavingImage}
                 >
-                  <Text style={s.modalBtnConfirmText}>{isSavingImage ? '저장 중...' : '저장'}</Text>
+                  <Text style={s.modalBtnConfirmText}>
+                    {isSavingImage ? "저장 중..." : "저장"}
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -585,27 +734,38 @@ export default function ChatRoomInfoScreen() {
         onRequestClose={() => setInviteModalVisible(false)}
       >
         <View style={s.bottomSheetWrap}>
-          <TouchableOpacity style={{ flex: 1 }} onPress={() => setInviteModalVisible(false)} />
-          <View style={[s.bottomSheet, { maxHeight: '65%' }]}>
+          <TouchableOpacity
+            style={{ flex: 1 }}
+            onPress={() => setInviteModalVisible(false)}
+          />
+          <View style={[s.bottomSheet, { maxHeight: "65%" }]}>
             <View style={s.sheetHandle} />
             <View style={s.sheetHeaderRow}>
               <Text style={s.sheetTitle}>멤버 초대</Text>
               <TouchableOpacity
                 onPress={handleConfirmInvite}
                 disabled={selectedFriends.size === 0}
-                style={[s.sheetConfirmBtn, { opacity: selectedFriends.size > 0 ? 1 : 0.35 }]}
+                style={[
+                  s.sheetConfirmBtn,
+                  { opacity: selectedFriends.size > 0 ? 1 : 0.35 },
+                ]}
               >
-                <Text style={s.sheetConfirmText}>완료</Text>
+                <Text style={s.sheetConfirmText}>
+                  {isInviting ? "초대 중..." : "완료"}
+                </Text>
               </TouchableOpacity>
             </View>
             <ScrollView showsVerticalScrollIndicator={false}>
               {invitableFriends.length === 0 ? (
                 <Text style={s.emptyText}>초대할 수 있는 친구가 없습니다.</Text>
               ) : (
-                invitableFriends.map(friend => {
+                invitableFriends.map((friend) => {
                   const isSelected = selectedFriends.has(friend.id);
                   const color =
-                    FRIEND_COLORS[parseInt(friend.id.replace('f', ''), 10) % FRIEND_COLORS.length];
+                    FRIEND_COLORS[
+                      parseInt(friend.id.replace("f", ""), 10) %
+                        FRIEND_COLORS.length
+                    ];
                   return (
                     <TouchableOpacity
                       key={friend.id}
@@ -613,15 +773,26 @@ export default function ChatRoomInfoScreen() {
                       onPress={() => toggleFriendSelect(friend.id)}
                       activeOpacity={0.7}
                     >
-                      <View style={[s.memberAvatar, { backgroundColor: color }]}>
-                        <Text style={s.memberAvatarText}>{friend.name[0]}</Text>
-                      </View>
+                      {friend.profileImageUrl ? (
+                        <Image
+                          source={{ uri: friend.profileImageUrl }}
+                          style={[s.memberAvatar, { backgroundColor: color }]}
+                        />
+                      ) : (
+                        <View
+                          style={[s.memberAvatar, { backgroundColor: color }]}
+                        >
+                          <Text style={s.memberAvatarText}>
+                            {friend.name[0]}
+                          </Text>
+                        </View>
+                      )}
                       <Text
                         style={{
                           flex: 1,
                           fontSize: 15,
-                          color: '#111827',
-                          fontWeight: '500',
+                          color: "#111827",
+                          fontWeight: "500",
                         }}
                       >
                         {friend.name}
@@ -630,12 +801,16 @@ export default function ChatRoomInfoScreen() {
                         style={[
                           s.checkCircle,
                           {
-                            borderColor: isSelected ? '#3B82F6' : '#D1D5DB',
-                            backgroundColor: isSelected ? '#3B82F6' : 'transparent',
+                            borderColor: isSelected ? "#3B82F6" : "#D1D5DB",
+                            backgroundColor: isSelected
+                              ? "#3B82F6"
+                              : "transparent",
                           },
                         ]}
                       >
-                        {isSelected && <Check color="white" size={12} strokeWidth={3} />}
+                        {isSelected && (
+                          <Check color="white" size={12} strokeWidth={3} />
+                        )}
                       </View>
                     </TouchableOpacity>
                   );
@@ -662,39 +837,39 @@ const shadow = Platform.select({
 const s = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#F0F5FF',
+    backgroundColor: "#F0F5FF",
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 8,
     paddingVertical: 10,
-    backgroundColor: '#F0F5FF',
+    backgroundColor: "#F0F5FF",
   },
   headerBackBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
     ...shadow,
   },
   headerTitle: {
     fontSize: 17,
-    fontWeight: '700',
-    color: '#111827',
+    fontWeight: "700",
+    color: "#111827",
     letterSpacing: -0.3,
   },
 
   /* 프로필 카드 */
   profileCard: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     marginHorizontal: 16,
     marginTop: 12,
     borderRadius: 20,
-    alignItems: 'center',
+    alignItems: "center",
     paddingTop: 32,
     paddingBottom: 28,
     ...shadow,
@@ -703,7 +878,7 @@ const s = StyleSheet.create({
     borderRadius: 60,
     ...Platform.select({
       ios: {
-        shadowColor: '#000',
+        shadowColor: "#000",
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.12,
         shadowRadius: 12,
@@ -715,113 +890,113 @@ const s = StyleSheet.create({
     width: 112,
     height: 112,
     borderRadius: 56,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
   },
   editBadge: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 2,
     right: 2,
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#3B82F6',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "#3B82F6",
+    alignItems: "center",
+    justifyContent: "center",
     borderWidth: 2.5,
-    borderColor: '#fff',
+    borderColor: "#fff",
   },
   roomNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginTop: 18,
     gap: 8,
   },
   roomNameText: {
     fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
+    fontWeight: "700",
+    color: "#111827",
     letterSpacing: -0.4,
   },
   nameEditPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
     paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 20,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: "#EFF6FF",
   },
   nameEditPillText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#3B82F6',
+    fontWeight: "600",
+    color: "#3B82F6",
   },
   memberCountPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 5,
     marginTop: 8,
     paddingHorizontal: 12,
     paddingVertical: 5,
     borderRadius: 20,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: "#F3F4F6",
   },
   memberCountText: {
     fontSize: 13,
-    color: '#6B7280',
-    fontWeight: '500',
+    color: "#6B7280",
+    fontWeight: "500",
   },
 
   /* 공통 카드 */
   card: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     marginHorizontal: 16,
     marginTop: 14,
     borderRadius: 20,
-    overflow: 'hidden',
+    overflow: "hidden",
     ...shadow,
   },
   cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingTop: 18,
     paddingBottom: 10,
   },
   cardTitle: {
     fontSize: 13,
-    fontWeight: '700',
-    color: '#6B7280',
+    fontWeight: "700",
+    color: "#6B7280",
     letterSpacing: 0.5,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
   },
   inviteBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 5,
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 20,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: "#EFF6FF",
   },
   inviteBtnText: {
     fontSize: 13,
-    fontWeight: '600',
-    color: '#3B82F6',
+    fontWeight: "600",
+    color: "#3B82F6",
   },
 
   /* 멤버 행 */
   memberDivider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: "#F3F4F6",
     marginHorizontal: 20,
   },
   memberRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 20,
     paddingVertical: 12,
   },
@@ -829,39 +1004,39 @@ const s = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 14,
   },
   memberAvatarText: {
-    color: 'white',
+    color: "white",
     fontSize: 17,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   memberName: {
     fontSize: 15,
-    fontWeight: '500',
-    color: '#111827',
+    fontWeight: "500",
+    color: "#111827",
   },
   ownerBadge: {
     marginRight: 0,
     paddingHorizontal: 9,
     paddingVertical: 5,
     borderRadius: 12,
-    backgroundColor: '#FEF3C7',
+    backgroundColor: "#FEF3C7",
   },
   ownerBadgeText: {
     fontSize: 11,
-    fontWeight: '700',
-    color: '#D97706',
+    fontWeight: "700",
+    color: "#D97706",
   },
   kickBtn: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#F9FAFB',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "#F9FAFB",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   /* 위험 액션 카드 */
@@ -869,8 +1044,8 @@ const s = StyleSheet.create({
     marginTop: 14,
   },
   dangerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 20,
     paddingVertical: 16,
     gap: 14,
@@ -879,37 +1054,37 @@ const s = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: '#FEE2E2',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "#FEE2E2",
+    alignItems: "center",
+    justifyContent: "center",
   },
   dangerText: {
     flex: 1,
     fontSize: 15,
-    fontWeight: '500',
-    color: '#EF4444',
+    fontWeight: "500",
+    color: "#EF4444",
   },
   dangerDivider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: '#FEE2E2',
+    backgroundColor: "#FEE2E2",
     marginHorizontal: 20,
   },
 
   /* 모달 */
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   modalCard: {
     width: SCREEN_WIDTH - 64,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 20,
     padding: 24,
     ...Platform.select({
       ios: {
-        shadowColor: '#000',
+        shadowColor: "#000",
         shadowOffset: { width: 0, height: 8 },
         shadowOpacity: 0.15,
         shadowRadius: 24,
@@ -922,56 +1097,56 @@ const s = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 17,
-    fontWeight: '700',
-    color: '#111827',
+    fontWeight: "700",
+    color: "#111827",
     letterSpacing: -0.3,
   },
   textInput: {
     borderWidth: 1.5,
-    borderColor: '#E5E7EB',
+    borderColor: "#E5E7EB",
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 15,
-    color: '#111827',
+    color: "#111827",
     marginBottom: 18,
-    backgroundColor: '#FAFAFA',
+    backgroundColor: "#FAFAFA",
   },
   modalButtons: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 10,
   },
   modalBtn: {
     flex: 1,
     paddingVertical: 13,
     borderRadius: 12,
-    alignItems: 'center',
+    alignItems: "center",
   },
   modalBtnCancel: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: "#F3F4F6",
   },
   modalBtnConfirm: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: "#3B82F6",
   },
   modalBtnCancelText: {
     fontSize: 15,
-    fontWeight: '600',
-    color: '#6B7280',
+    fontWeight: "600",
+    color: "#6B7280",
   },
   modalBtnConfirmText: {
     fontSize: 15,
-    fontWeight: '600',
-    color: '#fff',
+    fontWeight: "600",
+    color: "#fff",
   },
 
   /* 바텀시트 */
   bottomSheetWrap: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "flex-end",
   },
   bottomSheet: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingBottom: 34,
@@ -980,23 +1155,23 @@ const s = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#E5E7EB',
-    alignSelf: 'center',
+    backgroundColor: "#E5E7EB",
+    alignSelf: "center",
     marginTop: 14,
     marginBottom: 4,
   },
   sheetTitle: {
     fontSize: 17,
-    fontWeight: '700',
-    color: '#111827',
+    fontWeight: "700",
+    color: "#111827",
     paddingHorizontal: 20,
     paddingVertical: 12,
     letterSpacing: -0.3,
   },
   sheetHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingVertical: 8,
   },
@@ -1004,24 +1179,24 @@ const s = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 20,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: "#EFF6FF",
   },
   sheetConfirmText: {
     fontSize: 14,
-    fontWeight: '700',
-    color: '#3B82F6',
+    fontWeight: "700",
+    color: "#3B82F6",
   },
   previewCircle: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
   },
   presetGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     paddingHorizontal: 16,
     gap: 8,
     marginBottom: 16,
@@ -1030,17 +1205,17 @@ const s = StyleSheet.create({
     width: CELL_SIZE,
     height: CELL_SIZE,
     borderRadius: CELL_SIZE / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
   },
   presetSelected: {
     borderWidth: 3,
-    borderColor: '#3B82F6',
+    borderColor: "#3B82F6",
   },
   friendRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 20,
     paddingVertical: 12,
   },
@@ -1049,12 +1224,12 @@ const s = StyleSheet.create({
     height: 24,
     borderRadius: 12,
     borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   emptyText: {
-    textAlign: 'center',
-    color: '#9CA3AF',
+    textAlign: "center",
+    color: "#9CA3AF",
     fontSize: 14,
     paddingVertical: 40,
   },

@@ -1,6 +1,7 @@
 // @ts-nocheck
 import axios from 'axios';
 import { tokenStorage } from '../utils/tokenStorage';
+import { navigationRef } from '../navigation/rootNavigation';
 
 /** preview APK 등 __DEV__=false 빌드에서 EAS env `EXPO_PUBLIC_APK_DEBUG=1` 로 API 로그 활성화 */
 const apkDebug = String(process.env.EXPO_PUBLIC_APK_DEBUG ?? '').trim() === '1';
@@ -71,11 +72,13 @@ instance.interceptors.response.use(
 
     // 401이 아니거나, 리프레시 요청 자체가 실패하면 즉시 reject
     const refreshPath = 'auth/token/refresh';
+    const isLoginRequest = originalRequest.url === 'auth/login' || originalRequest.url === 'auth/register';
     if (
       err.response?.status !== 401 ||
       originalRequest._retry ||
       originalRequest.url === refreshPath ||
-      originalRequest.url === 'auth/refresh'
+      originalRequest.url === 'auth/refresh' ||
+      isLoginRequest  // 로그인/회원가입 요청은 token refresh 스킵
     ) {
       return Promise.reject(err);
     }
@@ -121,6 +124,15 @@ instance.interceptors.response.use(
         user: null,
         isAuthenticated: false,
       });
+
+      // 로그인 화면으로 이동
+      if (navigationRef.isReady()) {
+        navigationRef.reset({
+          index: 0,
+          routes: [{ name: 'Login' }],
+        });
+      }
+
       return Promise.reject(refreshErr);
     } finally {
       isRefreshing = false;

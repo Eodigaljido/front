@@ -30,7 +30,9 @@ export function resolveRouteShareTitle(
   return "루트";
 }
 
-export function openRouteShareFromChat(routeUuid: string | null | undefined): void {
+export function openRouteShareFromChat(
+  routeUuid: string | null | undefined,
+): void {
   const id = String(routeUuid ?? "").trim();
   if (!id || id.startsWith("ur-")) return;
   rootNavigate("RouteCreate", {
@@ -78,10 +80,16 @@ export function RouteShareMessageCard({
             backgroundColor: isMine ? "#BAE6FD" : "#E5E7EB",
           }}
         >
-          <Ionicons name="map-outline" size={28} color={isMine ? "#0369A1" : "#64748B"} />
+          <Ionicons
+            name="map-outline"
+            size={28}
+            color={isMine ? "#0369A1" : "#64748B"}
+          />
         </View>
       )}
-      <View style={{ paddingHorizontal: 12, paddingTop: 10, paddingBottom: 12 }}>
+      <View
+        style={{ paddingHorizontal: 12, paddingTop: 10, paddingBottom: 12 }}
+      >
         <Text
           style={{
             fontSize: 15,

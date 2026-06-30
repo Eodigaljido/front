@@ -5,10 +5,10 @@ import {
   Image,
   ActivityIndicator,
 } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
-import { rootNavigate } from "@/navigation/rootNavigation";
+import { useFocusEffect, useNavigation, CommonActions } from "@react-navigation/native";
+import { rootNavigate, navigationRef } from "@/navigation/rootNavigation";
 import { getChatRooms, ChatRoom as ChatRoomType } from "@/api/chat/chat";
-import { useCallback, useState } from "react";
+import { useCallback, useState, useRef } from "react";
 import { useAuthStore } from "@/store/authStore";
 import { useChatSocket, ChatSocketEvent } from "@/hooks/useChatSocket";
 import { MessageSquare, Search } from "lucide-react-native";
@@ -43,18 +43,79 @@ function formatTime(dateStr: string): string {
   }
 }
 
+function getDisplayImageUrl(room: ChatRoomType, myUuid?: string): string | null {
+  if (room.profileImageUrl) {
+    return room.profileImageUrl;
+  }
+  if (room.roomType === "DIRECT" && room.members && myUuid) {
+    const otherMember = room.members.find((m) => m.uuid !== myUuid);
+    return otherMember?.profileImageUrl ?? null;
+  }
+  return null;
+}
+
 export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
+  const navigation = useNavigation();
   const [chatRooms, setChatRooms] = useState<ChatRoomType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const accessToken = useAuthStore((s) => s.accessToken);
+  const myUuid = useAuthStore((s) => s.user?.uuid);
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 중복 제거를 보장하는 setState wrapper
+  const setUniqueChatRooms = useCallback((rooms: ChatRoomType[] | ((prev: ChatRoomType[]) => ChatRoomType[])) => {
+    setChatRooms((prev) => {
+      const newRooms = typeof rooms === "function" ? rooms(prev) : rooms;
+      // 항상 uuid 기반으로 중복 제거
+      const uniqueMap = new Map<string, ChatRoomType>();
+      for (const room of newRooms) {
+        if (room.uuid) {
+          uniqueMap.set(room.uuid, room);
+        }
+      }
+      const result = Array.from(uniqueMap.values());
+      if (result.length !== newRooms.length) {
+        console.log(`[ChatRoom] 중복 제거: ${newRooms.length} → ${result.length}개`);
+      }
+      return result;
+    });
+  }, []);
+
+  // debounce된 새로고침 함수 - 연속 메시지 전송 시 race condition 방지
+  const debouncedRefreshChatRooms = useCallback(() => {
+    if (refreshTimeoutRef.current) {
+      clearTimeout(refreshTimeoutRef.current);
+    }
+    refreshTimeoutRef.current = setTimeout(() => {
+      if (!accessToken) return;
+      getChatRooms(accessToken)
+        .then((rooms) => {
+          if (Array.isArray(rooms)) {
+            setUniqueChatRooms(rooms);
+          }
+        })
+        .catch(console.error);
+    }, 800); // 800ms debounce
+  }, [accessToken, setUniqueChatRooms]);
 
   // 방 목록이 로드된 후 모든 방을 구독해 실시간 업데이트 수신
   useChatSocket(
     (Array.isArray(chatRooms) ? chatRooms : []).map((r) => r.uuid),
     (event: ChatSocketEvent) => {
-      if (event.eventType === "MESSAGE_CREATED" && accessToken) {
-        getChatRooms(accessToken).then(setChatRooms).catch(console.error);
+      if (event.eventType === "MESSAGE_CREATED") {
+        // 연속 메시지로 인한 race condition 방지
+        debouncedRefreshChatRooms();
       }
+    },
+    undefined,
+    () => {
+      console.log("[ChatRoom] 토큰 만료 - 로그인 화면으로 이동");
+      navigationRef.dispatch(
+        CommonActions.reset({
+          index: 0,
+          routes: [{ name: 'Login' }],
+        })
+      );
     },
   );
 
@@ -62,7 +123,14 @@ export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
     if (!accessToken) return;
     setIsLoading(true);
     getChatRooms(accessToken)
-      .then((rooms) => setChatRooms(Array.isArray(rooms) ? rooms : []))
+      .then((rooms) => {
+        if (Array.isArray(rooms)) {
+          console.log("[ChatRoom] API 응답:", rooms.length, "개");
+          setUniqueChatRooms(rooms);
+        } else {
+          setUniqueChatRooms([]);
+        }
+      })
       .catch((err) => {
         console.error("채팅방 목록 불러오기 실패:", err);
       })
@@ -72,10 +140,18 @@ export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
   useFocusEffect(
     useCallback(() => {
       fetchChatRooms();
+      return () => {
+        // cleanup: debounce timeout 취소
+        if (refreshTimeoutRef.current) {
+          clearTimeout(refreshTimeoutRef.current);
+        }
+      };
     }, [accessToken]),
   );
 
   const roomList = Array.isArray(chatRooms) ? chatRooms : [];
+
+  // 상태에서 이미 중복이 제거되어 있으므로 직접 필터링
   const filteredRooms = searchQuery
     ? roomList.filter(
         (room) =>
@@ -139,75 +215,80 @@ export const ChatRoom = ({ searchQuery = "" }: ChatRoomProps) => {
 
   return (
     <View>
-      {filteredRooms.map((room) => (
-        <TouchableOpacity
-          key={room.uuid}
-          className="flex-row items-center justify-between py-3 mb-2"
-          activeOpacity={0.5}
-          onPress={() =>
-            rootNavigate("ChatRoomScreen", {
-              roomUuid: room.uuid,
-              roomName: room.name,
-              memberCount: room.memberCount,
-            })
-          }
-        >
-          <View className="flex-row items-center flex-1">
-            <View style={{ position: "relative" }}>
-              <View
-                className="items-center justify-center bg-blue-100 rounded-full"
-                style={{ width: 50, height: 50 }}
-              >
-                <Image
-                  source={{ uri: room.profileImageUrl }}
-                  className="w-full h-full rounded-full"
-                />
-              </View>
-              {room.unreadCount > 0 && (
+      {filteredRooms.map((room) => {
+        const displayImageUrl = getDisplayImageUrl(room, myUuid);
+        return (
+          <TouchableOpacity
+            key={room.uuid}
+            className="flex-row items-center justify-between py-3 mb-2"
+            activeOpacity={0.5}
+            onPress={() =>
+              rootNavigate("ChatRoomScreen", {
+                roomUuid: room.uuid,
+                roomName: room.name,
+                memberCount: room.memberCount,
+              })
+            }
+          >
+            <View className="flex-row items-center flex-1">
+              <View style={{ position: "relative" }}>
                 <View
-                  style={{
-                    position: "absolute",
-                    top: -2,
-                    right: -2,
-                    backgroundColor: "#5c8efa",
-                    borderRadius: 10,
-                    minWidth: 18,
-                    height: 18,
-                    justifyContent: "center",
-                    alignItems: "center",
-                    paddingHorizontal: 4,
-                  }}
+                  className="items-center justify-center bg-blue-100 rounded-full"
+                  style={{ width: 50, height: 50 }}
                 >
-                  <Text
-                    style={{ color: "white", fontSize: 11, fontWeight: "bold" }}
-                  >
-                    {room.unreadCount > 9 ? "9+" : room.unreadCount}
-                  </Text>
+                  {displayImageUrl && (
+                    <Image
+                      source={{ uri: displayImageUrl }}
+                      className="w-full h-full rounded-full"
+                    />
+                  )}
                 </View>
-              )}
-            </View>
-            <View
-              className="justify-center"
-              style={{ marginLeft: 10, flex: 1 }}
-            >
-              <Text className="text-base font-semibold">{room.name}</Text>
-              <Text
-                className={`text-sm ${
-                  room.unreadCount > 0
-                    ? "font-semibold text-blue-500"
-                    : "font-medium text-gray-500"
-                }`}
-                numberOfLines={1}
+                {room.unreadCount > 0 && (
+                  <View
+                    style={{
+                      position: "absolute",
+                      top: -2,
+                      right: -2,
+                      backgroundColor: "#5c8efa",
+                      borderRadius: 10,
+                      minWidth: 18,
+                      height: 18,
+                      justifyContent: "center",
+                      alignItems: "center",
+                      paddingHorizontal: 4,
+                    }}
+                  >
+                    <Text
+                      style={{ color: "white", fontSize: 11, fontWeight: "bold" }}
+                    >
+                      {room.unreadCount > 9 ? "9+" : room.unreadCount}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <View
+                className="justify-center"
+                style={{ marginLeft: 10, flex: 1 }}
               >
-                {room.lastMessage ?? ""}
-              </Text>
+                <Text className="text-base font-semibold">{room.name}</Text>
+                <Text
+                  className={`text-sm ${
+                    room.unreadCount > 0
+                      ? "font-semibold text-blue-500"
+                      : "font-medium text-gray-500"
+                  }`}
+                  numberOfLines={1}
+                >
+                  {room.lastMessage ?? ""}
+                </Text>
+              </View>
             </View>
-          </View>
-          <Text className="ml-2 text-xs text-gray-700">
-            {formatTime(room.lastMessageAt)}
-          </Text>
-        </TouchableOpacity>
-      ))}
+            <Text className="ml-2 text-xs text-gray-700">
+              {formatTime(room.lastMessageAt)}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 };

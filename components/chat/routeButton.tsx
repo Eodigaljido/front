@@ -4,12 +4,17 @@ import { TouchableOpacity, View } from "react-native";
 import { RootStackParamList } from "@/App";
 import React from "react";
 
-export const RouteButton = () => {
+interface RouteButtonProps {
+  roomUuid: string;
+  roomName: string;
+}
+
+export const RouteButton = ({ roomUuid, roomName }: RouteButtonProps) => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
 
   return (
     <TouchableOpacity
-      onPress={() => navigation.navigate("ChatRouteHistory")}
+      onPress={() => navigation.navigate("ChatRouteHistory", { roomUuid, roomName })}
       accessibilityRole="button"
       accessibilityLabel="루트 기록 보기"
     >

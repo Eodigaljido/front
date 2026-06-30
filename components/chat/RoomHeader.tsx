@@ -7,11 +7,13 @@ import React from "react";
 interface RoomHeaderProps {
   roomName?: string;
   roomUuid: string;
+  parentRoomUuid?: string;
 }
 
 export const RoomHeader = ({
   roomName = "채팅방",
   roomUuid,
+  parentRoomUuid,
 }: RoomHeaderProps) => {
   return (
     <View
@@ -23,7 +25,7 @@ export const RoomHeader = ({
       </View>
       <Text className="text-black text-lg font-bold">{roomName}</Text>
       <View className="flex-1 justify-end flex-row" style={{ gap: 20 }}>
-        <RouteButton />
+        {parentRoomUuid && <RouteButton roomUuid={parentRoomUuid} roomName={roomName} />}
         <InfoButton roomUuid={roomUuid} roomName={roomName} />
       </View>
     </View>

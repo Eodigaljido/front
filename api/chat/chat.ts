@@ -21,7 +21,7 @@ export type ChatMemberSummary = {
 export interface ChatRoom {
   uuid: string;
   name: string;
-  profileImageUrl: string;
+  profileImageUrl: string | null;
   memberCount: number;
   ownerUuid: string;
   ownerUserId: string;
@@ -31,6 +31,7 @@ export interface ChatRoom {
   lastMessage: string;
   lastMessageAt: string;
   unreadCount: number;
+  roomType?: "DIRECT" | "GROUP";
 }
 
 /** Swagger: GET /chats/{roomUuid} */
@@ -68,12 +69,26 @@ export interface ChatMessage {
 function normalizeChatMessage(raw: unknown): ChatMessage | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (typeof o.uuid === "string") return raw as ChatMessage;
-  const inner = o.data;
-  if (inner && typeof inner === "object" && typeof (inner as ChatMessage).uuid === "string") {
-    return inner as ChatMessage;
+  let msg = null;
+
+  if (typeof o.uuid === "string") {
+    msg = raw as ChatMessage;
+  } else {
+    const inner = o.data;
+    if (inner && typeof inner === "object" && typeof (inner as ChatMessage).uuid === "string") {
+      msg = inner as ChatMessage;
+    }
   }
-  return null;
+
+  if (!msg) return null;
+
+  // routeId → routeUuid 필드 매핑 (백엔드 응답 정규화)
+  const normalized = { ...msg } as ChatMessage & { routeId?: unknown };
+  if (normalized.routeUuid === null && (normalized as any).routeId !== undefined) {
+    normalized.routeUuid = String((normalized as any).routeId ?? "").trim() || null;
+  }
+
+  return normalized;
 }
 
 function normalizeChatMessageList(raw: unknown): ChatMessage[] {
@@ -229,18 +244,29 @@ export async function renameChatRoom(
   );
 }
 
-/** Swagger: POST /chats/{roomUuid}/members — 친구(userId) 초대 */
+/** Swagger: POST /chats/{roomUuid}/members — 친구(userUuid) 초대 */
 export async function inviteChatMember(
   accessToken: string,
   roomUuid: string,
-  userId: string,
+  userUuid: string,
 ): Promise<ChatRoom> {
   const res = await instance.post<ChatRoom>(
     `/chats/${roomUuid}/members`,
-    { userId: String(userId ?? "").trim() },
+    { userUuid },
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
   return res.data;
+}
+
+/** DELETE /chats/{roomUuid}/members/{targetUuid} — 멤버 강퇴 (방장만 가능) */
+export async function kickChatMember(
+  accessToken: string,
+  roomUuid: string,
+  targetUuid: string,
+): Promise<void> {
+  await instance.delete(`/chats/${roomUuid}/members/${targetUuid}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
 }
 
 // 이미지 메시지 전송
@@ -276,6 +302,66 @@ export async function updateChatRoomImage(
   );
 }
 
+// ── 루트 기록 ──────────────────────────────────────────────────────────────────
+
+export interface RouteHistoryItem {
+  courseUuid: string;
+  routeChatRoomUuid: string;
+  name: string;
+  participantCount: number;
+}
+
+export interface RouteFeedItem {
+  type: "CHAT" | "COURSE";
+  itemId: number;
+  actorUuid: string;
+  actorNickname: string;
+  actorProfileImageUrl: string | null;
+  content: string | null;
+  action: "CHAT" | "CHAT_EDITED" | "CHAT_DELETED" | "ROUTE_UPDATED";
+  editDescription: string | null;
+  createdAt: string;
+}
+
+export interface RouteFeedPage {
+  items: RouteFeedItem[];
+  pageInfo: {
+    page: number;
+    size: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+/** GET /api/route-history?chatRoomUuid=... */
+export async function getRouteHistory(
+  accessToken: string,
+  chatRoomUuid: string,
+): Promise<RouteHistoryItem[]> {
+  const res = await instance.get<RouteHistoryItem[]>("/api/route-history", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    params: { chatRoomUuid },
+  });
+  return Array.isArray(res.data) ? res.data : [];
+}
+
+/** GET /api/route-history/{courseId}/feed */
+export async function getRouteFeed(
+  accessToken: string,
+  courseId: string,
+  page = 0,
+  size = 30,
+): Promise<RouteFeedPage> {
+  const res = await instance.get<RouteFeedPage>(
+    `/api/route-history/${courseId}/feed`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      params: { page, size },
+    },
+  );
+  return res.data;
+}
+
 /** Swagger: POST /chats/{roomUuid}/route — 루트 공유 메시지(ROUTE 타입) */
 export async function shareRouteToChat(
   accessToken: string,
@@ -288,4 +374,28 @@ export async function shareRouteToChat(
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
   return res.data;
+}
+
+export interface InvitableFriendResponse {
+  friendId: number;
+  userId: number;
+  uuid: string;
+  nickname: string;
+  profileImageUrl?: string;
+  isDefaultImage: boolean;
+}
+
+/** GET /api/friends/invitable — 채팅방에 초대 가능한 친구 목록 */
+export async function getInvitableFriends(
+  accessToken: string,
+  roomUuid: string,
+): Promise<InvitableFriendResponse[]> {
+  const res = await instance.get<InvitableFriendResponse[]>(
+    "/api/friends/invitable",
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      params: { roomUuid },
+    },
+  );
+  return Array.isArray(res.data) ? res.data : [];
 }

@@ -38,17 +38,7 @@ export default function OnBoardStart(): React.JSX.Element {
       <View className="flex-1 justify-center items-center px-6">
         <View className="items-center">
           <View className="flex-row justify-center items-center mb-6 overflow-hidden w-screen">
-            <Image
-              source={rooti_map_onboard}
-              className="w-64 h-64"
-              style={{ marginLeft: -(SCREEN_WIDTH * 0.25) }}
-            />
             <Image source={rooti_map_onboard} className="w-64 h-64 mx-4" />
-            <Image
-              source={rooti_map_onboard}
-              className="w-64 h-64"
-              style={{ marginRight: -(SCREEN_WIDTH * 0.25) }}
-            />
           </View>
 
           <Text className="text-3xl font-bold text-gray-800 mb-4">

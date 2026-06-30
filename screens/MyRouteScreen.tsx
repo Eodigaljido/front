@@ -1,5 +1,11 @@
 // @ts-nocheck
-import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+} from "react";
 import {
   View,
   Text,
@@ -44,6 +50,7 @@ import {
   normalizeCourseList,
   resolveCourseDetailForRoute,
 } from "../api/courses";
+import { getChatRooms, shareRouteToChat } from "../api/chat/chat";
 import {
   UserSavedRoute,
   userRouteToCourseItem,
@@ -86,6 +93,9 @@ import {
 } from "../utils/mergeCourseThumbnails";
 import { rootNavigate } from "../navigation/rootNavigation";
 import { CollaborativeMemberSummaryText } from "../components/CollaborativeMemberSummaryText";
+import { presentCollaborativeShareOptions } from "../utils/shareCollaborativeRoute";
+import { CollaborativeFriendInviteModal } from "../components/CollaborativeFriendInviteModal";
+import { inviteFriendsToRouteChat } from "../data/routeCollaborativeChat";
 
 type RouteKindFilter = "all" | "personal" | "collaborative";
 const ROUTE_KIND_CHIPS: { key: RouteKindFilter; label: string }[] = [
@@ -162,7 +172,9 @@ function CourseCard({
             <View className="flex-row flex-wrap items-start gap-1">
               {isCollaborative ? (
                 <View className="mr-1 rounded-md bg-orange-100 px-1.5 py-0.5">
-                  <Text className="text-[10px] font-bold text-orange-700">공동</Text>
+                  <Text className="text-[10px] font-bold text-orange-700">
+                    공동
+                  </Text>
                 </View>
               ) : null}
               {isFavorite ? (
@@ -200,7 +212,11 @@ function CourseCard({
         </Pressable>
         <View className="items-center justify-center pl-1 ml-1 shrink-0">
           <View className="flex-row items-center">
-            <TouchableOpacity onPress={onEdit} hitSlop={8} accessibilityLabel="수정">
+            <TouchableOpacity
+              onPress={onEdit}
+              hitSlop={8}
+              accessibilityLabel="수정"
+            >
               <Ionicons name="create-outline" size={20} color="#3b82f6" />
             </TouchableOpacity>
             <TouchableOpacity
@@ -232,14 +248,20 @@ function CourseCard({
         <View className="px-2 py-1 bg-blue-600 rounded-md">
           <Text className="text-[11px] font-semibold text-white">출발</Text>
         </View>
-        <Text className="ml-2 min-w-0 flex-1 text-[13px] text-gray-900" numberOfLines={1}>
+        <Text
+          className="ml-2 min-w-0 flex-1 text-[13px] text-gray-900"
+          numberOfLines={1}
+        >
           {item.departure}
         </Text>
         <View className="w-px h-3 mx-2 bg-gray-300" />
         <View className="px-2 py-1 rounded-md bg-slate-500">
           <Text className="text-[11px] font-semibold text-white">도착</Text>
         </View>
-        <Text className="ml-2 min-w-0 flex-1 text-[13px] text-gray-900" numberOfLines={1}>
+        <Text
+          className="ml-2 min-w-0 flex-1 text-[13px] text-gray-900"
+          numberOfLines={1}
+        >
           {item.arrival}
         </Text>
       </Pressable>
@@ -252,7 +274,9 @@ function CourseCard({
           accessibilityLabel="지도 안내"
         >
           <Ionicons name="map-outline" size={16} color="#2563eb" />
-          <Text className="ml-1.5 text-xs font-semibold text-blue-600">안내</Text>
+          <Text className="ml-1.5 text-xs font-semibold text-blue-600">
+            안내
+          </Text>
         </Pressable>
       </View>
     </View>
@@ -291,8 +315,7 @@ function pickViewingCourse(
     courseFromApi,
   } = opts;
   const raw =
-    (myDetailCourseApi &&
-    sameCourseId(myDetailCourseApi.id, viewingCourseId)
+    (myDetailCourseApi && sameCourseId(myDetailCourseApi.id, viewingCourseId)
       ? myDetailCourseApi
       : null) ??
     courseFromDisplay ??
@@ -355,8 +378,24 @@ export default function MyRouteScreen({
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
   const [selectedSort, setSelectedSort] = useState<string | null>("즐겨찾기순");
-  const [selectedRouteKind, setSelectedRouteKind] = useState<RouteKindFilter>("all");
+  const [selectedRouteKind, setSelectedRouteKind] =
+    useState<RouteKindFilter>("all");
   const [viewingCourseId, setViewingCourseId] = useState<string | null>(null);
+  const [collaborativeInviteModalOpen, setCollaborativeInviteModalOpen] =
+    useState(false);
+  const [inviteTargetRoute, setInviteTargetRoute] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
+  const [inviteSubmitting, setInviteSubmitting] = useState(false);
+  const [shareToRoomModalOpen, setShareToRoomModalOpen] = useState(false);
+  const [shareToRoomTargetRoute, setShareToRoomTargetRoute] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
+  const [selectableRooms, setSelectableRooms] = useState<any[]>([]);
+  const [loadingRooms, setLoadingRooms] = useState(false);
+  const [sharingToRoom, setSharingToRoom] = useState(false);
   /** 카드에서 연 상세 — 목록 재조회·id 타입 불일치 시에도 동일 코스 표시 */
   const [viewingCourseSnapshot, setViewingCourseSnapshot] =
     useState<CourseItem | null>(null);
@@ -411,7 +450,9 @@ export default function MyRouteScreen({
     { latitude: number; longitude: number }[] | null
   >(null);
   const [detailPathLoading, setDetailPathLoading] = useState(false);
-  const [myDetailCourseApi, setMyDetailCourseApi] = useState<CourseItem | null>(null);
+  const [myDetailCourseApi, setMyDetailCourseApi] = useState<CourseItem | null>(
+    null,
+  );
   const [myCourseDetailLoading, setMyCourseDetailLoading] = useState(false);
 
   const isCollaborativeRouteId = useCallback(
@@ -440,17 +481,12 @@ export default function MyRouteScreen({
   const mergedCourses = useMemo(() => {
     const fromUser = userSavedRoutes.map(userRouteToCourseItem);
     const apiTitles = new Set(
-      apiMyCourses
-        .map((c) => String(c.title ?? "").trim())
-        .filter(Boolean),
+      apiMyCourses.map((c) => String(c.title ?? "").trim()).filter(Boolean),
     );
     const merged = mergeApiAndLocalCourseLists(apiMyCourses, fromUser);
     const filtered = merged.filter((c) => {
       const k = String(c.id ?? "");
-      if (
-        k.startsWith("ur-") &&
-        apiTitles.has(String(c.title ?? "").trim())
-      ) {
+      if (k.startsWith("ur-") && apiTitles.has(String(c.title ?? "").trim())) {
         return false;
       }
       return Boolean(k);
@@ -486,9 +522,7 @@ export default function MyRouteScreen({
 
   const detailMapCourse = useMemo(() => {
     if (!viewingCourseId) return null;
-    const ur = userSavedRoutes.find((r) =>
-      sameCourseId(r.id, viewingCourseId),
-    );
+    const ur = userSavedRoutes.find((r) => sameCourseId(r.id, viewingCourseId));
     const fromDisplay = displayCourses.find((c) =>
       sameCourseId(c.id, viewingCourseId),
     );
@@ -512,9 +546,7 @@ export default function MyRouteScreen({
   ]);
   const detailMapStepPoints = useMemo(() => {
     if (!viewingCourseId || !detailMapCourse) return null;
-    const ur = userSavedRoutes.find((r) =>
-      sameCourseId(r.id, viewingCourseId),
-    );
+    const ur = userSavedRoutes.find((r) => sameCourseId(r.id, viewingCourseId));
     if (ur && userRouteMapPath(ur).length >= 2) {
       return userRouteMapPath(ur);
     }
@@ -568,12 +600,15 @@ export default function MyRouteScreen({
     if (!vid) return;
     const fromUser = userSavedRoutes.find((r) => sameCourseId(r.id, vid));
     const fromApi = apiMyCourses.find((c) => sameCourseId(c.id, vid));
-    const snap = fromUser
-      ? userRouteToCourseItem(fromUser)
-      : fromApi ?? null;
+    const snap = fromUser ? userRouteToCourseItem(fromUser) : (fromApi ?? null);
     if (snap) setViewingCourseSnapshot(snap);
     setViewingCourseId(vid);
-  }, [myRouteParams?.section, myRouteParams?.viewCourseId, userSavedRoutes, apiMyCourses]);
+  }, [
+    myRouteParams?.section,
+    myRouteParams?.viewCourseId,
+    userSavedRoutes,
+    apiMyCourses,
+  ]);
 
   useEffect(() => {
     if (viewingCourseId) setDetailModalMounted(true);
@@ -605,7 +640,9 @@ export default function MyRouteScreen({
     let cancelled = false;
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(MY_ROUTE_DETAIL_SHEET_HEIGHT_KEY);
+        const raw = await AsyncStorage.getItem(
+          MY_ROUTE_DETAIL_SHEET_HEIGHT_KEY,
+        );
         if (cancelled || raw == null) return;
         const n = Number(raw);
         if (!Number.isFinite(n)) return;
@@ -666,7 +703,7 @@ export default function MyRouteScreen({
     );
     const courseForCenter = ur
       ? userRouteToCourseItem(ur)
-      : courseFromApi ?? viewingCourseSnapshot;
+      : (courseFromApi ?? viewingCourseSnapshot);
     setMapFocus(
       courseForCenter
         ? {
@@ -742,7 +779,10 @@ export default function MyRouteScreen({
     let stepPoints: { latitude: number; longitude: number }[] = [];
     if (ur && userRouteMapPath(ur).length >= 2) {
       stepPoints = userRouteMapPath(ur);
-    } else if (Array.isArray(course.routeSteps) && course.routeSteps.length >= 2) {
+    } else if (
+      Array.isArray(course.routeSteps) &&
+      course.routeSteps.length >= 2
+    ) {
       stepPoints = course.routeSteps.map((step, i) => {
         if (step.lat != null && step.lng != null) {
           return { latitude: step.lat, longitude: step.lng };
@@ -805,10 +845,18 @@ export default function MyRouteScreen({
     if (q) {
       list = list.filter(
         (c) =>
-          String(c.title ?? "").toLowerCase().includes(q) ||
-          String(c.meta ?? "").toLowerCase().includes(q) ||
-          String(c.departure ?? "").toLowerCase().includes(q) ||
-          String(c.arrival ?? "").toLowerCase().includes(q),
+          String(c.title ?? "")
+            .toLowerCase()
+            .includes(q) ||
+          String(c.meta ?? "")
+            .toLowerCase()
+            .includes(q) ||
+          String(c.departure ?? "")
+            .toLowerCase()
+            .includes(q) ||
+          String(c.arrival ?? "")
+            .toLowerCase()
+            .includes(q),
       );
     }
 
@@ -861,63 +909,67 @@ export default function MyRouteScreen({
     [apiMyCourses, authorCtx, userSavedRoutes],
   );
 
-  const removeCourseFromUi = useCallback((courseId: string) => {
-    setApiMyCourses((prev) => prev.filter((c) => !sameCourseId(c.id, courseId)));
-    setEnrichedMyCourses((prev) =>
-      prev.filter((c) => !sameCourseId(c.id, courseId)),
-    );
-    setViewingCourseSnapshot((prev) =>
-      prev && sameCourseId(prev.id, courseId) ? null : prev,
-    );
-    setMyDetailCourseApi((prev) =>
-      prev && sameCourseId(prev.id, courseId) ? null : prev,
-    );
-    if (sameCourseId(viewingCourseId, courseId)) {
-      dismissCourseDetailImmediate();
-    }
-  }, [viewingCourseId]);
+  const removeCourseFromUi = useCallback(
+    (courseId: string) => {
+      setApiMyCourses((prev) =>
+        prev.filter((c) => !sameCourseId(c.id, courseId)),
+      );
+      setEnrichedMyCourses((prev) =>
+        prev.filter((c) => !sameCourseId(c.id, courseId)),
+      );
+      setViewingCourseSnapshot((prev) =>
+        prev && sameCourseId(prev.id, courseId) ? null : prev,
+      );
+      setMyDetailCourseApi((prev) =>
+        prev && sameCourseId(prev.id, courseId) ? null : prev,
+      );
+      if (sameCourseId(viewingCourseId, courseId)) {
+        dismissCourseDetailImmediate();
+      }
+    },
+    [viewingCourseId],
+  );
 
   const handleRemove = (item: CourseItem) => {
-    appAlert(
-      "저장 삭제",
-      `"${item.title}" 코스를 저장 목록에서 삭제할까요?`,
-      [
-        { text: "취소", style: "cancel" },
-        {
-          text: "삭제",
-          style: "destructive",
-          onPress: async () => {
-            const prevApi = apiMyCourses;
-            const prevEnriched = enrichedMyCourses;
-            const prevSnapshot = viewingCourseSnapshot;
-            const prevDetail = myDetailCourseApi;
-            const prevViewingId = viewingCourseId;
-            try {
-              // 삭제 버튼 즉시 반영 (낙관적 UI)
-              removeCourseFromUi(item.id);
-              if (isUserSavedRouteId(item.id)) {
-                // 기기에만 저장된 루트 — 서버 DELETE 호출 시 404
-                deleteUserRoute(item.id);
-              } else if (isOwnServerCourse(item, authorCtx)) {
-                await deleteMyCourse(item.id);
-              } else {
-                // 공유 코스 북마크(내 루트 추가) — save 해제
-                await unsaveSharedCourse(item.id);
-              }
-              removeSavedCourse(item.id);
-            } catch {
-              // 실패 시 UI 롤백
-              setApiMyCourses(prevApi);
-              setEnrichedMyCourses(prevEnriched);
-              setViewingCourseSnapshot(prevSnapshot);
-              setMyDetailCourseApi(prevDetail);
-              if (prevViewingId) setViewingCourseId(prevViewingId);
-              appAlert("오류", "코스 삭제에 실패했어요. 잠시 후 다시 시도해 주세요.");
+    appAlert("저장 삭제", `"${item.title}" 코스를 저장 목록에서 삭제할까요?`, [
+      { text: "취소", style: "cancel" },
+      {
+        text: "삭제",
+        style: "destructive",
+        onPress: async () => {
+          const prevApi = apiMyCourses;
+          const prevEnriched = enrichedMyCourses;
+          const prevSnapshot = viewingCourseSnapshot;
+          const prevDetail = myDetailCourseApi;
+          const prevViewingId = viewingCourseId;
+          try {
+            // 삭제 버튼 즉시 반영 (낙관적 UI)
+            removeCourseFromUi(item.id);
+            if (isUserSavedRouteId(item.id)) {
+              // 기기에만 저장된 루트 — 서버 DELETE 호출 시 404
+              deleteUserRoute(item.id);
+            } else if (isOwnServerCourse(item, authorCtx)) {
+              await deleteMyCourse(item.id);
+            } else {
+              // 공유 코스 북마크(내 루트 추가) — save 해제
+              await unsaveSharedCourse(item.id);
             }
-          },
+            removeSavedCourse(item.id);
+          } catch {
+            // 실패 시 UI 롤백
+            setApiMyCourses(prevApi);
+            setEnrichedMyCourses(prevEnriched);
+            setViewingCourseSnapshot(prevSnapshot);
+            setMyDetailCourseApi(prevDetail);
+            if (prevViewingId) setViewingCourseId(prevViewingId);
+            appAlert(
+              "오류",
+              "코스 삭제에 실패했어요. 잠시 후 다시 시도해 주세요.",
+            );
+          }
         },
-      ],
-    );
+      },
+    ]);
   };
 
   const openRouteCreateEdit = (routeId: string, collaborative: boolean) => {
@@ -931,6 +983,159 @@ export default function MyRouteScreen({
     rootNavigate("RouteCreate", { seedSharedCourseId: sharedCourseId });
   };
 
+  const handleCollaborativeInvite = async (friendUuids: string[]) => {
+    if (!inviteTargetRoute || friendUuids.length === 0) return;
+    const accessToken = useAuthStore.getState().accessToken;
+    const myUuid = useAuthStore.getState().user?.uuid;
+    if (!accessToken || !myUuid) {
+      Alert.alert("오류", "인증 정보가 없습니다.");
+      return;
+    }
+
+    setInviteSubmitting(true);
+    try {
+      console.log("[MyRouteScreen] 초대 대상 루트:", {
+        id: inviteTargetRoute.id,
+        title: inviteTargetRoute.title,
+        friendUuids,
+      });
+      const ur = userSavedRoutes.find((r) =>
+        sameCourseId(r.id, inviteTargetRoute.id),
+      );
+
+      // 기존 채팅방 UUID 찾기
+      let existingChatRoomUuid = ur?.chatRoomUuid;
+
+      console.log("[MyRouteScreen] 초대 시작 - 루트 정보:", {
+        existingChatRoomUuid,
+        friendUuidCount: friendUuids.length,
+        willSearchFor1to1: !existingChatRoomUuid && friendUuids.length === 1,
+      });
+
+      // 1대1 채팅방이 없으면 채팅방 목록에서 1대1 채팅방 찾기
+      if (!existingChatRoomUuid && friendUuids.length === 1) {
+        try {
+          console.log("[MyRouteScreen] 채팅방 목록 조회 시작");
+          const chatRooms = await getChatRooms(accessToken);
+          console.log("[MyRouteScreen] 전체 채팅방 수:", chatRooms.length);
+
+          const friendUuid = friendUuids[0];
+          console.log("[MyRouteScreen] 현재 사용자:", myUuid);
+          console.log("[MyRouteScreen] 초대 대상 친구:", friendUuid);
+
+          // 1대1 채팅방 찾기 (멤버수 2, 자신과 친구)
+          const oneToOneRoom = chatRooms.find((room) => {
+            console.log("[MyRouteScreen] 채팅방 확인:", {
+              uuid: room.uuid,
+              name: room.name,
+              memberCount: room.memberCount,
+              members: room.members?.map((m) => ({
+                uuid: m.uuid,
+                nickname: m.nickname,
+              })),
+            });
+
+            if (room.memberCount !== 2) {
+              console.log(
+                "[MyRouteScreen] → 멤버수 다름 (필요: 2, 실제: " +
+                  room.memberCount +
+                  ")",
+              );
+              return false;
+            }
+
+            const members = room.members ?? [];
+            const hasCurrentUser = members.some((m) => m.uuid === myUuid);
+            const hasFriend = members.some((m) => m.uuid === friendUuid);
+
+            console.log("[MyRouteScreen] → 멤버 확인:", {
+              hasCurrentUser,
+              hasFriend,
+            });
+
+            return hasCurrentUser && hasFriend;
+          });
+
+          if (oneToOneRoom) {
+            existingChatRoomUuid = oneToOneRoom.uuid;
+            console.log(
+              "[MyRouteScreen] ✓ 기존 1대1 채팅방 찾음:",
+              oneToOneRoom.uuid,
+            );
+          } else {
+            console.log(
+              "[MyRouteScreen] ✗ 1대1 채팅방을 찾지 못함 → 새로운 채팅방 생성",
+            );
+          }
+        } catch (err) {
+          console.error("[MyRouteScreen] 채팅방 목록 조회 실패:", err);
+          // 실패해도 계속 진행 (새로운 채팅방 생성)
+        }
+      } else {
+        console.log(
+          "[MyRouteScreen] 기존 chatRoomUuid가 있거나 친구 수가 1명이 아님:",
+          {
+            existingChatRoomUuid,
+            friendCount: friendUuids.length,
+          },
+        );
+      }
+
+      const result = await inviteFriendsToRouteChat({
+        accessToken,
+        myUuid,
+        routeId: inviteTargetRoute.id,
+        routeTitle: inviteTargetRoute.title,
+        friendUuids,
+        existingChatRoomUuid,
+      });
+
+      // 생성된 채팅방 uuid 로컬에 저장 (다음 초대 시 기존 방 재사용)
+      if (result.chatRoomUuid && ur) {
+        upsertUserRoute({
+          ...ur,
+          chatRoomUuid: result.chatRoomUuid,
+        });
+      }
+
+      Alert.alert(
+        "완료",
+        `${friendUuids.length}명에게 공동 루트 초대를 보냈습니다.`,
+      );
+      setCollaborativeInviteModalOpen(false);
+      setInviteTargetRoute(null);
+      void reloadMyRoutesAndSharing();
+    } catch (err) {
+      console.error("공동 루트 초대 실패:", err);
+      Alert.alert("오류", "초대를 보내는데 실패했습니다. 다시 시도해 주세요.");
+    } finally {
+      setInviteSubmitting(false);
+    }
+  };
+
+  const handleShareToRoom = async (roomUuid: string, roomName: string) => {
+    if (!shareToRoomTargetRoute) return;
+    const accessToken = useAuthStore.getState().accessToken;
+    if (!accessToken) {
+      appAlert('', '로그인이 필요합니다');
+      return;
+    }
+
+    setSharingToRoom(true);
+    try {
+      await shareRouteToChat(accessToken, roomUuid, shareToRoomTargetRoute.id);
+      appAlert('완료', `"${roomName}" 채팅방에 공유했습니다`);
+      setShareToRoomModalOpen(false);
+      setShareToRoomTargetRoute(null);
+      void reloadMyRoutesAndSharing();
+    } catch (err) {
+      console.error('[handleShareToRoom]', err);
+      appAlert('오류', '채팅방에 공유하는데 실패했습니다');
+    } finally {
+      setSharingToRoom(false);
+    }
+  };
+
   const ScreenRoot = embedded ? View : SafeAreaView;
   const screenRootProps = embedded
     ? { className: "flex-1 bg-[#F0F5FF]" }
@@ -940,7 +1145,7 @@ export default function MyRouteScreen({
     <ScreenRoot {...screenRootProps}>
       {/* 검색 + 필터 — 배경과 분리된 카드형 검색바 */}
       <View
-        className={`flex-row items-center gap-2.5 px-4 ${embedded ? 'pb-2 pt-1' : 'py-3'}`}
+        className={`flex-row items-center gap-2.5 px-4 ${embedded ? "pb-2 pt-1" : "py-3"}`}
       >
         <View
           className="flex-1 flex-row items-center rounded-2xl bg-white px-3.5"
@@ -1104,6 +1309,92 @@ export default function MyRouteScreen({
         onApply={() => {}}
       />
 
+      {inviteTargetRoute && (
+        <CollaborativeFriendInviteModal
+          visible={collaborativeInviteModalOpen}
+          onClose={() => {
+            setCollaborativeInviteModalOpen(false);
+            setInviteTargetRoute(null);
+          }}
+          accessToken={useAuthStore((s) => s.accessToken)}
+          onConfirm={handleCollaborativeInvite}
+          submitting={inviteSubmitting}
+          routeName={inviteTargetRoute.title}
+        />
+      )}
+
+      {/* 채팅방 선택 모달 */}
+      <Modal
+        visible={shareToRoomModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShareToRoomModalOpen(false)}
+      >
+        <View className="flex-1 bg-black/50 justify-center items-center p-4">
+          <View className="w-full max-w-md bg-white rounded-2xl overflow-hidden">
+            <View className="border-b border-gray-100 p-4 flex-row items-center justify-between">
+              <Text className="text-lg font-bold text-gray-900">채팅방 선택</Text>
+              <Pressable
+                onPress={() => setShareToRoomModalOpen(false)}
+                hitSlop={8}
+              >
+                <Ionicons name="close" size={24} color="#6b7280" />
+              </Pressable>
+            </View>
+
+            {loadingRooms ? (
+              <View className="p-8 justify-center items-center">
+                <ActivityIndicator size="large" color="#2563eb" />
+                <Text className="mt-2 text-sm text-gray-500">채팅방 로딩 중...</Text>
+              </View>
+            ) : selectableRooms.length === 0 ? (
+              <View className="p-8 justify-center items-center">
+                <Ionicons name="chatbubble-outline" size={48} color="#d1d5db" />
+                <Text className="mt-4 text-center text-gray-500">
+                  활동 중인 채팅방이 없습니다
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                data={selectableRooms}
+                keyExtractor={(room) => room.uuid}
+                scrollEnabled={false}
+                renderItem={({ item: room }) => (
+                  <Pressable
+                    onPress={() =>
+                      handleShareToRoom(room.uuid, room.name)
+                    }
+                    disabled={sharingToRoom}
+                    className="p-4 border-b border-gray-100 active:bg-gray-50"
+                  >
+                    <View className="flex-row items-center gap-3">
+                      <View className="w-10 h-10 rounded-full bg-blue-100 justify-center items-center">
+                        <Ionicons
+                          name="people-outline"
+                          size={20}
+                          color="#2563eb"
+                        />
+                      </View>
+                      <View className="flex-1">
+                        <Text className="text-sm font-semibold text-gray-900">
+                          {room.name}
+                        </Text>
+                        <Text className="text-xs text-gray-500 mt-0.5">
+                          {room.memberCount}명
+                        </Text>
+                      </View>
+                      {sharingToRoom && (
+                        <ActivityIndicator size="small" color="#2563eb" />
+                      )}
+                    </View>
+                  </Pressable>
+                )}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
+
       {/* 코스 상세 보기 모달 — 배경은 페이드, 시트만 슬라이드 (Modal slide는 백드롭까지 같이 움직임) */}
       <Modal
         visible={detailModalMounted}
@@ -1135,7 +1426,9 @@ export default function MyRouteScreen({
               style={{
                 width: "100%",
                 height: detailSheetMaxHeightPx,
-                maxHeight: clampMyRouteDetailSheetHeight(MY_ROUTE_WINDOW_H * 0.94),
+                maxHeight: clampMyRouteDetailSheetHeight(
+                  MY_ROUTE_WINDOW_H * 0.94,
+                ),
                 transform: [{ translateY: detailSheetTranslateY }],
               }}
             >
@@ -1146,521 +1439,566 @@ export default function MyRouteScreen({
                   backgroundColor: "#F8FBFF",
                 }}
               >
-              {viewingCourseId &&
-                (() => {
-                  const ur = userSavedRoutes.find((r) =>
-                    sameCourseId(r.id, viewingCourseId),
-                  );
-                  const courseFromDisplay = displayCourses.find((c) =>
-                    sameCourseId(c.id, viewingCourseId),
-                  );
-                  const courseFromApi = apiMyCourses.find((c) =>
-                    sameCourseId(c.id, viewingCourseId),
-                  );
-                  const course = pickViewingCourse(viewingCourseId, {
-                    ur,
-                    myDetailCourseApi,
-                    courseFromDisplay,
-                    viewingCourseSnapshot,
-                    courseFromApi,
-                  });
-                  if (!course) {
-                    return (
-                      <View
-                        style={{
-                          paddingVertical: 40,
-                          paddingHorizontal: 24,
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                      >
-                        {myCourseDetailLoading ? (
-                          <>
-                            <ActivityIndicator size="large" color="#2563EB" />
-                            <Text className="mt-4 text-sm text-gray-600">
-                              코스 정보를 불러오는 중…
-                            </Text>
-                          </>
-                        ) : (
-                          <Text className="text-sm text-center text-gray-600">
-                            코스 정보를 불러올 수 없습니다.
-                          </Text>
-                        )}
-                        <TouchableOpacity
-                          onPress={() => closeCourseDetail()}
-                          className="mt-6 rounded-xl bg-blue-600 px-5 py-2.5"
-                        >
-                          <Text className="text-sm font-semibold text-white">
-                            닫기
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
+                {viewingCourseId &&
+                  (() => {
+                    const ur = userSavedRoutes.find((r) =>
+                      sameCourseId(r.id, viewingCourseId),
                     );
-                  }
-
-                  const detailIsCollaborative =
-                    ur?.collaborative === true || course.collaborative === true;
-                  const detailAuthorCtx = {
-                    ...authorCtx,
-                    isLocalOwnRoute:
-                      Boolean(ur) &&
-                      !String(ur?.forkedFromSharedId ?? "").trim(),
-                  };
-
-                  const mapBlockHeight = Math.min(
-                    240,
-                    Math.max(110, Math.floor(detailSheetMaxHeightPx * 0.3)),
-                  );
-                  const routeSteps = Array.isArray(course.routeSteps)
-                    ? course.routeSteps
-                    : [];
-                  const midStepNames = routeSteps
-                    .slice(1, -1)
-                    .map((s) => String(s?.name ?? "").trim())
-                    .filter(Boolean);
-                  const regionChip =
-                    resolveCourseRegionLabel(
-                      course.region,
-                      course.departure,
-                      course.arrival,
-                      midStepNames,
-                    ) || null;
-                  let pathPts:
-                    | { latitude: number; longitude: number }[]
-                    | undefined;
-                  if (ur && userRouteMapPath(ur).length >= 1) {
-                    pathPts = userRouteMapPath(ur).map((p) => ({
-                      latitude: p.latitude,
-                      longitude: p.longitude,
-                    }));
-                  } else if (routeSteps.length >= 1) {
-                    pathPts = routeSteps.map((step, i) => {
-                      if (step.lat != null && step.lng != null) {
-                        return { latitude: step.lat, longitude: step.lng };
-                      }
-                      const p = getCourseStepMapPoint(
-                        course.id,
-                        i,
-                        routeSteps.length,
-                      );
-                      return { latitude: p.lat, longitude: p.lng };
+                    const courseFromDisplay = displayCourses.find((c) =>
+                      sameCourseId(c.id, viewingCourseId),
+                    );
+                    const courseFromApi = apiMyCourses.find((c) =>
+                      sameCourseId(c.id, viewingCourseId),
+                    );
+                    const course = pickViewingCourse(viewingCourseId, {
+                      ur,
+                      myDetailCourseApi,
+                      courseFromDisplay,
+                      viewingCourseSnapshot,
+                      courseFromApi,
                     });
-                  } else {
-                    pathPts = undefined;
-                  }
-                  const mapMarkers =
-                    pathPts && pathPts.length >= 1
-                      ? buildMapMarkersFromPathPoints(pathPts)
-                      : undefined;
-                  // 실경로만 표시 (실패 시 정류장 직선 연결·부채꼴 방지)
-                  const polylinePath = simplifyRoutePath(
-                    detailMergedPath && detailMergedPath.length >= 2
-                      ? detailMergedPath
-                      : undefined,
-                  );
-                  const fallbackCenter = ur
-                    ? userRouteMapCenter(ur)
-                    : getCourseMapCenter(course.id);
-                  const stepMapFocused = Boolean(selectedStepId);
-                  const showWalkOnMap =
-                    stepMapFocused &&
-                    Boolean(stepWalkSegments && stepWalkSegments.length > 0);
-                  const fitPathForCamera =
-                    showWalkOnMap && stepWalkSegments?.length
-                      ? stepWalkSegments.flatMap((s) => s.points)
-                      : detailMergedPath && detailMergedPath.length >= 2
-                        ? detailMergedPath
-                        : pathPts;
-                  const mapRouteFit = computeMapRouteFit(
-                    fitPathForCamera ?? [],
-                    stepMapFocused
-                      ? {
-                          maxZoom: COURSE_DETAIL_MAP_STEP_FOCUS_ZOOM,
-                          paddingZoomOut: 0.5,
-                        }
-                      : { minZoom: 10, maxZoom: 16, paddingZoomOut: 0.9 },
-                  );
-                  const mapCenter =
-                    stepMapFocused && mapFocus
-                      ? mapFocus
-                      : mapRouteFit
-                        ? { lat: mapRouteFit.lat, lng: mapRouteFit.lng }
-                        : mapFocus ?? fallbackCenter;
-                  const mapZoom = mapRouteFit?.zoom;
-                  const mapFitToRoute = !mapRouteFit;
-
-                  return (
-                    <View style={{ flex: 1 }}>
-                      <View
-                        style={{
-                          backgroundColor: "#EEF5FF",
-                          paddingTop: 14,
-                          paddingBottom: 14,
-                          borderTopLeftRadius: 24,
-                          borderTopRightRadius: 24,
-                          overflow: "hidden",
-                          borderBottomWidth: StyleSheet.hairlineWidth,
-                          borderBottomColor: "rgba(37,99,235,0.15)",
-                        }}
-                      >
-                        <View className="flex-row items-center justify-between px-4 mb-2">
-                          <Text className="text-sm font-semibold text-[#1A1A2E]">
-                            코스 위치
-                          </Text>
-                          <TouchableOpacity
-                            onPress={() => closeCourseDetail()}
-                            hitSlop={12}
-                          >
-                            <Ionicons name="close" size={26} color="#64748b" />
-                          </TouchableOpacity>
-                        </View>
+                    if (!course) {
+                      return (
                         <View
                           style={{
-                            height: mapBlockHeight,
-                            marginHorizontal: 10,
-                            borderRadius: 14,
-                            overflow: "hidden",
-                            backgroundColor: "#dbeafe",
-                            borderWidth: 1,
-                            borderColor: "#bfdbfe",
-                            position: "relative",
+                            paddingVertical: 40,
+                            paddingHorizontal: 24,
+                            alignItems: "center",
+                            justifyContent: "center",
                           }}
                         >
-                          <AppMapView
-                            key={
-                              ur
-                                ? `ur-${ur.id}-${mapZoom ?? "f"}-${polylinePath?.length ?? 0}-${detailMergedPath?.length ?? 0}-${stepMapFocused ? "step" : "route"}-${selectedStepId ?? "all"}`
-                                : `mc-${course.id}-${mapZoom ?? "f"}-${polylinePath?.length ?? 0}-${detailMergedPath?.length ?? 0}-${stepMapFocused ? "step" : "route"}-${selectedStepId ?? "all"}`
-                            }
-                            latitude={mapCenter.lat}
-                            longitude={mapCenter.lng}
-                            level={8}
-                            zoom={mapZoom}
-                            fitToRoute={mapFitToRoute}
-                            path={
-                              !showWalkOnMap &&
-                              polylinePath &&
-                              polylinePath.length >= 1
-                                ? polylinePath
-                                : undefined
-                            }
-                            segments={
-                              showWalkOnMap ? stepWalkSegments : undefined
-                            }
-                            stops={
-                              !showWalkOnMap &&
-                              polylinePath &&
-                              polylinePath.length >= 1
-                                ? polylinePath
-                                : undefined
-                            }
-                            markers={mapMarkers}
-                            style={{ width: "100%", height: mapBlockHeight }}
-                          />
-                          {(detailPathLoading ||
-                            (stepMapFocused && stepWalkLoading)) ? (
-                            <View
-                              style={{
-                                position: "absolute",
-                                right: 10,
-                                top: 10,
-                                flexDirection: "row",
-                                alignItems: "center",
-                                gap: 6,
-                                paddingHorizontal: 10,
-                                paddingVertical: 6,
-                                borderRadius: 10,
-                                backgroundColor: "rgba(255,255,255,0.92)",
-                              }}
+                          {myCourseDetailLoading ? (
+                            <>
+                              <ActivityIndicator size="large" color="#2563EB" />
+                              <Text className="mt-4 text-sm text-gray-600">
+                                코스 정보를 불러오는 중…
+                              </Text>
+                            </>
+                          ) : (
+                            <Text className="text-sm text-center text-gray-600">
+                              코스 정보를 불러올 수 없습니다.
+                            </Text>
+                          )}
+                          <TouchableOpacity
+                            onPress={() => closeCourseDetail()}
+                            className="mt-6 rounded-xl bg-blue-600 px-5 py-2.5"
+                          >
+                            <Text className="text-sm font-semibold text-white">
+                              닫기
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      );
+                    }
+
+                    const detailIsCollaborative =
+                      ur?.collaborative === true ||
+                      course.collaborative === true;
+                    const detailAuthorCtx = {
+                      ...authorCtx,
+                      isLocalOwnRoute:
+                        Boolean(ur) &&
+                        !String(ur?.forkedFromSharedId ?? "").trim(),
+                    };
+
+                    const mapBlockHeight = Math.min(
+                      240,
+                      Math.max(110, Math.floor(detailSheetMaxHeightPx * 0.3)),
+                    );
+                    const routeSteps = Array.isArray(course.routeSteps)
+                      ? course.routeSteps
+                      : [];
+                    const midStepNames = routeSteps
+                      .slice(1, -1)
+                      .map((s) => String(s?.name ?? "").trim())
+                      .filter(Boolean);
+                    const regionChip =
+                      resolveCourseRegionLabel(
+                        course.region,
+                        course.departure,
+                        course.arrival,
+                        midStepNames,
+                      ) || null;
+                    let pathPts:
+                      | { latitude: number; longitude: number }[]
+                      | undefined;
+                    if (ur && userRouteMapPath(ur).length >= 1) {
+                      pathPts = userRouteMapPath(ur).map((p) => ({
+                        latitude: p.latitude,
+                        longitude: p.longitude,
+                      }));
+                    } else if (routeSteps.length >= 1) {
+                      pathPts = routeSteps.map((step, i) => {
+                        if (step.lat != null && step.lng != null) {
+                          return { latitude: step.lat, longitude: step.lng };
+                        }
+                        const p = getCourseStepMapPoint(
+                          course.id,
+                          i,
+                          routeSteps.length,
+                        );
+                        return { latitude: p.lat, longitude: p.lng };
+                      });
+                    } else {
+                      pathPts = undefined;
+                    }
+                    const mapMarkers =
+                      pathPts && pathPts.length >= 1
+                        ? buildMapMarkersFromPathPoints(pathPts)
+                        : undefined;
+                    // 실경로만 표시 (실패 시 정류장 직선 연결·부채꼴 방지)
+                    const polylinePath = simplifyRoutePath(
+                      detailMergedPath && detailMergedPath.length >= 2
+                        ? detailMergedPath
+                        : undefined,
+                    );
+                    const fallbackCenter = ur
+                      ? userRouteMapCenter(ur)
+                      : getCourseMapCenter(course.id);
+                    const stepMapFocused = Boolean(selectedStepId);
+                    const showWalkOnMap =
+                      stepMapFocused &&
+                      Boolean(stepWalkSegments && stepWalkSegments.length > 0);
+                    const fitPathForCamera =
+                      showWalkOnMap && stepWalkSegments?.length
+                        ? stepWalkSegments.flatMap((s) => s.points)
+                        : detailMergedPath && detailMergedPath.length >= 2
+                          ? detailMergedPath
+                          : pathPts;
+                    const mapRouteFit = computeMapRouteFit(
+                      fitPathForCamera ?? [],
+                      stepMapFocused
+                        ? {
+                            maxZoom: COURSE_DETAIL_MAP_STEP_FOCUS_ZOOM,
+                            paddingZoomOut: 0.5,
+                          }
+                        : { minZoom: 10, maxZoom: 16, paddingZoomOut: 0.9 },
+                    );
+                    const mapCenter =
+                      stepMapFocused && mapFocus
+                        ? mapFocus
+                        : mapRouteFit
+                          ? { lat: mapRouteFit.lat, lng: mapRouteFit.lng }
+                          : (mapFocus ?? fallbackCenter);
+                    const mapZoom = mapRouteFit?.zoom;
+                    const mapFitToRoute = !mapRouteFit;
+
+                    return (
+                      <View style={{ flex: 1 }}>
+                        <View
+                          style={{
+                            backgroundColor: "#EEF5FF",
+                            paddingTop: 14,
+                            paddingBottom: 14,
+                            borderTopLeftRadius: 24,
+                            borderTopRightRadius: 24,
+                            overflow: "hidden",
+                            borderBottomWidth: StyleSheet.hairlineWidth,
+                            borderBottomColor: "rgba(37,99,235,0.15)",
+                          }}
+                        >
+                          <View className="flex-row items-center justify-between px-4 mb-2">
+                            <Text className="text-sm font-semibold text-[#1A1A2E]">
+                              코스 위치
+                            </Text>
+                            <TouchableOpacity
+                              onPress={() => closeCourseDetail()}
+                              hitSlop={12}
                             >
-                              <ActivityIndicator size="small" color="#2563eb" />
-                              <Text
+                              <Ionicons
+                                name="close"
+                                size={26}
+                                color="#64748b"
+                              />
+                            </TouchableOpacity>
+                          </View>
+                          <View
+                            style={{
+                              height: mapBlockHeight,
+                              marginHorizontal: 10,
+                              borderRadius: 14,
+                              overflow: "hidden",
+                              backgroundColor: "#dbeafe",
+                              borderWidth: 1,
+                              borderColor: "#bfdbfe",
+                              position: "relative",
+                            }}
+                          >
+                            <AppMapView
+                              key={
+                                ur
+                                  ? `ur-${ur.id}-${mapZoom ?? "f"}-${polylinePath?.length ?? 0}-${detailMergedPath?.length ?? 0}-${stepMapFocused ? "step" : "route"}-${selectedStepId ?? "all"}`
+                                  : `mc-${course.id}-${mapZoom ?? "f"}-${polylinePath?.length ?? 0}-${detailMergedPath?.length ?? 0}-${stepMapFocused ? "step" : "route"}-${selectedStepId ?? "all"}`
+                              }
+                              latitude={mapCenter.lat}
+                              longitude={mapCenter.lng}
+                              level={8}
+                              zoom={mapZoom}
+                              fitToRoute={mapFitToRoute}
+                              path={
+                                !showWalkOnMap &&
+                                polylinePath &&
+                                polylinePath.length >= 1
+                                  ? polylinePath
+                                  : undefined
+                              }
+                              segments={
+                                showWalkOnMap ? stepWalkSegments : undefined
+                              }
+                              stops={
+                                !showWalkOnMap &&
+                                polylinePath &&
+                                polylinePath.length >= 1
+                                  ? polylinePath
+                                  : undefined
+                              }
+                              markers={mapMarkers}
+                              style={{ width: "100%", height: mapBlockHeight }}
+                            />
+                            {detailPathLoading ||
+                            (stepMapFocused && stepWalkLoading) ? (
+                              <View
                                 style={{
-                                  fontSize: 11,
-                                  color: "#2563eb",
-                                  fontWeight: "600",
+                                  position: "absolute",
+                                  right: 10,
+                                  top: 10,
+                                  flexDirection: "row",
+                                  alignItems: "center",
+                                  gap: 6,
+                                  paddingHorizontal: 10,
+                                  paddingVertical: 6,
+                                  borderRadius: 10,
+                                  backgroundColor: "rgba(255,255,255,0.92)",
                                 }}
                               >
-                                {stepMapFocused && stepWalkLoading
-                                  ? "도보 경로 불러오는 중"
-                                  : "경로 반영 중"}
-                              </Text>
-                            </View>
-                          ) : null}
+                                <ActivityIndicator
+                                  size="small"
+                                  color="#2563eb"
+                                />
+                                <Text
+                                  style={{
+                                    fontSize: 11,
+                                    color: "#2563eb",
+                                    fontWeight: "600",
+                                  }}
+                                >
+                                  {stepMapFocused && stepWalkLoading
+                                    ? "도보 경로 불러오는 중"
+                                    : "경로 반영 중"}
+                                </Text>
+                              </View>
+                            ) : null}
+                          </View>
                         </View>
-                      </View>
 
-
-                      <ScrollView
-                        showsVerticalScrollIndicator={false}
-                        className="flex-1 bg-white"
-                        style={{ flexGrow: 1 }}
-                        contentContainerStyle={{
-                          paddingHorizontal: 20,
-                          paddingTop: 16,
-                          paddingBottom: 28,
-                        }}
-                      >
-                        <View className="flex-row items-center justify-between mb-4">
-                          <Text className="text-xl font-bold text-gray-900">
-                            코스 상세
-                          </Text>
-                          <View className="flex-row flex-wrap items-center justify-end gap-2">
-                            {ur?.collaborative === true ? (
+                        <ScrollView
+                          showsVerticalScrollIndicator={false}
+                          className="flex-1 bg-white"
+                          style={{ flexGrow: 1 }}
+                          contentContainerStyle={{
+                            paddingHorizontal: 20,
+                            paddingTop: 16,
+                            paddingBottom: 28,
+                          }}
+                        >
+                          <View className="flex-row items-center justify-between mb-4">
+                            <Text className="text-xl font-bold text-gray-900">
+                              코스 상세
+                            </Text>
+                            <View className="flex-row flex-wrap items-center justify-end gap-2">
+                              {ur?.collaborative === true ? (
+                                <TouchableOpacity
+                                  onPress={() => {
+                                    presentCollaborativeShareOptions({
+                                      routeId: String(course.id),
+                                      title: course.title,
+                                      onInviteFriends: () => {
+                                        setInviteTargetRoute({
+                                          id: String(course.id),
+                                          title: course.title,
+                                        });
+                                        setCollaborativeInviteModalOpen(true);
+                                      },
+                                      onShareToRoom: async () => {
+                                        setShareToRoomTargetRoute({
+                                          id: String(course.id),
+                                          title: course.title,
+                                        });
+                                        setLoadingRooms(true);
+                                        try {
+                                          const accessToken = useAuthStore.getState().accessToken;
+                                          if (!accessToken) {
+                                            appAlert('', '로그인이 필요합니다');
+                                            return;
+                                          }
+                                          const rooms = await getChatRooms(accessToken);
+                                          setSelectableRooms(rooms);
+                                          setShareToRoomModalOpen(true);
+                                        } catch (e) {
+                                          appAlert('', '채팅방 목록을 불러오지 못했습니다');
+                                          console.error('[onShareToRoom]', e);
+                                        } finally {
+                                          setLoadingRooms(false);
+                                        }
+                                      },
+                                    });
+                                  }}
+                                  className="flex-row items-center gap-1 px-3 py-2 rounded-xl bg-orange-50"
+                                >
+                                  <Ionicons
+                                    name="share-social-outline"
+                                    size={16}
+                                    color="#ea580c"
+                                  />
+                                  <Text className="text-sm font-semibold text-orange-600">
+                                    초대
+                                  </Text>
+                                </TouchableOpacity>
+                              ) : null}
                               <TouchableOpacity
                                 onPress={() => {
-                                  void shareCollaborativeRoute({
-                                    routeId: String(course.id),
-                                    title: course.title,
+                                  closeCourseDetail(() => {
+                                    if (ur) {
+                                      openRouteCreateEdit(
+                                        ur.id,
+                                        ur.collaborative === true,
+                                      );
+                                    } else if (
+                                      isServerBackedMyCourse(course.id) &&
+                                      canEditAsOwnMyCourse(course)
+                                    ) {
+                                      openRouteCreateEdit(course.id, false);
+                                    } else {
+                                      openRouteCreateFromSharedCourse(
+                                        course.id,
+                                      );
+                                    }
                                   });
                                 }}
-                                className="flex-row items-center gap-1 px-3 py-2 rounded-xl bg-orange-50"
+                                className="flex-row items-center gap-1 px-3 py-2 rounded-xl bg-blue-50"
                               >
                                 <Ionicons
-                                  name="share-social-outline"
+                                  name="create-outline"
                                   size={16}
-                                  color="#ea580c"
+                                  color="#2563eb"
                                 />
-                                <Text className="text-sm font-semibold text-orange-600">
-                                  초대
+                                <Text className="text-sm font-semibold text-blue-600">
+                                  수정
                                 </Text>
                               </TouchableOpacity>
-                            ) : null}
-                            <TouchableOpacity
-                              onPress={() => {
-                                closeCourseDetail(() => {
-                                  if (ur) {
-                                    openRouteCreateEdit(
-                                      ur.id,
-                                      ur.collaborative === true,
-                                    );
-                                  } else if (
-                                    isServerBackedMyCourse(course.id) &&
-                                    canEditAsOwnMyCourse(course)
-                                  ) {
-                                    openRouteCreateEdit(course.id, false);
-                                  } else {
-                                    openRouteCreateFromSharedCourse(course.id);
-                                  }
+                              <TouchableOpacity
+                                onPress={() => {
+                                  closeCourseDetail(() => handleRemove(course));
+                                }}
+                                className="flex-row items-center gap-1 px-3 py-2 rounded-xl bg-red-50"
+                              >
+                                <Ionicons
+                                  name="trash-outline"
+                                  size={16}
+                                  color="#ef4444"
+                                />
+                                <Text className="text-sm font-semibold text-red-500">
+                                  저장 삭제
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+
+                          <Text className="mb-1 text-base font-semibold text-gray-900">
+                            {course.title}
+                          </Text>
+                          {!detailIsCollaborative ? (
+                            <CourseAuthorDetailChip
+                              course={course}
+                              authorCtx={detailAuthorCtx}
+                              onPressCreator={() => {
+                                const authorLabel = getCourseAuthorLabel(
+                                  course,
+                                  detailAuthorCtx,
+                                );
+                                const authorUuid = String(
+                                  course.authorUuid ?? "",
+                                ).trim();
+                                const authorUserId = String(
+                                  course.authorUserId ?? "",
+                                ).trim();
+                                rootNavigate("UserProfile", {
+                                  userUuid: authorUuid || undefined,
+                                  userId: authorUserId || undefined,
+                                  nickname:
+                                    authorLabel.startsWith("@") ||
+                                    authorLabel === "제작자 미표시"
+                                      ? undefined
+                                      : authorLabel,
                                 });
                               }}
-                              className="flex-row items-center gap-1 px-3 py-2 rounded-xl bg-blue-50"
-                            >
-                              <Ionicons
-                                name="create-outline"
-                                size={16}
-                                color="#2563eb"
-                              />
-                              <Text className="text-sm font-semibold text-blue-600">
-                                수정
-                              </Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              onPress={() => {
-                                closeCourseDetail(() => handleRemove(course));
+                              onPressModifier={() => {
+                                const modLabel = getCourseModifierLabel(
+                                  course,
+                                  authorCtx,
+                                );
+                                const modUuid = String(
+                                  course.modifierUuid ?? "",
+                                ).trim();
+                                const modUserId = String(
+                                  course.modifierUserId ?? "",
+                                ).trim();
+                                rootNavigate("UserProfile", {
+                                  userUuid: modUuid || undefined,
+                                  userId: modUserId || undefined,
+                                  nickname:
+                                    modLabel.startsWith("@") ||
+                                    modLabel === "수정자 미표시"
+                                      ? undefined
+                                      : modLabel,
+                                });
                               }}
-                              className="flex-row items-center gap-1 px-3 py-2 rounded-xl bg-red-50"
-                            >
-                              <Ionicons
-                                name="trash-outline"
-                                size={16}
-                                color="#ef4444"
-                              />
-                              <Text className="text-sm font-semibold text-red-500">
-                                저장 삭제
-                              </Text>
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-
-                        <Text className="mb-1 text-base font-semibold text-gray-900">
-                          {course.title}
-                        </Text>
-                        {!detailIsCollaborative ? (
-                          <CourseAuthorDetailChip
-                            course={course}
-                            authorCtx={detailAuthorCtx}
-                            onPressCreator={() => {
-                              const authorLabel = getCourseAuthorLabel(
-                                course,
-                                detailAuthorCtx,
-                              );
-                              const authorUuid = String(
-                                course.authorUuid ?? "",
-                              ).trim();
-                              const authorUserId = String(
-                                course.authorUserId ?? "",
-                              ).trim();
-                              rootNavigate("UserProfile", {
-                                userUuid: authorUuid || undefined,
-                                userId: authorUserId || undefined,
-                                nickname:
-                                  authorLabel.startsWith("@") ||
-                                  authorLabel === "제작자 미표시"
-                                    ? undefined
-                                    : authorLabel,
-                              });
-                            }}
-                            onPressModifier={() => {
-                              const modLabel = getCourseModifierLabel(
-                                course,
-                                authorCtx,
-                              );
-                              const modUuid = String(
-                                course.modifierUuid ?? "",
-                              ).trim();
-                              const modUserId = String(
-                                course.modifierUserId ?? "",
-                              ).trim();
-                              rootNavigate("UserProfile", {
-                                userUuid: modUuid || undefined,
-                                userId: modUserId || undefined,
-                                nickname:
-                                  modLabel.startsWith("@") ||
-                                  modLabel === "수정자 미표시"
-                                    ? undefined
-                                    : modLabel,
-                              });
-                            }}
-                          />
-                        ) : null}
-                        {Array.isArray(course.tags) && course.tags.length > 0 ? (
-                          <View className="mb-2 flex-row flex-wrap gap-1.5">
-                            {course.tags.slice(0, 2).map((tag) => (
-                              <View
-                                key={String(tag)}
-                                className="rounded-full bg-indigo-50 px-2.5 py-0.5"
-                              >
-                                <Text className="text-xs font-medium text-indigo-800">{tag}</Text>
-                              </View>
-                            ))}
-                          </View>
-                        ) : (
-                          <Text className="mb-2 text-xs text-gray-500">
-                            선택된 태그가 없어요
-                          </Text>
-                        )}
-
-                        <View className="flex-row flex-wrap items-center gap-2 mb-3">
-                          {regionChip ? (
-                            <View className="px-3 py-1 rounded-full bg-slate-100">
-                              <Text className="text-xs font-medium text-slate-700">{regionChip}</Text>
-                            </View>
-                          ) : null}
-                          <View className="px-3 py-1 rounded-full bg-blue-50">
-                            <Text className="text-xs text-blue-700">
-                              예상 소요{" "}
-                              {formatOverallDurationLabel(
-                                course.overallDurationMinutes,
-                              )}
-                            </Text>
-                          </View>
-                          <View className="px-3 py-1 rounded-full bg-yellow-50">
-                            <Text className="text-xs text-yellow-700">
-                              ★ {course.rating.toFixed(1)} ({course.reviewCount}
-                              명)
-                            </Text>
-                          </View>
-                        </View>
-
-                        {detailIsCollaborative ? (
-                          <View className="mb-3 self-start rounded-md bg-orange-50 px-2.5 py-1">
-                            <CollaborativeMemberSummaryText
-                              course={course}
-                              routeId={String(course.id)}
-                              chatRoomUuid={ur?.chatRoomUuid}
-                              authorCtx={detailAuthorCtx}
-                              className="text-[11px] font-semibold text-orange-700"
-                              numberOfLines={3}
                             />
-                          </View>
-                        ) : null}
-
-                        <View className="p-3 mb-6 rounded-xl bg-gray-50">
-                          <View className="flex-row items-center">
-                            <View className="px-2 py-1 bg-green-100 rounded">
-                              <Text className="text-xs font-medium text-green-700">
-                                출발
-                              </Text>
+                          ) : null}
+                          {Array.isArray(course.tags) &&
+                          course.tags.length > 0 ? (
+                            <View className="mb-2 flex-row flex-wrap gap-1.5">
+                              {course.tags.slice(0, 2).map((tag) => (
+                                <View
+                                  key={String(tag)}
+                                  className="rounded-full bg-indigo-50 px-2.5 py-0.5"
+                                >
+                                  <Text className="text-xs font-medium text-indigo-800">
+                                    {tag}
+                                  </Text>
+                                </View>
+                              ))}
                             </View>
-                            <Text className="flex-1 ml-2 text-sm text-gray-900">
-                              {course.departure}
+                          ) : (
+                            <Text className="mb-2 text-xs text-gray-500">
+                              선택된 태그가 없어요
                             </Text>
-                          </View>
-                          <View className="flex-row items-center mt-2">
-                            <View className="px-2 py-1 bg-red-100 rounded">
-                              <Text className="text-xs font-medium text-red-700">
-                                도착
-                              </Text>
-                            </View>
-                            <Text className="flex-1 ml-2 text-sm text-gray-900">
-                              {course.arrival}
-                            </Text>
-                          </View>
-                        </View>
+                          )}
 
-                        <Text className="mb-2 text-sm font-semibold text-gray-900">
-                          코스 경로
-                        </Text>
-                        <View className="p-3 mb-6 rounded-xl bg-gray-50">
-                          {routeSteps.map((step, index) => (
-                            <TouchableOpacity
-                              key={step.id}
-                              onPress={() => {
-                                if (selectedStepId === step.id) {
-                                  setSelectedStepId(null);
-                                  setMapFocus({
-                                    ...getCourseMapCenterFromSteps(course),
-                                    level: COURSE_DETAIL_MAP_OVERVIEW_LEVEL,
-                                  });
-                                  return;
-                                }
-                                if (ur) {
-                                  const p = getUserRouteStepPoint(ur, index);
-                                  setMapFocus({ lat: p.lat, lng: p.lng });
-                                } else {
-                                  setMapFocus(
-                                    focusMapOnCourseStep(
-                                      step,
-                                      course.id,
-                                      index,
-                                      routeSteps.length,
-                                    ),
-                                  );
-                                }
-                                setSelectedStepId(step.id);
-                              }}
-                              className="flex-row items-start py-1.5"
-                              style={[
-                                index > 0
-                                  ? {
-                                      borderTopWidth: 1,
-                                      borderTopColor: "#e5e7eb",
-                                    }
-                                  : null,
-                                selectedStepId === step.id
-                                  ? {
-                                      backgroundColor: "rgba(59,130,246,0.08)",
-                                      borderRadius: 8,
-                                    }
-                                  : null,
-                              ]}
-                            >
-                              <Text className="mt-0.5 w-5 text-xs font-semibold text-gray-500">
-                                {index + 1}.
-                              </Text>
-                              <View className="flex-1">
-                                <Text className="text-sm font-medium text-gray-900">
-                                  {step.name}
+                          <View className="flex-row flex-wrap items-center gap-2 mb-3">
+                            {regionChip ? (
+                              <View className="px-3 py-1 rounded-full bg-slate-100">
+                                <Text className="text-xs font-medium text-slate-700">
+                                  {regionChip}
                                 </Text>
                               </View>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                      </ScrollView>
-                    </View>
-                  );
-                })()}
+                            ) : null}
+                            <View className="px-3 py-1 rounded-full bg-blue-50">
+                              <Text className="text-xs text-blue-700">
+                                예상 소요{" "}
+                                {formatOverallDurationLabel(
+                                  course.overallDurationMinutes,
+                                )}
+                              </Text>
+                            </View>
+                            <View className="px-3 py-1 rounded-full bg-yellow-50">
+                              <Text className="text-xs text-yellow-700">
+                                ★ {course.rating.toFixed(1)} (
+                                {course.reviewCount}
+                                명)
+                              </Text>
+                            </View>
+                          </View>
+
+                          {detailIsCollaborative ? (
+                            <View className="mb-3 self-start rounded-md bg-orange-50 px-2.5 py-1">
+                              <CollaborativeMemberSummaryText
+                                course={course}
+                                routeId={String(course.id)}
+                                chatRoomUuid={ur?.chatRoomUuid}
+                                authorCtx={detailAuthorCtx}
+                                className="text-[11px] font-semibold text-orange-700"
+                                numberOfLines={3}
+                              />
+                            </View>
+                          ) : null}
+
+                          <View className="p-3 mb-6 rounded-xl bg-gray-50">
+                            <View className="flex-row items-center">
+                              <View className="px-2 py-1 bg-green-100 rounded">
+                                <Text className="text-xs font-medium text-green-700">
+                                  출발
+                                </Text>
+                              </View>
+                              <Text className="flex-1 ml-2 text-sm text-gray-900">
+                                {course.departure}
+                              </Text>
+                            </View>
+                            <View className="flex-row items-center mt-2">
+                              <View className="px-2 py-1 bg-red-100 rounded">
+                                <Text className="text-xs font-medium text-red-700">
+                                  도착
+                                </Text>
+                              </View>
+                              <Text className="flex-1 ml-2 text-sm text-gray-900">
+                                {course.arrival}
+                              </Text>
+                            </View>
+                          </View>
+
+                          <Text className="mb-2 text-sm font-semibold text-gray-900">
+                            코스 경로
+                          </Text>
+                          <View className="p-3 mb-6 rounded-xl bg-gray-50">
+                            {routeSteps.map((step, index) => (
+                              <TouchableOpacity
+                                key={step.id}
+                                onPress={() => {
+                                  if (selectedStepId === step.id) {
+                                    setSelectedStepId(null);
+                                    setMapFocus({
+                                      ...getCourseMapCenterFromSteps(course),
+                                      level: COURSE_DETAIL_MAP_OVERVIEW_LEVEL,
+                                    });
+                                    return;
+                                  }
+                                  if (ur) {
+                                    const p = getUserRouteStepPoint(ur, index);
+                                    setMapFocus({ lat: p.lat, lng: p.lng });
+                                  } else {
+                                    setMapFocus(
+                                      focusMapOnCourseStep(
+                                        step,
+                                        course.id,
+                                        index,
+                                        routeSteps.length,
+                                      ),
+                                    );
+                                  }
+                                  setSelectedStepId(step.id);
+                                }}
+                                className="flex-row items-start py-1.5"
+                                style={[
+                                  index > 0
+                                    ? {
+                                        borderTopWidth: 1,
+                                        borderTopColor: "#e5e7eb",
+                                      }
+                                    : null,
+                                  selectedStepId === step.id
+                                    ? {
+                                        backgroundColor:
+                                          "rgba(59,130,246,0.08)",
+                                        borderRadius: 8,
+                                      }
+                                    : null,
+                                ]}
+                              >
+                                <Text className="mt-0.5 w-5 text-xs font-semibold text-gray-500">
+                                  {index + 1}.
+                                </Text>
+                                <View className="flex-1">
+                                  <Text className="text-sm font-medium text-gray-900">
+                                    {step.name}
+                                  </Text>
+                                </View>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        </ScrollView>
+                      </View>
+                    );
+                  })()}
               </View>
             </Animated.View>
           </View>
