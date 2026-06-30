@@ -289,7 +289,7 @@ export default function UserProfileScreen(): React.JSX.Element {
       <FlatList
         key={activeTab}
         data={listData}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item, index) => `${activeTab}-${item.id}-${index}`}
         renderItem={({ item }) => <CourseCard item={item} />}
         ListHeaderComponent={ListHeader}
         ListEmptyComponent={

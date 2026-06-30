@@ -75,6 +75,7 @@ import {
   buildRouteGroupChatName,
   promptCreateCourseChatRoom,
 } from "../data/routeCollaborativeChat";
+import { getChatRooms, shareRouteToChat } from "../api/chat/chat";
 import {
   searchKakaoPlacesByKeyword,
   KAKAO_KEYWORD_CATEGORY_OPTIONS,
@@ -1263,6 +1264,10 @@ export default function RouteCreateScreen(): React.JSX.Element {
   );
   const [friendInviteOpen, setFriendInviteOpen] = useState(false);
   const [friendInviteSubmitting, setFriendInviteSubmitting] = useState(false);
+  const [shareToRoomModalOpen, setShareToRoomModalOpen] = useState(false);
+  const [selectableRooms, setSelectableRooms] = useState<any[]>([]);
+  const [loadingRooms, setLoadingRooms] = useState(false);
+  const [sharingToRoom, setSharingToRoom] = useState(false);
   const [routeSaving, setRouteSaving] = useState(false);
 
   const [editingStop, setEditingStop] = useState<RouteStop | null>(null);
@@ -3861,6 +3866,24 @@ export default function RouteCreateScreen(): React.JSX.Element {
       routeId: rid,
       title: routeTitle.trim() || "루트",
       onInviteFriends: () => setFriendInviteOpen(true),
+      onShareToRoom: async () => {
+        setLoadingRooms(true);
+        try {
+          const accessToken = useAuthStore.getState().accessToken;
+          if (!accessToken) {
+            appAlert('', '로그인이 필요합니다');
+            return;
+          }
+          const rooms = await getChatRooms(accessToken);
+          setSelectableRooms(rooms);
+          setShareToRoomModalOpen(true);
+        } catch (e) {
+          appAlert('', '채팅방 목록을 불러오지 못했습니다');
+          console.error('[onShareToRoom]', e);
+        } finally {
+          setLoadingRooms(false);
+        }
+      },
     });
   }, [
     routeTitle,
@@ -3918,6 +3941,31 @@ export default function RouteCreateScreen(): React.JSX.Element {
       );
     } finally {
       setFriendInviteSubmitting(false);
+    }
+  };
+
+  const handleShareToRoom = async (roomUuid: string, roomName: string) => {
+    const rid =
+      (await ensureCollaborativeRoutePersisted()) ?? getServerBackedRouteId();
+    if (!rid) {
+      appAlert("", "공동 루트를 저장한 뒤 공유할 수 있어요.");
+      return;
+    }
+    if (!accessToken) {
+      appAlert('', '로그인이 필요합니다');
+      return;
+    }
+
+    setSharingToRoom(true);
+    try {
+      await shareRouteToChat(accessToken, roomUuid, rid);
+      appAlert('완료', `"${roomName}" 채팅방에 공유했습니다`);
+      setShareToRoomModalOpen(false);
+    } catch (err) {
+      console.error('[handleShareToRoom]', err);
+      appAlert('오류', '채팅방에 공유하는데 실패했습니다');
+    } finally {
+      setSharingToRoom(false);
     }
   };
 
@@ -5038,6 +5086,74 @@ export default function RouteCreateScreen(): React.JSX.Element {
         onConfirm={handleInviteFriendsToRoute}
         submitting={friendInviteSubmitting}
       />
+
+      {/* 채팅방 선택 모달 */}
+      <Modal
+        visible={shareToRoomModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShareToRoomModalOpen(false)}
+      >
+        <View className="flex-1 bg-black/50 justify-center items-center p-4">
+          <View className="w-full max-w-md bg-white rounded-2xl overflow-hidden">
+            <View className="border-b border-gray-100 p-4 flex-row items-center justify-between">
+              <Text className="text-lg font-bold text-gray-900">채팅방 선택</Text>
+              <Pressable
+                onPress={() => setShareToRoomModalOpen(false)}
+                hitSlop={8}
+              >
+                <Ionicons name="close" size={24} color="#6b7280" />
+              </Pressable>
+            </View>
+
+            {loadingRooms ? (
+              <View className="p-8 justify-center items-center">
+                <ActivityIndicator size="large" color="#2563eb" />
+                <Text className="mt-2 text-sm text-gray-500">채팅방 로딩 중...</Text>
+              </View>
+            ) : selectableRooms.length === 0 ? (
+              <View className="p-8 justify-center items-center">
+                <Ionicons name="chatbubble-outline" size={48} color="#d1d5db" />
+                <Text className="mt-4 text-center text-gray-500">
+                  활동 중인 채팅방이 없습니다
+                </Text>
+              </View>
+            ) : (
+              <ScrollView>
+                {selectableRooms.map((room) => (
+                  <Pressable
+                    key={room.uuid}
+                    onPress={() => handleShareToRoom(room.uuid, room.name)}
+                    disabled={sharingToRoom}
+                    className="p-4 border-b border-gray-100 active:bg-gray-50"
+                  >
+                    <View className="flex-row items-center gap-3">
+                      <View className="w-10 h-10 rounded-full bg-blue-100 justify-center items-center">
+                        <Ionicons
+                          name="people-outline"
+                          size={20}
+                          color="#2563eb"
+                        />
+                      </View>
+                      <View className="flex-1">
+                        <Text className="text-sm font-semibold text-gray-900">
+                          {room.name}
+                        </Text>
+                        <Text className="text-xs text-gray-500 mt-0.5">
+                          {room.memberCount}명
+                        </Text>
+                      </View>
+                      {sharingToRoom && (
+                        <ActivityIndicator size="small" color="#2563eb" />
+                      )}
+                    </View>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={!!editingLegId} transparent animationType="fade">
         <View className="justify-center flex-1 px-6">

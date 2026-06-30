@@ -72,11 +72,13 @@ instance.interceptors.response.use(
 
     // 401이 아니거나, 리프레시 요청 자체가 실패하면 즉시 reject
     const refreshPath = 'auth/token/refresh';
+    const isLoginRequest = originalRequest.url === 'auth/login' || originalRequest.url === 'auth/register';
     if (
       err.response?.status !== 401 ||
       originalRequest._retry ||
       originalRequest.url === refreshPath ||
-      originalRequest.url === 'auth/refresh'
+      originalRequest.url === 'auth/refresh' ||
+      isLoginRequest  // 로그인/회원가입 요청은 token refresh 스킵
     ) {
       return Promise.reject(err);
     }

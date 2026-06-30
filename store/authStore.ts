@@ -45,21 +45,36 @@ export const useAuthStore = create<AuthState>(set => ({
   profileImageCacheBust: 0,
 
   login: async data => {
-    const res = await apiLogin(data);
-    await tokenStorage.saveTokens(res.accessToken, res.refreshToken);
-    await tokenStorage.saveUserUuid(res.user.uuid);
-    set({
-      accessToken: res.accessToken,
-      refreshToken: res.refreshToken,
-      user: res.user,
-      isAuthenticated: true,
-    });
     try {
-      const me = await getMyProfile();
-      set({ user: userFromProfile(me) });
-      void preloadNotificationSettings(me.uuid);
-    } catch {
-      // login 응답 user를 fallback으로 유지
+      const res = await apiLogin(data);
+      const accessToken = res.accessToken || res.token || '';
+      const refreshToken = res.refreshToken || '';
+
+      if (!accessToken) {
+        throw new Error('서버에서 인증 토큰을 받지 못했습니다');
+      }
+
+      await tokenStorage.saveTokens(accessToken, refreshToken);
+      await tokenStorage.saveUserUuid(res.user.uuid);
+      set({
+        accessToken,
+        refreshToken,
+        user: res.user,
+        isAuthenticated: true,
+      });
+      try {
+        const me = await getMyProfile();
+        set({ user: userFromProfile(me) });
+        void preloadNotificationSettings(me.uuid);
+      } catch {
+        // login 응답 user를 fallback으로 유지
+      }
+    } catch (err: any) {
+      const errorMessage =
+        err?.response?.data?.message ||
+        err?.message ||
+        '로그인에 실패했습니다';
+      throw new Error(errorMessage);
     }
   },
 

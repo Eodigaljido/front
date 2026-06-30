@@ -50,7 +50,7 @@ import {
   normalizeCourseList,
   resolveCourseDetailForRoute,
 } from "../api/courses";
-import { getChatRooms } from "../api/chat/chat";
+import { getChatRooms, shareRouteToChat } from "../api/chat/chat";
 import {
   UserSavedRoute,
   userRouteToCourseItem,
@@ -388,6 +388,14 @@ export default function MyRouteScreen({
     title: string;
   } | null>(null);
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
+  const [shareToRoomModalOpen, setShareToRoomModalOpen] = useState(false);
+  const [shareToRoomTargetRoute, setShareToRoomTargetRoute] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
+  const [selectableRooms, setSelectableRooms] = useState<any[]>([]);
+  const [loadingRooms, setLoadingRooms] = useState(false);
+  const [sharingToRoom, setSharingToRoom] = useState(false);
   /** 카드에서 연 상세 — 목록 재조회·id 타입 불일치 시에도 동일 코스 표시 */
   const [viewingCourseSnapshot, setViewingCourseSnapshot] =
     useState<CourseItem | null>(null);
@@ -1105,6 +1113,29 @@ export default function MyRouteScreen({
     }
   };
 
+  const handleShareToRoom = async (roomUuid: string, roomName: string) => {
+    if (!shareToRoomTargetRoute) return;
+    const accessToken = useAuthStore.getState().accessToken;
+    if (!accessToken) {
+      appAlert('', '로그인이 필요합니다');
+      return;
+    }
+
+    setSharingToRoom(true);
+    try {
+      await shareRouteToChat(accessToken, roomUuid, shareToRoomTargetRoute.id);
+      appAlert('완료', `"${roomName}" 채팅방에 공유했습니다`);
+      setShareToRoomModalOpen(false);
+      setShareToRoomTargetRoute(null);
+      void reloadMyRoutesAndSharing();
+    } catch (err) {
+      console.error('[handleShareToRoom]', err);
+      appAlert('오류', '채팅방에 공유하는데 실패했습니다');
+    } finally {
+      setSharingToRoom(false);
+    }
+  };
+
   const ScreenRoot = embedded ? View : SafeAreaView;
   const screenRootProps = embedded
     ? { className: "flex-1 bg-[#F0F5FF]" }
@@ -1299,6 +1330,78 @@ export default function MyRouteScreen({
           routeName={inviteTargetRoute.title}
         />
       )}
+
+      {/* 채팅방 선택 모달 */}
+      <Modal
+        visible={shareToRoomModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShareToRoomModalOpen(false)}
+      >
+        <View className="flex-1 bg-black/50 justify-center items-center p-4">
+          <View className="w-full max-w-md bg-white rounded-2xl overflow-hidden">
+            <View className="border-b border-gray-100 p-4 flex-row items-center justify-between">
+              <Text className="text-lg font-bold text-gray-900">채팅방 선택</Text>
+              <Pressable
+                onPress={() => setShareToRoomModalOpen(false)}
+                hitSlop={8}
+              >
+                <Ionicons name="close" size={24} color="#6b7280" />
+              </Pressable>
+            </View>
+
+            {loadingRooms ? (
+              <View className="p-8 justify-center items-center">
+                <ActivityIndicator size="large" color="#2563eb" />
+                <Text className="mt-2 text-sm text-gray-500">채팅방 로딩 중...</Text>
+              </View>
+            ) : selectableRooms.length === 0 ? (
+              <View className="p-8 justify-center items-center">
+                <Ionicons name="chatbubble-outline" size={48} color="#d1d5db" />
+                <Text className="mt-4 text-center text-gray-500">
+                  활동 중인 채팅방이 없습니다
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                data={selectableRooms}
+                keyExtractor={(room) => room.uuid}
+                scrollEnabled={false}
+                renderItem={({ item: room }) => (
+                  <Pressable
+                    onPress={() =>
+                      handleShareToRoom(room.uuid, room.name)
+                    }
+                    disabled={sharingToRoom}
+                    className="p-4 border-b border-gray-100 active:bg-gray-50"
+                  >
+                    <View className="flex-row items-center gap-3">
+                      <View className="w-10 h-10 rounded-full bg-blue-100 justify-center items-center">
+                        <Ionicons
+                          name="people-outline"
+                          size={20}
+                          color="#2563eb"
+                        />
+                      </View>
+                      <View className="flex-1">
+                        <Text className="text-sm font-semibold text-gray-900">
+                          {room.name}
+                        </Text>
+                        <Text className="text-xs text-gray-500 mt-0.5">
+                          {room.memberCount}명
+                        </Text>
+                      </View>
+                      {sharingToRoom && (
+                        <ActivityIndicator size="small" color="#2563eb" />
+                      )}
+                    </View>
+                  </Pressable>
+                )}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {/* 코스 상세 보기 모달 — 배경은 페이드, 시트만 슬라이드 (Modal slide는 백드롭까지 같이 움직임) */}
       <Modal
@@ -1623,6 +1726,28 @@ export default function MyRouteScreen({
                                           title: course.title,
                                         });
                                         setCollaborativeInviteModalOpen(true);
+                                      },
+                                      onShareToRoom: async () => {
+                                        setShareToRoomTargetRoute({
+                                          id: String(course.id),
+                                          title: course.title,
+                                        });
+                                        setLoadingRooms(true);
+                                        try {
+                                          const accessToken = useAuthStore.getState().accessToken;
+                                          if (!accessToken) {
+                                            appAlert('', '로그인이 필요합니다');
+                                            return;
+                                          }
+                                          const rooms = await getChatRooms(accessToken);
+                                          setSelectableRooms(rooms);
+                                          setShareToRoomModalOpen(true);
+                                        } catch (e) {
+                                          appAlert('', '채팅방 목록을 불러오지 못했습니다');
+                                          console.error('[onShareToRoom]', e);
+                                        } finally {
+                                          setLoadingRooms(false);
+                                        }
                                       },
                                     });
                                   }}
