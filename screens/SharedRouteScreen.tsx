@@ -625,11 +625,7 @@ export default function SharedRouteScreen({
             paddingVertical: 10,
             borderWidth: 1,
             borderColor: "rgba(37,99,235,0.22)",
-            shadowColor: "#0f172a",
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.06,
-            shadowRadius: 8,
-            elevation: 3,
+            boxShadow: "0px 0px 8px rgba(15,23,42,0.06)",
           }}
         >
           <View
@@ -654,11 +650,7 @@ export default function SharedRouteScreen({
           style={{
             borderWidth: 1,
             borderColor: "rgba(37,99,235,0.22)",
-            shadowColor: "#0f172a",
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.06,
-            shadowRadius: 8,
-            elevation: 3,
+            boxShadow: "0px 0px 8px rgba(15,23,42,0.06)",
           }}
           accessibilityLabel="필터"
         >
