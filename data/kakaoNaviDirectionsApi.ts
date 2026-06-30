@@ -3,13 +3,14 @@
  * https://apis-navi.kakaomobility.com/v1/directions
  *
  * 카카오디벨로퍼스 REST API 키 사용, 앱에서 「길찾기」 등 네비 API 사용 설정 필요.
- * (로컬 검색과 동일 키: EXPO_PUBLIC_KAKAO_REST_API_KEY)
+ * (로컬 검색과 동일 키: EXPO_PUBLIC_KAKAO_LOCAL_REST_API_KEY)
  */
 
 import {
   formatRouteDistanceDuration,
   ROUTE_USER_MESSAGES,
 } from "../utils/routeCopy";
+import { getKakaoLocalRestApiKey } from "../constants/kakao";
 
 type LatLng = { latitude: number; longitude: number };
 
@@ -37,7 +38,7 @@ const KAKAO_NAVI_DIRECTIONS_URL =
   "https://apis-navi.kakaomobility.com/v1/directions";
 
 function getKakaoRestKey(): string {
-  return String(process.env.EXPO_PUBLIC_KAKAO_REST_API_KEY ?? "").trim();
+  return getKakaoLocalRestApiKey();
 }
 
 function dedupeConsecutive(pts: LatLng[]): LatLng[] {

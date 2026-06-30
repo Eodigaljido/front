@@ -38,8 +38,9 @@ import {
   authInputStyle,
   authTextInputColorProps,
 } from '../constants/authFormTheme';
+import { getKakaoOAuthRestApiKey } from '../constants/kakao';
 
-const KAKAO_REST_KEY = process.env.EXPO_PUBLIC_KAKAO_REST_API_KEY ?? '';
+const KAKAO_REST_KEY = getKakaoOAuthRestApiKey();
 const KAKAO_REDIRECT_URI = process.env.EXPO_PUBLIC_OAUTH_REDIRECT_URI ?? '';
 
 const KAKAO_AUTH_URL =
