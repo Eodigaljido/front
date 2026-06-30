@@ -1,5 +1,7 @@
-import React from "react";
+import React, { useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   Image,
   Pressable,
   Text,
@@ -9,7 +11,12 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { ChatMessage } from "@/api/chat/chat";
+import {
+  collaborativeAccessDeniedMessage,
+  ensureCollaborativeRouteAccess,
+} from "@/api/collaborativeCourse";
 import { rootNavigate } from "@/navigation/rootNavigation";
+import { buildCollaborativeRouteCreateParams } from "@/utils/pendingShareLink";
 
 type Props = {
   message: Pick<
@@ -30,15 +37,19 @@ export function resolveRouteShareTitle(
   return "루트";
 }
 
-export function openRouteShareFromChat(
+export async function openRouteShareFromChat(
   routeUuid: string | null | undefined,
-): void {
+): Promise<void> {
   const id = String(routeUuid ?? "").trim();
   if (!id || id.startsWith("ur-")) return;
-  rootNavigate("RouteCreate", {
-    editRouteId: id,
-    collaborative: true,
-  });
+
+  const result = await ensureCollaborativeRouteAccess(id);
+  if (!result.ok) {
+    Alert.alert("", collaborativeAccessDeniedMessage(result.reason));
+    return;
+  }
+
+  rootNavigate("RouteCreate", buildCollaborativeRouteCreateParams(id));
 }
 
 export function RouteShareMessageCard({
@@ -46,10 +57,17 @@ export function RouteShareMessageCard({
   isMine = false,
   style,
 }: Props): React.JSX.Element {
+  const [joining, setJoining] = useState(false);
   const routeId = String(message.routeUuid ?? "").trim();
   const title = resolveRouteShareTitle(message);
   const thumb = String(message.routeThumbnailUrl ?? "").trim();
   const canOpen = Boolean(routeId) && !routeId.startsWith("ur-");
+
+  const handleJoinPress = () => {
+    if (!canOpen || joining) return;
+    setJoining(true);
+    void openRouteShareFromChat(routeId).finally(() => setJoining(false));
+  };
 
   return (
     <View
@@ -101,21 +119,27 @@ export function RouteShareMessageCard({
           {title}
         </Text>
         <Pressable
-          onPress={() => openRouteShareFromChat(routeId)}
-          disabled={!canOpen}
+          onPress={handleJoinPress}
+          disabled={!canOpen || joining}
           style={{
             marginTop: 10,
             borderRadius: 10,
-            backgroundColor: canOpen ? "#2563EB" : "#94A3B8",
+            backgroundColor: canOpen && !joining ? "#2563EB" : "#94A3B8",
             paddingVertical: 10,
             alignItems: "center",
+            justifyContent: "center",
+            minHeight: 40,
           }}
           accessibilityRole="button"
           accessibilityLabel={`${title} 루트 제작 참여`}
         >
-          <Text style={{ fontSize: 14, fontWeight: "700", color: "#FFFFFF" }}>
-            루트 제작 참여
-          </Text>
+          {joining ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Text style={{ fontSize: 14, fontWeight: "700", color: "#FFFFFF" }}>
+              루트 제작 참여
+            </Text>
+          )}
         </Pressable>
       </View>
     </View>

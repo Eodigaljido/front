@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  fetchCollaborativeAccess,
+  ensureCollaborativeRouteAccess,
   collaborativeAccessDeniedMessage,
   type CollaborativeAccess,
 } from '../api/collaborativeCourse';
@@ -55,7 +55,7 @@ export function useCollaborativeRouteEntry({
     setStatus('checking');
     setAccess(null);
 
-    void fetchCollaborativeAccess(courseId).then((result) => {
+    void ensureCollaborativeRouteAccess(courseId).then((result) => {
       if (cancelled) return;
       if (result.ok) {
         setAccess(result.access);

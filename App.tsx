@@ -7,8 +7,15 @@ import React, {
 } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StatusBar } from "expo-status-bar";
-import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
+import {
+  ActivityIndicator,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { useAuthStore } from "./store/authStore";
+import { useHomeBootstrapStore } from "./store/homeBootstrapStore";
 import { type NavigatorScreenParams } from "@react-navigation/native";
 import { navigationRef } from "./navigation/rootNavigation";
 import {
@@ -394,18 +401,42 @@ function TabNavigator() {
 
 export default function App(): React.JSX.Element {
   const [isReady, setIsReady] = useState(false);
+  const [bootMessage, setBootMessage] = useState("앱을 준비하는 중...");
   const restoreSession = useAuthStore((s) => s.restoreSession);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   useEffect(() => {
     restoreSession()
       .then(() => restorePendingShareLinkFromStorage())
+      .then(async () => {
+        if (!useAuthStore.getState().isAuthenticated) return;
+        setBootMessage("위치와 날씨를 불러오는 중...");
+        await useHomeBootstrapStore.getState().bootstrap({ force: true });
+      })
       .finally(() => setIsReady(true));
   }, []);
 
   if (!isReady) {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" />
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: "#F0F5FF",
+          paddingHorizontal: 24,
+        }}
+      >
+        <ActivityIndicator size="large" color="#2563EB" />
+        <Text
+          style={{
+            marginTop: 16,
+            fontSize: 15,
+            fontWeight: "500",
+            color: "#475569",
+          }}
+        >
+          {bootMessage}
+        </Text>
       </View>
     );
   }

@@ -734,7 +734,7 @@ export async function copySharedCourseToMy(
 
 /** 목록 fallback(「경유지」 1개)만 있는 경우 편집·안내에 쓸 실제 경유 데이터가 없음 */
 export function hasMeaningfulRouteSteps(
-  course: CourseItem | null | undefined,
+  course: Pick<CourseItem, 'routeSteps'> | null | undefined,
 ): boolean {
   const steps = course?.routeSteps;
   if (!Array.isArray(steps) || steps.length === 0) return false;

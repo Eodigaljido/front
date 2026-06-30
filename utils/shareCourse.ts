@@ -64,7 +64,7 @@ export async function sharePublicCourse(opts: {
     return;
   }
 
-  const introOnly = opts.introOnly === true;
+  const introOnly = opts.introOnly !== false;
   const existingRoom = String(opts.existingChatRoomUuid ?? "").trim();
   if (!introOnly && !existingRoom) {
     const createChat = await promptCreateCourseChatRoom();

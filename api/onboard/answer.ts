@@ -7,6 +7,7 @@ export interface OnboardingAnswersResponse {
   age: string | null;
   activity: string[] | null;
   gender: string | null;
+  completedAt?: string | null;
 }
 
 export async function getOnboardingAnswers(): Promise<OnboardingAnswersResponse> {

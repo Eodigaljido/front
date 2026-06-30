@@ -39,7 +39,7 @@ export default function OnBoardEnd(): React.JSX.Element {
         gender: answers.gender ?? "",
       });
 
-      resetToMainAfterAuth(navigation);
+      await resetToMainAfterAuth(navigation);
     } catch (e) {
       appAlert("오류", "다시 시도");
     } finally {

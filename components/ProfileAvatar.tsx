@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   Image,
   View,
@@ -21,13 +21,10 @@ export default function ProfileAvatar({
   style,
   imageStyle,
 }: Props): React.JSX.Element {
-  const [failed, setFailed] = useState(false);
   const trimmed = String(uri ?? "").trim();
+  const [failedForUri, setFailedForUri] = useState<string | null>(null);
+  const failed = failedForUri === trimmed && trimmed.length > 0;
   const radius = size / 2;
-
-  useEffect(() => {
-    setFailed(false);
-  }, [trimmed]);
 
   if (!trimmed || failed) {
     return (
@@ -67,7 +64,7 @@ export default function ProfileAvatar({
         source={{ uri: trimmed }}
         style={[{ width: size, height: size }, imageStyle]}
         resizeMode="cover"
-        onError={() => setFailed(true)}
+        onError={() => setFailedForUri(trimmed)}
       />
     </View>
   );

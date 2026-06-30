@@ -17,6 +17,7 @@ import {
   Keyboard,
   Platform,
   Modal,
+  Alert,
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Calendar } from "react-native-calendars";
@@ -40,6 +41,15 @@ import {
   fetchMyCourses,
 } from "../api/courses";
 import { getChatRooms, type ChatRoom as ChatRoomType } from "../api/chat/chat";
+import {
+  createCourseSchedule,
+  deleteCourseSchedule,
+  fetchCourseSchedules,
+  fetchNearestCourseSchedule,
+  mapCourseScheduleToHome,
+  toKstIsoDateTime,
+  type HomeCourseSchedule,
+} from "../api/courseSchedules";
 import { useMockData } from "../context/MockDataContext";
 import { useToast } from "../context/ToastContext";
 import { userRouteToCourseItem } from "../data/userSavedRoute";
@@ -53,6 +63,11 @@ import { sanitizeCourseCategory } from "../utils/inferCourseRegionLabel";
 import { mergeLocalThumbnailsIntoCourses } from "../utils/mergeCourseThumbnails";
 import { sameCourseId } from "../utils/sameCourseId";
 import FollowingNewsAvatar from "../components/FollowingNewsAvatar";
+import {
+  DEFAULT_WEATHER_LOCATION,
+  buildWeatherLocationQuery,
+} from "../utils/bootstrapHomeWeather";
+import { useHomeBootstrapStore } from "../store/homeBootstrapStore";
 
 type HomeNavProp = BottomTabNavigationProp<RootTabParamList, "Home">;
 
@@ -86,7 +101,6 @@ const REFRESH_HOLD_OFFSET = 58;
 const REFRESH_MIN_HOLD_MS = 420;
 const PULL_MAX = 100;
 const PULL_TRIGGER_DISTANCE = 50;
-const DEFAULT_WEATHER_LOCATION = "서울 강남구";
 const KO_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
   month: "long",
   day: "numeric",
@@ -109,49 +123,7 @@ function toDateKey(d: Date): string {
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 }
-const DUMMY_SCHEDULES = (() => {
-  const now = new Date();
-  const makeDate = (addDays: number, hour: number, minute: number) => {
-    const d = new Date(now);
-    d.setDate(d.getDate() + addDays);
-    d.setHours(hour, minute, 0, 0);
-    return d;
-  };
-  return [
-    {
-      id: "dummy-schedule-1",
-      title: "성수 카페 코스",
-      date: makeDate(1, 19, 0),
-      participants: ["지민", "서연", "민수"],
-      chatRoomUuid: "dummy-room-1",
-      chatRoomName: "주말 번개방",
-    },
-    {
-      id: "dummy-schedule-2",
-      title: "한강 산책 코스",
-      date: makeDate(2, 18, 30),
-      participants: ["유진", "태호"],
-      chatRoomUuid: "dummy-room-2",
-      chatRoomName: "한강 러닝 크루",
-    },
-    {
-      id: "dummy-schedule-3",
-      title: "홍대 맛집 투어",
-      date: makeDate(4, 12, 0),
-      participants: ["수빈", "준호", "하린"],
-      chatRoomUuid: "dummy-room-3",
-      chatRoomName: "맛집 탐험대",
-    },
-    {
-      id: "dummy-schedule-4",
-      title: "북촌 사진 산책",
-      date: makeDate(6, 15, 30),
-      participants: ["도윤", "예린"],
-      chatRoomUuid: "dummy-room-4",
-      chatRoomName: "사진 동호회",
-    },
-  ];
-})();
+
 const WEATHER_ICON_IMAGES = {
   sunny: require("../assets/Weather/Sunny.png"),
   partly_cloudy: require("../assets/Weather/PartlyCloudy.png"),
@@ -165,42 +137,6 @@ const WEATHER_ICON_IMAGES = {
 function getWeatherIconSource(iconKey?: string) {
   const key = String(iconKey ?? "").toLowerCase() as keyof typeof WEATHER_ICON_IMAGES;
   return WEATHER_ICON_IMAGES[key] ?? WEATHER_ICON_IMAGES.partly_cloudy;
-}
-
-function formatFetchedAt(iso?: string): string {
-  if (!iso) return "";
-  try {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "";
-    return `조회 ${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-  } catch {
-    return "";
-  }
-}
-
-function buildWeatherLocationQuery(
-  addr?: Location.LocationGeocodedAddress | null,
-): string {
-  if (!addr) return DEFAULT_WEATHER_LOCATION;
-  const parts = [
-    addr.region,
-    addr.city,
-    addr.district,
-    addr.subregion,
-    addr.name,
-  ]
-    .map((p) => (typeof p === "string" ? p.trim() : ""))
-    .filter(Boolean);
-  const seen = new Set<string>();
-  const ordered: string[] = [];
-  for (const p of parts) {
-    if (!seen.has(p)) {
-      seen.add(p);
-      ordered.push(p);
-    }
-  }
-  const joined = ordered.join(" ").replace(/\s+/g, " ").trim();
-  return joined || DEFAULT_WEATHER_LOCATION;
 }
 
 function getWeatherMoodMessage(weather?: IntegratedWeatherResponse["current"]): string {
@@ -276,7 +212,6 @@ export default function HomeScreen(): React.JSX.Element {
     refreshSavedCourseIds,
     userSavedRoutes,
   } = useMockData();
-  const [homeCourses, setHomeCourses] = useState<any[]>([]);
   const [myApiCourses, setMyApiCourses] = useState<any[]>([]);
   const [sharingCourseIds, setSharingCourseIds] = useState<string[]>([]);
   const [popularCourses, setPopularCourses] = useState<any[]>([]);
@@ -285,17 +220,17 @@ export default function HomeScreen(): React.JSX.Element {
   );
   const [followingNewsApi, setFollowingNewsApi] = useState<any[]>([]);
 
-  const [weatherLoading, setWeatherLoading] = useState(true);
-  const [weatherError, setWeatherError] = useState<string | null>(null);
+  const homeBootstrap = useHomeBootstrapStore();
+  const [weatherError, setWeatherError] = useState<string | null>(
+    homeBootstrap.weatherError,
+  );
   const [integrated, setIntegrated] = useState<IntegratedWeatherResponse | null>(
-    null,
+    homeBootstrap.integrated,
   );
   const [refreshing, setRefreshing] = useState(false);
   const [homeSearchQuery, setHomeSearchQuery] = useState("");
   const [searchExpanded, setSearchExpanded] = useState(false);
-  const [courseRecommendDate, setCourseRecommendDate] = useState<Date | null>(
-    DUMMY_SCHEDULES[0]?.date ?? null,
-  );
+  const [courseRecommendDate, setCourseRecommendDate] = useState<Date | null>(null);
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [scheduleDraftDate, setScheduleDraftDate] = useState(new Date());
   const [scheduleDraftTime, setScheduleDraftTime] = useState(new Date());
@@ -304,18 +239,14 @@ export default function HomeScreen(): React.JSX.Element {
   const [scheduleChatRoomsLoading, setScheduleChatRoomsLoading] = useState(false);
   const [selectedScheduleChatRoomUuid, setSelectedScheduleChatRoomUuid] = useState<string | null>(null);
   const [scheduleDetailFormOpen, setScheduleDetailFormOpen] = useState(false);
-  const [courseSchedules, setCourseSchedules] = useState<
-    {
-      id: string;
-      title: string;
-      date: Date;
-      participants: string[];
-      chatRoomUuid?: string | null;
-      chatRoomName?: string | null;
-    }[]
-  >(() => DUMMY_SCHEDULES);
-  const [heroLocationLabel, setHeroLocationLabel] = useState("위치 확인 중...");
-  const weatherLocationRef = useRef("");
+  const [scheduleSaving, setScheduleSaving] = useState(false);
+  const [courseSchedules, setCourseSchedules] = useState<HomeCourseSchedule[]>([]);
+  const [nearestSchedule, setNearestSchedule] = useState<HomeCourseSchedule | null>(null);
+  const [schedulesLoading, setSchedulesLoading] = useState(false);
+  const [heroLocationLabel, setHeroLocationLabel] = useState(
+    homeBootstrap.heroLocationLabel || "위치 확인 중...",
+  );
+  const weatherLocationRef = useRef(homeBootstrap.weatherLocation);
   const pullOffset = useRef(new Animated.Value(0)).current;
   const pullDistanceRef = useRef(0);
   const scrollAtTopRef = useRef(true);
@@ -346,9 +277,6 @@ export default function HomeScreen(): React.JSX.Element {
 
   const applyHomeFeed = useCallback(
     (payload: Awaited<ReturnType<typeof fetchHomeFeedData>>) => {
-      setHomeCourses(
-        mergeLocalThumbnailsIntoCourses(payload.recent, userSavedRoutes),
-      );
       setPopularCourses(
         mergeLocalThumbnailsIntoCourses(payload.popular, userSavedRoutes),
       );
@@ -365,15 +293,36 @@ export default function HomeScreen(): React.JSX.Element {
 
   const authUuid = String(authUser?.uuid ?? "").trim();
 
-  useEffect(() => {
+  const loadCourseSchedules = useCallback(async () => {
     if (!authUuid) {
-      setHomeCourses([]);
-      setPopularCourses([]);
-      setFollowingNewsApi([]);
-      setSharingCourseIds([]);
-      setMyApiCourses([]);
+      setCourseSchedules([]);
+      setNearestSchedule(null);
       return;
     }
+    setSchedulesLoading(true);
+    try {
+      const [listRes, nearestRes] = await Promise.all([
+        fetchCourseSchedules(),
+        fetchNearestCourseSchedule(),
+      ]);
+      const items = listRes.items.map(mapCourseScheduleToHome);
+      setCourseSchedules(items);
+      const nearest = nearestRes.item
+        ? mapCourseScheduleToHome(nearestRes.item)
+        : null;
+      setNearestSchedule(nearest);
+      if (nearest) {
+        setCourseRecommendDate(nearest.date);
+      }
+    } catch {
+      /* 이전 목록 유지 */
+    } finally {
+      setSchedulesLoading(false);
+    }
+  }, [authUuid]);
+
+  useEffect(() => {
+    if (!authUuid) return;
 
     let mounted = true;
     void fetchHomeFeedData()
@@ -395,15 +344,12 @@ export default function HomeScreen(): React.JSX.Element {
       .catch(() => {
         if (mounted) setMyApiCourses([]);
       });
+    void loadCourseSchedules();
     return () => {
       mounted = false;
     };
-  }, [authUuid, applyHomeFeed, fetchHomeFeedData, userSavedRoutes]);
+  }, [authUuid, applyHomeFeed, fetchHomeFeedData, userSavedRoutes, loadCourseSchedules]);
 
-  const weatherSubtitle = useMemo(
-    () => formatFetchedAt(integrated?.fetchedAt),
-    [integrated?.fetchedAt],
-  );
   const weatherMoodMessage = useMemo(
     () => getWeatherMoodMessage(integrated?.current),
     [integrated?.current],
@@ -417,14 +363,6 @@ export default function HomeScreen(): React.JSX.Element {
       `미세 ${integrated?.air?.pm10Grade ?? "--"}`,
     ];
   }, [integrated?.air?.pm10Grade, integrated?.current]);
-  const sortedSchedules = useMemo(
-    () =>
-      [...courseSchedules].sort(
-        (a, b) => a.date.getTime() - b.date.getTime(),
-      ),
-    [courseSchedules],
-  );
-  const nearestSchedule = useMemo(() => sortedSchedules[0] ?? null, [sortedSchedules]);
   const nearestScheduleDdayLabel = useMemo(() => {
     if (!nearestSchedule) return "";
     const now = new Date();
@@ -601,16 +539,6 @@ export default function HomeScreen(): React.JSX.Element {
   );
   const followingNews = Array.isArray(followingNewsApi) ? followingNewsApi : [];
 
-  const precipHumidityChip = useMemo(() => {
-    const c = integrated?.current;
-    if (!c) return "강수 · 습도";
-    const p = Number.isFinite(c.precipitation1h)
-      ? `${c.precipitation1h}mm`
-      : "--";
-    const h = Number.isFinite(c.humidity) ? `${Math.round(c.humidity)}%` : "--";
-    return `1시간 강수 ${p} · 습도 ${h}`;
-  }, [integrated?.current]);
-
   const fetchWeather = useCallback(
     async (
       cancelledRef?: { value: boolean },
@@ -622,7 +550,6 @@ export default function HomeScreen(): React.JSX.Element {
       weatherLocationRef.current = target;
 
       try {
-        if (!options?.silent) setWeatherLoading(true);
         setWeatherError(null);
 
         const controller = new AbortController();
@@ -640,6 +567,12 @@ export default function HomeScreen(): React.JSX.Element {
         if (cancelledRef?.value) return;
         setIntegrated(data);
         setHeroLocationLabel(data.location);
+        useHomeBootstrapStore.getState().applyBootstrap({
+          integrated: data,
+          heroLocationLabel: data.location,
+          weatherLocation: target,
+          weatherError: null,
+        });
       } catch (e: any) {
         if (cancelledRef?.value) return;
         const msg =
@@ -647,8 +580,6 @@ export default function HomeScreen(): React.JSX.Element {
             ? "날씨 요청 시간이 초과되었습니다."
             : (e?.message ?? "날씨 정보를 불러오지 못했습니다.");
         setWeatherError(msg);
-      } finally {
-        if (!cancelledRef?.value && !options?.silent) setWeatherLoading(false);
       }
     },
     [],
@@ -707,7 +638,14 @@ export default function HomeScreen(): React.JSX.Element {
         const q = buildWeatherLocationQuery(addr?.[0]);
         await fetchWeather(cancelledRef, q);
         if (!cancelledRef?.value && addr?.[0]?.formattedAddress) {
-          setHeroLocationLabel(addr[0].formattedAddress.replace(/^대한민국\s*/, "").trim());
+          const label = addr[0].formattedAddress.replace(/^대한민국\s*/, "").trim();
+          setHeroLocationLabel(label);
+          useHomeBootstrapStore.getState().applyBootstrap({
+            integrated: useHomeBootstrapStore.getState().integrated,
+            heroLocationLabel: label,
+            weatherLocation: weatherLocationRef.current,
+            weatherError: useHomeBootstrapStore.getState().weatherError,
+          });
         }
       } catch {
         if (!cancelledRef?.value) {
@@ -720,21 +658,23 @@ export default function HomeScreen(): React.JSX.Element {
   );
 
   useEffect(() => {
+    if (useHomeBootstrapStore.getState().isBootstrapped) return;
     const cancelledRef = { value: false };
     resolveCurrentLocation(cancelledRef);
     return () => {
       cancelledRef.value = true;
     };
-  }, []);
+  }, [resolveCurrentLocation]);
 
   useFocusEffect(
     useCallback(() => {
       void refreshSavedCourseIds();
+      void loadCourseSchedules();
       return () => {
         Keyboard.dismiss();
         setSearchExpanded(false);
       };
-    }, [refreshSavedCourseIds]),
+    }, [refreshSavedCourseIds, loadCourseSchedules]),
   );
 
   const resetPullGesture = useCallback(() => {
@@ -805,6 +745,7 @@ export default function HomeScreen(): React.JSX.Element {
             fetchWeather(undefined, undefined, { silent: true }),
             loadHomeFeed(),
             refreshSavedCourseIds(),
+            loadCourseSchedules(),
           ]);
         })(),
         new Promise((_, reject) =>
@@ -835,6 +776,7 @@ export default function HomeScreen(): React.JSX.Element {
     animatePullTo,
     fetchWeather,
     loadHomeFeed,
+    loadCourseSchedules,
     refreshSavedCourseIds,
     resolveCurrentLocation,
   ]);
@@ -895,12 +837,6 @@ export default function HomeScreen(): React.JSX.Element {
   const openRouteCreate = useCallback(() => {
     (navigation.getParent() as any)?.navigate("RouteCreate");
   }, [navigation]);
-  const moveTab = useCallback(
-    (tab: keyof RootTabParamList) => {
-      navigation.navigate(tab);
-    },
-    [navigation],
-  );
 
   const handlePopularBookmark = useCallback(
     async (courseId: string) => {
@@ -929,18 +865,6 @@ export default function HomeScreen(): React.JSX.Element {
       }
     },
     [popularBookmarkBusyId, savedCourseIds, addSavedCourse, showToast],
-  );
-
-  const openSharedCourseDetail = useCallback(
-    (courseId: string) => {
-      const id = String(courseId ?? "").trim();
-      if (!id) return;
-      navigation.navigate("Route", { section: "shared", viewCourseId: id });
-      try {
-        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      } catch {}
-    },
-    [navigation],
   );
 
   const handleShareCourse = useCallback(
@@ -986,30 +910,12 @@ export default function HomeScreen(): React.JSX.Element {
     }
     closeScheduleModal();
   }, [closeScheduleModal, scheduleDetailFormOpen]);
-  const saveCourseSchedule = useCallback(() => {
+  const saveCourseSchedule = useCallback(async () => {
     const title = scheduleDraftTitle.trim();
     if (!title) {
       showToast("약속 이름을 입력해 주세요");
       return;
     }
-    if (!selectedScheduleChatRoomUuid) {
-      showToast("채팅방을 선택해 주세요");
-      return;
-    }
-    const selectedChatRoom = scheduleChatRooms.find(
-      (room) => room.uuid === selectedScheduleChatRoomUuid,
-    );
-    const participantsFromRoom = selectedChatRoom
-      ? [
-          ...(selectedChatRoom.members ?? [])
-            .map((member) => String(member.nickname ?? member.userId ?? "").trim())
-            .filter(Boolean),
-          ...((selectedChatRoom.memberUserIds ?? [])
-            .map((id) => String(id ?? "").trim())
-            .filter(Boolean) as string[]),
-        ]
-      : [];
-    const participants = [...new Set(participantsFromRoom)].slice(0, 8);
     const pickedDate = new Date(scheduleDraftDate);
     pickedDate.setHours(
       scheduleDraftTime.getHours(),
@@ -1017,28 +923,58 @@ export default function HomeScreen(): React.JSX.Element {
       0,
       0,
     );
-    setCourseRecommendDate(pickedDate);
-    setCourseSchedules((prev) => [
-      ...prev,
-      {
-        id: `schedule-${Date.now()}`,
+    const chatRoomUuid = String(selectedScheduleChatRoomUuid ?? "").trim();
+    setScheduleSaving(true);
+    try {
+      await createCourseSchedule({
         title,
-        date: pickedDate,
-        participants,
-        chatRoomUuid: selectedChatRoom?.uuid ?? null,
-        chatRoomName: selectedChatRoom?.name ?? null,
-      },
-    ]);
-    setScheduleModalOpen(false);
-    showToast("코스 약속이 추가됐어요");
+        scheduledAt: toKstIsoDateTime(pickedDate),
+        ...(chatRoomUuid ? { chatRoomUuid, notifyChat: true } : {}),
+      });
+      setScheduleModalOpen(false);
+      showToast("코스 약속이 추가됐어요");
+      await loadCourseSchedules();
+    } catch {
+      showToast("코스 약속 추가에 실패했어요");
+    } finally {
+      setScheduleSaving(false);
+    }
   }, [
     scheduleDraftDate,
     scheduleDraftTime,
     scheduleDraftTitle,
-    scheduleChatRooms,
     selectedScheduleChatRoomUuid,
     showToast,
+    loadCourseSchedules,
   ]);
+
+  const handleDeleteSchedule = useCallback(
+    (item: HomeCourseSchedule) => {
+      Alert.alert(
+        "약속 삭제",
+        `"${item.title}" 약속을 삭제할까요?`,
+        [
+          { text: "취소", style: "cancel" },
+          {
+            text: "삭제",
+            style: "destructive",
+            onPress: () => {
+              void (async () => {
+                try {
+                  await deleteCourseSchedule(item.id);
+                  showToast("약속을 삭제했어요");
+                  await loadCourseSchedules();
+                } catch {
+                  showToast("약속 삭제에 실패했어요");
+                }
+              })();
+            },
+          },
+        ],
+      );
+    },
+    [loadCourseSchedules, showToast],
+  );
   const executeRouteSearch = useCallback(() => {
     const q = homeSearchQuery.trim();
     navigation.navigate(
@@ -1952,6 +1888,14 @@ export default function HomeScreen(): React.JSX.Element {
                   <Ionicons name="close" size={16} color="#475569" />
                 </Pressable>
               </View>
+              {schedulesLoading ? (
+                <View style={{ flexDirection: "row", alignItems: "center", marginTop: 10 }}>
+                  <ActivityIndicator size="small" color="#2563EB" />
+                  <Text style={{ marginLeft: 8, fontSize: 12, color: "#64748B" }}>
+                    일정 불러오는 중...
+                  </Text>
+                </View>
+              ) : null}
               <Text style={{ marginTop: 12, marginBottom: 6, fontSize: 12, color: "#475569", fontWeight: "600" }}>
                 날짜 선택
               </Text>
@@ -2018,21 +1962,39 @@ export default function HomeScreen(): React.JSX.Element {
                           borderTopColor: "rgba(37,99,235,0.18)",
                         }}
                       >
-                        <Text style={{ color: "#1E3A8A", fontSize: 14, fontWeight: "700" }}>
-                          {item.title}
-                        </Text>
-                        <Text style={{ color: "#2563EB", fontSize: 12, marginTop: 2 }}>
-                          {KO_TIME_ONLY_FORMATTER.format(item.date)}
-                          {item.chatRoomName ? ` · ${item.chatRoomName}` : ""}
-                        </Text>
-                        {item.participants.length > 0 ? (
-                          <Text style={{ color: "#64748B", fontSize: 11, marginTop: 2 }}>
-                            {item.participants.slice(0, 4).join(", ")}
-                            {item.participants.length > 4
-                              ? ` 외 ${item.participants.length - 4}명`
-                              : ""}
-                          </Text>
-                        ) : null}
+                        <View className="flex-row items-start justify-between gap-2">
+                          <View className="flex-1 min-w-0">
+                            <Text style={{ color: "#1E3A8A", fontSize: 14, fontWeight: "700" }}>
+                              {item.title}
+                            </Text>
+                            <Text style={{ color: "#2563EB", fontSize: 12, marginTop: 2 }}>
+                              {KO_TIME_ONLY_FORMATTER.format(item.date)}
+                              {item.chatRoomName ? ` · ${item.chatRoomName}` : ""}
+                            </Text>
+                            {item.courseTitle ? (
+                              <Text style={{ color: "#64748B", fontSize: 11, marginTop: 2 }}>
+                                코스 · {item.courseTitle}
+                              </Text>
+                            ) : null}
+                            {item.participants.length > 0 ? (
+                              <Text style={{ color: "#64748B", fontSize: 11, marginTop: 2 }}>
+                                {item.participants.slice(0, 4).join(", ")}
+                                {item.participants.length > 4
+                                  ? ` 외 ${item.participants.length - 4}명`
+                                  : ""}
+                              </Text>
+                            ) : null}
+                          </View>
+                          <Pressable
+                            onPress={() => handleDeleteSchedule(item)}
+                            hitSlop={8}
+                            accessibilityRole="button"
+                            accessibilityLabel={`${item.title} 약속 삭제`}
+                            className="rounded-full p-1 active:opacity-80"
+                          >
+                            <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                          </Pressable>
+                        </View>
                       </View>
                     ))}
                   </>
@@ -2087,17 +2049,45 @@ export default function HomeScreen(): React.JSX.Element {
                     }}
                   />
                   <Text style={{ marginTop: 10, marginBottom: 6, fontSize: 12, color: "#475569", fontWeight: "600" }}>
-                    기준 채팅방
+                    기준 채팅방 (선택)
                   </Text>
                   {scheduleChatRoomsLoading ? (
                     <Text style={{ fontSize: 12, color: "#64748B" }}>채팅방 목록 불러오는 중...</Text>
-                  ) : scheduleChatRooms.length > 0 ? (
+                  ) : (
                     <ScrollView
                       horizontal
                       nestedScrollEnabled
                       showsHorizontalScrollIndicator={false}
                       contentContainerStyle={{ paddingRight: 6 }}
                     >
+                      <Pressable
+                        onPress={() => setSelectedScheduleChatRoomUuid(null)}
+                        accessibilityRole="button"
+                        accessibilityLabel="채팅방 연결 안 함"
+                        style={{
+                          marginRight: 8,
+                          borderWidth: 1,
+                          borderRadius: 999,
+                          paddingHorizontal: 12,
+                          paddingVertical: 8,
+                          backgroundColor:
+                            !selectedScheduleChatRoomUuid ? "#DBEAFE" : "#F8FAFF",
+                          borderColor:
+                            !selectedScheduleChatRoomUuid
+                              ? "#3B82F6"
+                              : "rgba(37,99,235,0.2)",
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: !selectedScheduleChatRoomUuid ? "#1D4ED8" : "#334155",
+                            fontSize: 12,
+                            fontWeight: "600",
+                          }}
+                        >
+                          연결 안 함
+                        </Text>
+                      </Pressable>
                       {scheduleChatRooms.slice(0, 12).map((room) => {
                         const selected = selectedScheduleChatRoomUuid === room.uuid;
                         return (
@@ -2125,11 +2115,12 @@ export default function HomeScreen(): React.JSX.Element {
                         );
                       })}
                     </ScrollView>
-                  ) : (
-                    <Text style={{ fontSize: 12, color: "#94A3B8" }}>
-                      선택 가능한 채팅방이 없어요.
-                    </Text>
                   )}
+                  {!scheduleChatRoomsLoading && scheduleChatRooms.length === 0 ? (
+                    <Text style={{ marginTop: 6, fontSize: 11, color: "#94A3B8" }}>
+                     채팅방 기준으로도 약속을 저장할 수 있어요.
+                    </Text>
+                  ) : null}
                   <Text style={{ marginTop: 12, marginBottom: 6, fontSize: 12, color: "#475569", fontWeight: "600" }}>
                     시간
                   </Text>
@@ -2170,11 +2161,11 @@ export default function HomeScreen(): React.JSX.Element {
                 <Text style={{ color: "#475569", fontWeight: "600" }}>취소</Text>
               </Pressable>
               <Pressable
-                onPress={saveCourseSchedule}
+                onPress={() => void saveCourseSchedule()}
                 disabled={
+                  scheduleSaving ||
                   !scheduleDetailFormOpen ||
-                  !scheduleDraftTitle.trim() ||
-                  !selectedScheduleChatRoomUuid
+                  !scheduleDraftTitle.trim()
                 }
                 className="px-4 py-2 rounded-xl"
                 style={{
@@ -2182,14 +2173,18 @@ export default function HomeScreen(): React.JSX.Element {
                   alignItems: "center",
                   justifyContent: "center",
                   backgroundColor:
+                    !scheduleSaving &&
                     scheduleDetailFormOpen &&
-                    scheduleDraftTitle.trim() &&
-                    selectedScheduleChatRoomUuid
+                    scheduleDraftTitle.trim()
                       ? "#2563EB"
                       : "#93C5FD",
                 }}
               >
-                <Text style={{ color: "#fff", fontWeight: "700" }}>약속 추가</Text>
+                {scheduleSaving ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={{ color: "#fff", fontWeight: "700" }}>약속 추가</Text>
+                )}
               </Pressable>
             </View>
           </View>

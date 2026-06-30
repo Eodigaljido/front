@@ -342,6 +342,40 @@ function clampMyRouteDetailSheetHeight(px: number): number {
   return Math.min(Math.max(Math.round(px), minH), maxH);
 }
 
+function buildMergedMyCourses(
+  apiMyCourses: CourseItem[],
+  userSavedRoutes: UserSavedRoute[],
+  authorCtx: {
+    myUuid?: string | null;
+    myUserId?: string | null;
+    myNickname?: string | null;
+  },
+): CourseItem[] {
+  const fromUser = userSavedRoutes.map(userRouteToCourseItem);
+  const apiTitles = new Set(
+    apiMyCourses
+      .map((c) => String(c.title ?? "").trim())
+      .filter(Boolean),
+  );
+  const merged = mergeApiAndLocalCourseLists(apiMyCourses, fromUser);
+  const filtered = merged.filter((c) => {
+    const k = String(c.id ?? "");
+    if (
+      k.startsWith("ur-") &&
+      apiTitles.has(String(c.title ?? "").trim())
+    ) {
+      return false;
+    }
+    return Boolean(k);
+  });
+  const deduped = dedupeMyCourseList(filtered, userSavedRoutes);
+  return applyMineAuthorToPersonalRoutes(
+    collapseDuplicateEmptyDrafts(deduped),
+    userSavedRoutes,
+    authorCtx,
+  );
+}
+
 type MyRouteParams = { viewCourseId?: string; section?: string };
 
 type MyRouteScreenProps = {
@@ -374,6 +408,10 @@ export default function MyRouteScreen({
   const [searchQuery, setSearchQuery] = useState("");
   const [apiMyCourses, setApiMyCourses] = useState<CourseItem[]>([]);
   const [enrichedMyCourses, setEnrichedMyCourses] = useState<CourseItem[]>([]);
+  const [isMyRoutesLoading, setIsMyRoutesLoading] = useState(true);
+  const hasLoadedMyRoutesOnceRef = useRef(false);
+  const apiMyCoursesRef = useRef(apiMyCourses);
+  apiMyCoursesRef.current = apiMyCourses;
   const [filterVisible, setFilterVisible] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
@@ -478,26 +516,10 @@ export default function MyRouteScreen({
     [userSavedRoutes, apiMyCourses, enrichedMyCourses],
   );
 
-  const mergedCourses = useMemo(() => {
-    const fromUser = userSavedRoutes.map(userRouteToCourseItem);
-    const apiTitles = new Set(
-      apiMyCourses.map((c) => String(c.title ?? "").trim()).filter(Boolean),
-    );
-    const merged = mergeApiAndLocalCourseLists(apiMyCourses, fromUser);
-    const filtered = merged.filter((c) => {
-      const k = String(c.id ?? "");
-      if (k.startsWith("ur-") && apiTitles.has(String(c.title ?? "").trim())) {
-        return false;
-      }
-      return Boolean(k);
-    });
-    const deduped = dedupeMyCourseList(filtered, userSavedRoutes);
-    return applyMineAuthorToPersonalRoutes(
-      collapseDuplicateEmptyDrafts(deduped),
-      userSavedRoutes,
-      authorCtx,
-    );
-  }, [userSavedRoutes, apiMyCourses, authorCtx]);
+  const mergedCourses = useMemo(
+    () => buildMergedMyCourses(apiMyCourses, userSavedRoutes, authorCtx),
+    [userSavedRoutes, apiMyCourses, authorCtx],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -579,19 +601,45 @@ export default function MyRouteScreen({
       detailMapStepIds,
     );
 
-  const reloadMyRoutesAndSharing = useCallback(async () => {
-    try {
-      const courses = await fetchMyCourses();
-      setApiMyCourses(normalizeCourseList(courses));
-    } catch {
-      /* 네트워크 오류 시 목록을 비우면 서버 연동 판별이 깨짐 → 이전 상태 유지 */
-    }
-  }, []);
+  const loadMyRoutes = useCallback(
+    async (options?: { blocking?: boolean }) => {
+      const blocking = options?.blocking ?? !hasLoadedMyRoutesOnceRef.current;
+      if (blocking) setIsMyRoutesLoading(true);
+
+      let normalized = apiMyCoursesRef.current;
+      try {
+        const courses = await fetchMyCourses();
+        normalized = normalizeCourseList(courses);
+        setApiMyCourses(normalized);
+      } catch {
+        /* 네트워크 오류 시 목록을 비우면 서버 연동 판별이 깨짐 → 이전 상태 유지 */
+      }
+
+      try {
+        const merged = buildMergedMyCourses(
+          normalized,
+          userSavedRoutes,
+          authorCtx,
+        );
+        const enriched = await enrichCoursesWithForkOriginAuthors(
+          merged,
+          userSavedRoutes,
+        );
+        setEnrichedMyCourses((prev) => mergeCourseAuthorCredits(enriched, prev));
+      } catch {
+        /* enrich 실패 시 mergedCourses 폴백으로 표시 */
+      } finally {
+        hasLoadedMyRoutesOnceRef.current = true;
+        if (blocking) setIsMyRoutesLoading(false);
+      }
+    },
+    [userSavedRoutes, authorCtx],
+  );
 
   useFocusEffect(
     useCallback(() => {
-      reloadMyRoutesAndSharing();
-    }, [reloadMyRoutesAndSharing]),
+      void loadMyRoutes({ blocking: !hasLoadedMyRoutesOnceRef.current });
+    }, [loadMyRoutes]),
   );
 
   useEffect(() => {
@@ -1140,6 +1188,19 @@ export default function MyRouteScreen({
   const screenRootProps = embedded
     ? { className: "flex-1 bg-[#F0F5FF]" }
     : { className: "flex-1 bg-[#F0F5FF]", edges: ["top"] as const };
+
+  if (isMyRoutesLoading) {
+    return (
+      <ScreenRoot {...screenRootProps}>
+        <View className="flex-1 items-center justify-center px-8">
+          <ActivityIndicator size="large" color="#2563EB" />
+          <Text className="mt-4 text-sm font-medium text-slate-600">
+            내 루트를 불러오는 중...
+          </Text>
+        </View>
+      </ScreenRoot>
+    );
+  }
 
   return (
     <ScreenRoot {...screenRootProps}>

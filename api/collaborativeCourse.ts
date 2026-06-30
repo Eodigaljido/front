@@ -172,13 +172,15 @@ export async function fetchCourseMembers(
 async function fetchCollaborativeAccessFallback(
   courseUuid: string,
 ): Promise<CollaborativeAccessResult> {
-  const [detail, collab] = await Promise.all([
-    fetchMyCourseDetail(courseUuid),
-    fetchMyRouteCollaborativeFlag(courseUuid),
-  ]);
+  let detail = await fetchMyCourseDetail(courseUuid);
+  if (!detail) {
+    await joinCollaborativeRouteFromInvite(courseUuid);
+    detail = await fetchMyCourseDetail(courseUuid);
+  }
   if (!detail) {
     return { ok: false, reason: 'NOT_FOUND' };
   }
+  const collab = await fetchMyRouteCollaborativeFlag(courseUuid);
   if (!collab) {
     return { ok: false, reason: 'NOT_COLLABORATIVE' };
   }
@@ -233,6 +235,57 @@ export async function fetchCollaborativeAccess(
     }
     return fetchCollaborativeAccessFallback(id);
   }
+}
+
+/**
+ * 채팅·링크로 받은 공동 루트 초대 수락 (백엔드 엔드포인트 후보 순차 시도).
+ * 이미 멤버이면 409 등으로 성공 처리.
+ */
+export async function joinCollaborativeRouteFromInvite(
+  courseUuid: string,
+): Promise<boolean> {
+  const id = normalizeCourseId(courseUuid);
+  if (!id || id.startsWith('ur-')) return false;
+
+  const joinPaths = [
+    `/api/courses/collaborative/${encodeURIComponent(id)}/join`,
+    `/api/courses/collaborative/${encodeURIComponent(id)}/accept`,
+  ];
+
+  for (const path of joinPaths) {
+    try {
+      await instance.post(path, {});
+      return true;
+    } catch (e: any) {
+      const status = e?.response?.status;
+      if (status === 409 || status === 200 || status === 204) return true;
+      if (status === 404 || status === 405) continue;
+    }
+  }
+  return false;
+}
+
+/** 공동 루트 편집 진입 전 권한 확보 (초대 수락 후 재조회) */
+export async function ensureCollaborativeRouteAccess(
+  courseUuid: string,
+): Promise<CollaborativeAccessResult> {
+  const id = normalizeCourseId(courseUuid);
+  if (!id || id.startsWith('ur-')) {
+    return { ok: false, reason: 'NOT_FOUND' };
+  }
+
+  let result = await fetchCollaborativeAccess(id);
+  if (result.ok) return result;
+
+  if (
+    result.reason === 'NOT_FOUND' ||
+    result.reason === 'FORBIDDEN' ||
+    result.reason === 'OTHER'
+  ) {
+    await joinCollaborativeRouteFromInvite(id);
+    result = await fetchCollaborativeAccess(id);
+  }
+  return result;
 }
 
 /** 공동 루트에 편집 멤버 추가 (초대 시 채팅방만 만들면 상대 목록에 안 보임) */

@@ -14,7 +14,7 @@ export function rootNavigate<Name extends keyof RootStackParamList>(
     }
     return;
   }
-  navigationRef.navigate(name, params as never);
+  navigationRef.navigate({ name, params } as never);
 }
 
 /** 하단 탭 · 채팅 목록(메세지 홈) */

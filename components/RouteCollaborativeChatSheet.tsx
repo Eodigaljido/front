@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentRef,
+} from "react";
 import {
   View,
   Text,
@@ -179,7 +185,7 @@ export function RouteCollaborativeChatSheet({
   );
   const backdrop = useRef(new Animated.Value(0)).current;
   const sheetY = useRef(new Animated.Value(SHEET_SLIDE)).current;
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ComponentRef<typeof KeyboardAwareScrollView>>(null);
   const messageCountRef = useRef(0);
   const lastSendTimeRef = useRef(0);
   const [rendered, setRendered] = useState(false);

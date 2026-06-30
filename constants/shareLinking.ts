@@ -61,7 +61,9 @@ export const appLinking = {
     }
     return defaultGetStateFromPath(path, {
       ...options,
-      screens: linkingConfig.screens as any,
+      screens: linkingConfig.screens as NonNullable<
+        Parameters<typeof defaultGetStateFromPath>[1]
+      >["screens"],
     });
   },
 };

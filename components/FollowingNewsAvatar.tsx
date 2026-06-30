@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { View, Text, Image } from "react-native";
 import { bustProfileImageUri } from "../utils/profileImageUri";
 import { isRemoteThumbnailUri } from "../utils/courseThumbnailUri";
@@ -14,17 +14,14 @@ export default function FollowingNewsAvatar({
   profileImageUrl,
   size = 40,
 }: Props): React.JSX.Element {
-  const [failed, setFailed] = useState(false);
+  const [failedForUrl, setFailedForUrl] = useState<string | null>(null);
   const name = String(displayName ?? "").trim() || "?";
   const remote = String(profileImageUrl ?? "").trim();
+  const failed = failedForUrl === remote && remote.length > 0;
   const uri =
     remote && isRemoteThumbnailUri(remote) && !failed
       ? bustProfileImageUri(remote)
       : null;
-
-  useEffect(() => {
-    setFailed(false);
-  }, [profileImageUrl]);
 
   return (
     <View
@@ -43,7 +40,7 @@ export default function FollowingNewsAvatar({
           source={{ uri }}
           style={{ width: size, height: size }}
           resizeMode="cover"
-          onError={() => setFailed(true)}
+          onError={() => setFailedForUrl(remote)}
         />
       ) : (
         <Text

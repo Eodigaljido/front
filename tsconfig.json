@@ -1,7 +1,7 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "jsx": "react",
+    "jsx": "react-jsx",
     "strict": true,
     "allowArbitraryExtensions": true,
     "paths": {
@@ -14,5 +14,11 @@
     "**/*.d.ts",
     "declarations.d.ts",
     "nativewind-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "android",
+    "storybook-static",
+    "**/stories/**"
   ]
 }

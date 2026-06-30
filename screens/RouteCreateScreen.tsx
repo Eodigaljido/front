@@ -4134,21 +4134,6 @@ export default function RouteCreateScreen(): React.JSX.Element {
             >
               <Ionicons name="chevron-back" size={24} color="#2563eb" />
             </Pressable>
-            {showCollabMemberStack ? (
-              <View className="items-center mt-2">
-                <CollaboratorAvatarStack
-                  members={collabMembers}
-                  size={34}
-                  onPress={() =>
-                    rootNavigate("RouteCollaborators", {
-                      routeId: activeRouteId,
-                      routeTitle: routeTitle.trim() || "루트",
-                      chatRoomUuid: routeChatRoomUuid,
-                    })
-                  }
-                />
-              </View>
-            ) : null}
           </View>
 
           <Pressable
@@ -4213,6 +4198,7 @@ export default function RouteCreateScreen(): React.JSX.Element {
                 rootNavigate("RouteCollaborators", {
                   routeId: activeRouteId,
                   routeTitle: routeTitle.trim() || "루트",
+                  chatRoomUuid: routeChatRoomUuid,
                 })
               }
             />

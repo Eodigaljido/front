@@ -137,6 +137,34 @@ async function inviteFriendsByUuid(
   }
 }
 
+/** 채팅방 멤버를 공동 루트 편집자로 등록 (루트 공유 메시지 수신 후 참여 가능) */
+async function syncCollaborativeEditorsFromChatRoom(opts: {
+  accessToken: string;
+  myUuid: string;
+  routeId: string;
+  chatRoomUuid: string;
+}): Promise<void> {
+  const routeId = String(opts.routeId ?? '').trim();
+  const roomId = String(opts.chatRoomUuid ?? '').trim();
+  const myUuid = String(opts.myUuid ?? '').trim();
+  if (!routeId || routeId.startsWith('ur-') || !roomId || !myUuid) return;
+
+  const room = await getChatRoom(opts.accessToken, roomId);
+  if (!room) return;
+
+  const memberUuids = new Set<string>();
+  for (const m of room.members ?? []) {
+    const uuid = String(m.uuid ?? '').trim();
+    if (uuid && uuid !== myUuid) memberUuids.add(uuid);
+  }
+  for (const uuid of room.memberUuids ?? []) {
+    const id = String(uuid ?? '').trim();
+    if (id && id !== myUuid) memberUuids.add(id);
+  }
+  if (memberUuids.size === 0) return;
+  await addCollaborativeCourseMembers(routeId, [...memberUuids]);
+}
+
 /** 채팅방에 ROUTE 공유 메시지 1회 전송 (방 없으면 생성 후 재시도) */
 async function postRouteShareToChat(opts: {
   accessToken: string;
@@ -153,6 +181,12 @@ async function postRouteShareToChat(opts: {
 
   try {
     await shareRouteToChat(opts.accessToken, chatRoomUuid, routeId);
+    await syncCollaborativeEditorsFromChatRoom({
+      accessToken: opts.accessToken,
+      myUuid: opts.myUuid,
+      routeId,
+      chatRoomUuid,
+    });
     return chatRoomUuid;
   } catch (e: any) {
     if (e?.response?.status !== 404) {
@@ -169,6 +203,12 @@ async function postRouteShareToChat(opts: {
     if (!chatRoomUuid) return null;
     try {
       await shareRouteToChat(opts.accessToken, chatRoomUuid, routeId);
+      await syncCollaborativeEditorsFromChatRoom({
+        accessToken: opts.accessToken,
+        myUuid: opts.myUuid,
+        routeId,
+        chatRoomUuid,
+      });
     } catch (retryErr) {
       console.warn('[postRouteShareToChat] retry', retryErr);
     }

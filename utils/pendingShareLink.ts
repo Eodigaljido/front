@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useHomeBootstrapStore } from '../store/homeBootstrapStore';
 import type { NavigationContainerRef, NavigationProp } from '@react-navigation/native';
 import type { ParsedSharePath } from './parseSharePath';
 
@@ -126,7 +127,8 @@ export function consumePendingShareNavigation(
 }
 
 /** 로그인·온보딩 후 메인 진입 (보류 중인 공유 링크가 있으면 해당 탭으로) */
-export function resetToMainAfterAuth(navigation: ResetNavigation): void {
+export async function resetToMainAfterAuth(navigation: ResetNavigation): Promise<void> {
+  await useHomeBootstrapStore.getState().bootstrap({ force: true });
   if (consumePendingShareNavigation(navigation)) return;
   navigation.reset({ index: 0, routes: [{ name: 'Tabs' }] });
 }

@@ -112,7 +112,6 @@ export function userRouteToCourseItem(r: UserSavedRoute): CourseItem {
       minutes: Number(l.minutes || 0),
       transitType: l.transitType,
     })),
-    reviews: [],
   };
 }
 

@@ -5,6 +5,7 @@ import type { LoginRequest, RegisterRequest } from '../api/auth';
 import { tokenStorage } from '../utils/tokenStorage';
 import { getMyProfile } from '../api/users';
 import { preloadNotificationSettings } from '../api/notificationSettings';
+import { useHomeBootstrapStore } from './homeBootstrapStore';
 
 interface AuthState {
   accessToken: string | null;
@@ -127,6 +128,7 @@ export const useAuthStore = create<AuthState>(set => ({
       }
     }
     await tokenStorage.clearTokens();
+    useHomeBootstrapStore.getState().reset();
     set({ accessToken: null, refreshToken: null, user: null, isAuthenticated: false, profileImageCacheBust: 0 });
   },
 

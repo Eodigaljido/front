@@ -88,7 +88,7 @@ export default function LoginScreen() {
       if (!completed) {
         navigation.reset({ index: 0, routes: [{ name: "OnBoardStart" }] });
       } else {
-        resetToMainAfterAuth(navigation);
+        await resetToMainAfterAuth(navigation);
       }
     } catch (err: any) {
       const errorMessage =
@@ -135,7 +135,7 @@ export default function LoginScreen() {
       if (!completed) {
         navigation.reset({ index: 0, routes: [{ name: "OnBoardStart" }] });
       } else {
-        resetToMainAfterAuth(navigation);
+        await resetToMainAfterAuth(navigation);
       }
     } catch (err: unknown) {
       const backendMsg = (err as { response?: { data?: { message?: string } } })
@@ -163,7 +163,7 @@ export default function LoginScreen() {
       if (!completed) {
         navigation.reset({ index: 0, routes: [{ name: "OnBoardStart" }] });
       } else {
-        resetToMainAfterAuth(navigation);
+        await resetToMainAfterAuth(navigation);
       }
     } catch (err: unknown) {
       const msg =
@@ -196,7 +196,7 @@ export default function LoginScreen() {
             routes: [{ name: "OnBoardStart" }],
           });
         } else {
-          resetToMainAfterAuth(navigation);
+          await resetToMainAfterAuth(navigation);
         }
       } catch (err: any) {
         if (!cancelled) {

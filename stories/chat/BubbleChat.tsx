@@ -283,7 +283,7 @@ const styles = StyleSheet.create({
   },
   text: {
     fontSize: 16,
-    wordBreak: "break-all",
+    flexShrink: 1,
   },
   textMine: {
     color: "#FFFFFF",

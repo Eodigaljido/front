@@ -78,6 +78,11 @@ import { enrichCoursesWithForkOriginAuthors, enrichCourseWithForkOriginAuthor } 
 import { mergeCourseAuthorCredits } from "../utils/courseAuthorCredits";
 import { rootNavigate } from "../navigation/rootNavigation";
 import { useRouteSection } from "../context/RouteScreenContext";
+import {
+  fetchPersonalizedRouteRecommendations,
+  OnboardingRecommendError,
+} from "../api/onboard/recommendRoutes";
+import { buildOnboardingRecommendSummary } from "../utils/recommendRoutesFromOnboarding";
 
 type SharedRouteParams = {
   section?: "shared" | "my";
@@ -292,6 +297,12 @@ export default function SharedRouteScreen({
   const [favoritedCourseIds, setFavoritedCourseIds] = useState<Set<string>>(new Set());
   const [togglingFavorite, setTogglingFavorite] = useState(false);
   const [detailModalMounted, setDetailModalMounted] = useState(false);
+  const [personalizedOnly, setPersonalizedOnly] = useState(false);
+  const [personalizedCourses, setPersonalizedCourses] = useState<CourseItem[]>(
+    [],
+  );
+  const [personalizedSummary, setPersonalizedSummary] = useState("");
+  const [personalizedLoading, setPersonalizedLoading] = useState(false);
   const detailBackdropOpacity = useRef(new Animated.Value(0)).current;
   const detailSheetTranslateY = useRef(new Animated.Value(500)).current;
   const detailSheetOffY = useMemo(
@@ -562,6 +573,67 @@ export default function SharedRouteScreen({
     return dedupeCoursesById(list);
   }, [activeTab, searchQuery, selectedCategory, selectedRegion, selectedSort, coursesData]);
 
+  const listCourses = useMemo(() => {
+    if (!personalizedOnly) return filteredCourses;
+    if (personalizedCourses.length === 0) return [];
+    const allowed = new Set(filteredCourses.map((c) => String(c.id)));
+    return personalizedCourses.filter((c) => allowed.has(String(c.id)));
+  }, [personalizedOnly, personalizedCourses, filteredCourses]);
+
+  const handlePersonalizedRecommend = useCallback(async () => {
+    if (personalizedLoading) return;
+    setPersonalizedLoading(true);
+    try {
+      const { answers, recommended } = await fetchPersonalizedRouteRecommendations(
+        {
+          courses: coursesData,
+          limit: 12,
+        },
+      );
+      if (recommended.length === 0) {
+        showToast("조건에 맞는 추천 루트가 없어요");
+        setPersonalizedOnly(false);
+        setPersonalizedCourses([]);
+        setPersonalizedSummary("");
+        return;
+      }
+      setPersonalizedCourses(recommended);
+      setPersonalizedSummary(buildOnboardingRecommendSummary(answers));
+      setPersonalizedOnly(true);
+      setActiveTab("all");
+      setSelectedCategory(null);
+      setSelectedRegion(null);
+      setSearchQuery("");
+      showToast(`맞춤 루트 ${recommended.length}개를 찾았어요`);
+    } catch (error) {
+      if (error instanceof OnboardingRecommendError) {
+        Alert.alert(
+          "맞춤 추천",
+          error.message,
+          error.code === "NOT_STARTED" || error.code === "INCOMPLETE"
+            ? [
+                { text: "취소", style: "cancel" },
+                {
+                  text: "설문 하러 가기",
+                  onPress: () => rootNavigate("OnBoardStart"),
+                },
+              ]
+            : [{ text: "확인" }],
+        );
+        return;
+      }
+      showToast("맞춤 추천을 불러오지 못했어요");
+    } finally {
+      setPersonalizedLoading(false);
+    }
+  }, [coursesData, personalizedLoading, showToast]);
+
+  const clearPersonalizedRecommend = useCallback(() => {
+    setPersonalizedOnly(false);
+    setPersonalizedCourses([]);
+    setPersonalizedSummary("");
+  }, []);
+
   const handleCategoryToggle = (cat: string) => {
     setSelectedCategory((prev) => (prev === cat ? null : cat));
   };
@@ -658,6 +730,95 @@ export default function SharedRouteScreen({
         </Pressable>
       </View>
 
+      <View className="px-4 pb-2">
+        {personalizedOnly ? (
+          <View
+            className="rounded-2xl border border-indigo-200 bg-indigo-50 px-3.5 py-3"
+            style={{
+              borderWidth: 1,
+              borderColor: "rgba(79,70,229,0.22)",
+            }}
+          >
+            <View className="flex-row items-start justify-between gap-2">
+              <View className="flex-1 min-w-0">
+                <Text className="text-[13px] font-bold text-indigo-900">
+                  나에게 맞는 맞춤 추천 {listCourses.length}개
+                </Text>
+                {personalizedSummary ? (
+                  <Text className="mt-1 text-[11px] text-indigo-700" numberOfLines={2}>
+                    {personalizedSummary}
+                  </Text>
+                ) : null}
+              </View>
+              <Pressable
+                onPress={clearPersonalizedRecommend}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="맞춤 추천 해제"
+                className="rounded-full bg-white px-2.5 py-1 active:opacity-85"
+              >
+                <Text className="text-[11px] font-semibold text-indigo-700">
+                  전체 보기
+                </Text>
+              </Pressable>
+            </View>
+            <Pressable
+              onPress={() => void handlePersonalizedRecommend()}
+              disabled={personalizedLoading}
+              className="mt-2.5 flex-row items-center justify-center rounded-xl bg-indigo-600 py-2 active:opacity-90"
+            >
+              {personalizedLoading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="refresh-outline" size={15} color="#fff" />
+                  <Text className="ml-1.5 text-xs font-semibold text-white">
+                    다시 추천받기
+                  </Text>
+                </>
+              )}
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable
+            onPress={() => void handlePersonalizedRecommend()}
+            disabled={personalizedLoading}
+            accessibilityRole="button"
+            accessibilityLabel="나에게 맞는 루트 추천받기"
+            className="flex-row items-center rounded-2xl bg-white px-3.5 py-3 active:opacity-92"
+            style={{
+              borderWidth: 1,
+              borderColor: "rgba(37,99,235,0.22)",
+              shadowColor: "#0f172a",
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.05,
+              shadowRadius: 8,
+              elevation: 2,
+            }}
+          >
+            <View
+              className="mr-3 h-10 w-10 items-center justify-center rounded-xl"
+              style={{ backgroundColor: "rgba(37,99,235,0.1)" }}
+            >
+              {personalizedLoading ? (
+                <ActivityIndicator size="small" color="#2563EB" />
+              ) : (
+                <Ionicons name="sparkles-outline" size={20} color="#2563EB" />
+              )}
+            </View>
+            <View className="flex-1 min-w-0">
+              <Text className="text-[14px] font-bold text-gray-900">
+                나에게 맞는 루트 추천받기
+              </Text>
+              <Text className="mt-0.5 text-[11px] text-gray-500" numberOfLines={2}>
+                지역·활동 취향을 바탕으로 공유 루트를 골라드려요
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
+          </Pressable>
+        )}
+      </View>
+
       {/* 탭 - 세로 높이 고정으로 불필요한 빈 공간 제거 */}
       <View className="px-4 pb-1" style={{ height: 44 }}>
         <ScrollView
@@ -696,7 +857,7 @@ export default function SharedRouteScreen({
 
       {/* 코스 리스트 */}
       <FlatList<CourseItem>
-        data={filteredCourses ?? []}
+        data={listCourses ?? []}
         keyExtractor={(item: CourseItem, index) => `shared-${item.id}-${index}`}
         renderItem={({ item }: { item: CourseItem }) => (
           <CourseCard
@@ -705,6 +866,19 @@ export default function SharedRouteScreen({
             onPress={() => setViewingCourseId(item.id)}
           />
         )}
+        ListEmptyComponent={
+          personalizedOnly ? (
+            <View className="items-center justify-center px-8 py-16">
+              <Ionicons name="sparkles-outline" size={40} color="#a5b4fc" />
+              <Text className="mt-4 text-center text-sm font-semibold text-gray-700">
+                맞춤 추천 결과가 없어요
+              </Text>
+              <Text className="mt-2 text-center text-xs text-gray-500">
+                필터를 초기화하거나 다시 추천받기를 눌러 보세요.
+              </Text>
+            </View>
+          ) : null
+        }
         contentContainerStyle={{ paddingTop: 8, paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
       />
@@ -1012,8 +1186,7 @@ export default function SharedRouteScreen({
                                 void sharePublicCourse({
                                   courseId: course.id,
                                   title: course.title,
-                                  accessToken,
-                                  myUuid: authUser?.uuid,
+                                  introOnly: true,
                                 })
                               }
                               className="flex-row items-center px-3 py-2 bg-white border border-gray-300 rounded-lg active:opacity-90"
